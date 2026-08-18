@@ -531,10 +531,21 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   color: var(--text-3);
 }
 
-/* With no inbox to read there is nothing for these to act on. */
+/* Nothing else on the page has anything to act on, so the blank
+   state stands alone on the screen. */
+.page.is-disconnected .masthead,
 .page.is-disconnected .toolbar,
 .page.is-disconnected .board,
 .page.is-disconnected .footer { display: none; }
+
+.page.is-disconnected {
+  display: grid;
+  align-content: center;
+  min-height: 100vh;
+}
+
+/* The bottom margin lifts the box above the true centre. */
+.page.is-disconnected .blank { margin-top: 0; margin-bottom: 12vh; }
 
 /* ===============================================================
    Settings modal
@@ -604,6 +615,24 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   color: var(--text-3);
 }
 .req { color: var(--red); font-weight: 700; text-decoration: none; cursor: help; }
+
+/* Gmail account */
+.account { display: flex; align-items: center; gap: 10px; }
+.account__avatar {
+  display: grid; place-items: center;
+  width: 28px; height: 28px;
+  font-size: 12.5px; font-weight: 700;
+  color: var(--text-2);
+  background: var(--chip);
+  border-radius: 50%;
+}
+.account__avatar > svg { font-size: 14px; }
+.account__mail {
+  margin-right: auto;
+  font-size: 14px;
+  color: var(--text);
+}
+.account.is-signed-out .account__mail { color: var(--text-3); }
 
 /* API key */
 .key-row { display: flex; gap: 8px; }

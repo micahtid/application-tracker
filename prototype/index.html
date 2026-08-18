@@ -90,7 +90,7 @@
       <div class="blank" id="disconnected" hidden>
         <span class="blank__icon"><i data-lucide="unplug"></i></span>
         <p class="blank__title">Not Connected</p>
-        <p class="blank__text">Add an API key to read your inbox.</p>
+        <p class="blank__text" id="blankText">Add an API key to read your inbox.</p>
         <button class="btn" id="openFromBlank" type="button">
           <i data-lucide="settings"></i>Open Settings
         </button>
@@ -122,6 +122,22 @@
           <i data-lucide="x"></i>
         </button>
       </header>
+
+      <!-- Gmail account -->
+      <section class="group">
+        <div class="group__head">
+          <span class="group__label">Gmail Account</span>
+        </div>
+
+        <div class="account">
+          <span class="account__avatar" id="accountAvatar">M</span>
+          <span class="account__mail" id="accountMail">micah@gmail.com</span>
+          <button class="icon-btn icon-btn--sm" id="accountAction" type="button"
+                  aria-label="Log Out" title="Log Out">
+            <i data-lucide="log-out"></i>
+          </button>
+        </div>
+      </section>
 
       <!-- API key -->
       <section class="group">

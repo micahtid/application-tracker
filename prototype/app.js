@@ -224,6 +224,7 @@ const els = {
   toggleAll:   $("#toggleAll"),
   filterCount: $("#filterCount"),
   blank:       $("#disconnected"),
+  blankText:   $("#blankText"),
   page:        $(".page"),
   refreshBtn:  $("#refreshBtn"),
   showBlank:   $("#showBlank"),
@@ -457,6 +458,7 @@ document.addEventListener("click", closeMenus);
    =============================================================== */
 const STORE = "tracker.settings";
 const CAP_MONTHS = 12;   /* the window can never reach back further */
+const DEMO_ACCOUNT = "micah@gmail.com";   /* stands in for a real Google sign in */
 
 const modal     = $("#settings");
 const keyField  = $(".field--key");
@@ -466,27 +468,51 @@ const checkBtn  = $("#checkKey");
 const saveBtn   = $("#saveSettings");
 const startIn   = $("#startDate");
 
-const settings = { apiKey: "", start: "" };   /* start is a YYYY-MM-DD string */
-let verifiedKey = "";                         /* the exact text that last passed */
+const accountRow    = $(".account");
+const accountAvatar = $("#accountAvatar");
+const accountMail   = $("#accountMail");
+const accountAction = $("#accountAction");
 
-const today = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
-const iso = (d) => d.getFullYear() +
-  "-" + String(d.getMonth() + 1).padStart(2, "0") +
-  "-" + String(d.getDate()).padStart(2, "0");
-const monthsAgo = (n) => { const d = today(); d.setMonth(d.getMonth() - n); return d; };
+const settings = { account: "", apiKey: "", start: "" };   /* start is a YYYY-MM-DD string */
+let verifiedKey = "";                                      /* the exact text that last passed */
 
-const earliest = () => iso(monthsAgo(CAP_MONTHS));
-
-/* Keep any date inside the allowed window, whether typed, picked, or stored. */
-function clampDate(date) {
-  const floor = earliest();
-  const ceil = iso(today());
-  if (!date || date < floor) return floor;
-  return date > ceil ? ceil : date;
+function persist() {
+  try {
+    localStorage.setItem(STORE, JSON.stringify(settings));
+  } catch (err) { /* storage can be blocked in private mode */ }
 }
 
-const setStartDate = (date) => { startIn.value = clampDate(date); };
-startIn.addEventListener("change", () => setStartDate(startIn.value));
+/* Draw the row from whatever account is stored. */
+function renderAccount() {
+  const signedIn = Boolean(settings.account);
+  const label = signedIn ? "Log Out" : "Sign In";
+
+  accountRow.classList.toggle("is-signed-out", !signedIn);
+  accountMail.textContent = signedIn ? settings.account : "Not Signed In";
+
+  if (signedIn) accountAvatar.textContent = settings.account[0].toUpperCase();
+  else accountAvatar.innerHTML = `<i data-lucide="user"></i>`;
+
+  accountAction.innerHTML = `<i data-lucide="${signedIn ? "log-out" : "log-in"}"></i>`;
+  accountAction.setAttribute("aria-label", label);
+  accountAction.title = label;
+  drawIcons();
+}
+
+/* Signing out clears the key too and leaves the app disconnected. */
+accountAction.addEventListener("click", () => {
+  if (settings.account) {
+    settings.account = "";
+    settings.apiKey = "";      /* a key is useless without the account */
+    loadKeyField();
+    els.showBlank.checked = true;
+  } else {
+    settings.account = DEMO_ACCOUNT;
+  }
+  persist();
+  renderAccount();
+  syncConnection();
+});
 
 /* Stub. Swap the body for a real request to the mail provider.
    Anything not shaped like a key is rejected, which is what shows the error. */
@@ -519,6 +545,14 @@ function setKeyState(phase, message = "") {
   keyStatus.dataset.state = phase;
   keyStatus.textContent = message;
   drawIcons();
+}
+
+/* Point the key field back at what is stored, dropping any unsaved edit. */
+function loadKeyField() {
+  keyInput.value = settings.apiKey;
+  verifiedKey = settings.apiKey;
+  setKeyState(settings.apiKey ? "valid" : "idle");
+  syncKeyControls();
 }
 
 /* Save stays locked until the text in the box is the text that passed. */
@@ -555,17 +589,41 @@ checkBtn.addEventListener("click", async () => {
   syncKeyControls();
 });
 
+/* How far back to read */
+const today = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+const iso = (d) => d.getFullYear() +
+  "-" + String(d.getMonth() + 1).padStart(2, "0") +
+  "-" + String(d.getDate()).padStart(2, "0");
+const monthsAgo = (n) => { const d = today(); d.setMonth(d.getMonth() - n); return d; };
+
+const earliest = () => iso(monthsAgo(CAP_MONTHS));
+
+/* Keep any date inside the allowed window, whether typed, picked, or stored. */
+function clampDate(date) {
+  const floor = earliest();
+  const ceil = iso(today());
+  if (!date || date < floor) return floor;
+  return date > ceil ? ceil : date;
+}
+
+const setStartDate = (date) => { startIn.value = clampDate(date); };
+startIn.addEventListener("change", () => setStartDate(startIn.value));
+
 /* ===============================================================
    Connected and disconnected views
    =============================================================== */
 
-/* With no inbox to read, the board gives way to the blank state. */
+/* With no inbox to read, the board gives way to the blank state.
+   The wording names whichever piece is still missing. */
 function syncConnection() {
   const connected = !els.showBlank.checked;
   els.blank.hidden = connected;
+  els.blankText.textContent = settings.account
+    ? "Add an API key to get started."
+    : "Sign in to Gmail to get started.";
   els.page.classList.toggle("is-disconnected", !connected);
   els.refreshBtn.disabled = !connected;
-  els.refreshBtn.title = connected ? "Refresh" : "Add an API key first";
+  els.refreshBtn.title = connected ? "Refresh" : "Not connected";
   drawIcons();
 }
 
@@ -599,11 +657,8 @@ function openSettings() {
 function closeSettings() {
   modal.hidden = true;
   document.body.style.overflow = "";
-  keyInput.value = settings.apiKey;
-  verifiedKey = settings.apiKey;
-  setKeyState(settings.apiKey ? "valid" : "idle");
+  loadKeyField();
   setStartDate(settings.start);
-  syncKeyControls();
   syncConnection();
 }
 
@@ -615,9 +670,7 @@ modal.querySelectorAll("[data-close]").forEach((el) =>
 saveBtn.addEventListener("click", () => {
   settings.apiKey = keyInput.value.trim();
   settings.start = clampDate(startIn.value);
-  try {
-    localStorage.setItem(STORE, JSON.stringify(settings));
-  } catch (err) { /* storage can be blocked in private mode */ }
+  persist();
 
   els.showBlank.checked = false;   /* a saved key means the list is live */
   closeSettings();
@@ -658,8 +711,10 @@ els.showBlank.addEventListener("change", syncConnection);
     saved = JSON.parse(localStorage.getItem(STORE));
   } catch (err) { /* unreadable storage falls back to defaults */ }
 
+  settings.account = saved && "account" in saved ? saved.account : DEMO_ACCOUNT;
   settings.start = (saved && saved.start) || iso(monthsAgo(6));
   setStartDate(settings.start);
+  renderAccount();
 
   if (saved && saved.apiKey) {
     settings.apiKey = verifiedKey = keyInput.value = saved.apiKey;
