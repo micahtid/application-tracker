@@ -456,6 +456,27 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .email__date { font-size: 13px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .email__none { padding: 4px 0 6px; font-size: 14px; color: var(--text-3); font-style: italic; }
 
+/* A line shown under an earlier one: a report on a step already on the board,
+   rather than a step of its own (LOOP2 Invariant 4). */
+.emails--nested {
+  margin: 0 0 2px 0;
+  padding: 2px 0 2px 18px;
+  border-left-style: dashed;
+}
+.email--child a { font-size: 13.5px; color: var(--text-3); }
+.email--child a > svg { font-size: 13px; }
+.email__relation {
+  flex: none;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  background: var(--hover);
+  border-radius: 4px;
+}
+
 /* ===============================================================
    No results, footer
    =============================================================== */

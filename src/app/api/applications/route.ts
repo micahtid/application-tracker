@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { drawerTitle, drawerTree } from "@/lib/drawer";
 import { gmailLink } from "@/lib/links";
 import { NO_CORRECTION, resolveCorrections } from "@/lib/pipeline/corrections";
 
@@ -14,17 +15,21 @@ export async function GET() {
     prisma.application.findMany({
       orderBy: { latestEmailAt: "desc" },
       include: {
+        // Every email the row owns. Which of them the drawer shows, and under
+        // what, is one rule and it lives in @/lib/drawer, so the board and the
+        // loop harness cannot drift apart on the answer.
         messages: {
-          // Significant and not a repeat. The model says whether an email is
-          // significant read on its own; being a repeat of an earlier email in
-          // the same application is worked out later, from the whole set.
-          where: { isSignificant: true, isApplicationRelated: true, repeatOfMessageId: null },
           orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
           select: {
             id: true,
             emailTitle: true,
             receivedAt: true,
             gmailMessageId: true,
+            senderDomain: true,
+            isSignificant: true,
+            isApplicationRelated: true,
+            parentMessageId: true,
+            parentRelation: true,
           },
         },
       },
@@ -53,12 +58,21 @@ export async function GET() {
         latestEmailAt: application.latestEmailAt,
         firstEmailAt: application.firstEmailAt,
         atsVendor: application.atsVendor,
-        emails: application.messages.map((message) => ({
-          id: message.id,
-          title: message.emailTitle ?? "Application Email",
-          date: message.receivedAt,
+        emails: drawerTree(application.messages).map((node) => ({
+          id: node.message.id,
+          title: drawerTitle(node.message),
+          date: node.message.receivedAt,
           // Addresses the exact stored message, never a Gmail text search (D31).
-          href: gmailLink(account?.emailAddress ?? null, message.gmailMessageId),
+          href: gmailLink(account?.emailAddress ?? null, node.message.gmailMessageId),
+          relation: node.relation,
+          children: node.children.map((child) => ({
+            id: child.message.id,
+            title: drawerTitle(child.message),
+            date: child.message.receivedAt,
+            href: gmailLink(account?.emailAddress ?? null, child.message.gmailMessageId),
+            relation: child.relation,
+            children: [],
+          })),
         })),
       };
     }),

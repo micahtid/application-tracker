@@ -1,9 +1,15 @@
 import type { EmailMessage } from "@prisma/client";
 import type { Db } from "@/lib/db";
 import { parseClassification, type Classification } from "@/lib/llm";
-import { dedupeKey, normalizeCompany, normalizeSubject, requisitionNumbers } from "@/lib/normalize";
+import {
+  dedupeKey,
+  hasReminderMarker,
+  normalizeCompany,
+  normalizeSubject,
+  requisitionNumbers,
+} from "@/lib/normalize";
 import { vendorForDomain } from "@/lib/ats";
-import type { Status } from "@/lib/constants";
+import type { StageDetail, Status } from "@/lib/constants";
 
 /**
  * Stage 5 (3.6). Every field on a row is worked out from its emails and
@@ -89,6 +95,137 @@ function firstStated<T>(
   return null;
 }
 
+export type TreeNode = { parent: number | null; relation: string | null };
+
+/**
+ * Where every email of an application sits in its drawer (LOOP2 Invariant 3).
+ *
+ * A drawer shows one line for each state the application reached, which is the
+ * earliest email that stated that state. Every other email is shown under the
+ * line for its own state.
+ *
+ * That is the whole rule. It compares no wording to decide the nesting, has no
+ * threshold, no keyword list and nothing to tune, because the pipeline already
+ * knows which stage of which application every email is about: the model
+ * answers `status` and `stage_detail` on each one, and that answer is trusted
+ * enough to drive the whole board's state already.
+ *
+ * Four things follow from it rather than having to be enforced. It does not
+ * depend on the order emails arrived in, so a rebuild reproduces it exactly. A
+ * parent is always strictly earlier, so a loop is impossible. A parent is
+ * always the first of its state and therefore has no parent of its own, so the
+ * tree is one level deep. And nothing is ever left without a home, because
+ * every email has a state and every state has an earliest email.
+ *
+ * The relation is then read off the wording, for display only. A wrong one is a
+ * cosmetic bug and never a structural one.
+ */
+export function treeIn(messages: EmailMessage[]): Map<number, TreeNode> {
+  const firstOfState = new Map<string, EmailMessage>();
+  const subjectsInState = new Map<string, Set<string>>();
+  const tree = new Map<number, TreeNode>();
+
+  for (const message of messages) {
+    const said = classificationOf(message);
+    const state = [said?.status ?? "APPLIED", said?.stageDetail ?? ""].join("|");
+    const subject = normalizeSubject(message.subject);
+
+    const parent = firstOfState.get(state);
+    if (!parent) {
+      firstOfState.set(state, message);
+      subjectsInState.set(state, new Set([subject]));
+      tree.set(message.id, { parent: null, relation: null });
+      continue;
+    }
+
+    // REPEAT is tested before REMINDER because a resend often carries a nudge
+    // marker as well, and it is the one of the two that carries any weight
+    // beyond the chip it draws: history is written by everything except it.
+    const seen = subjectsInState.get(state)!;
+    const relation = seen.has(subject) ? "REPEAT" : hasReminderMarker(message.subject) ? "REMINDER" : "UPDATE";
+    seen.add(subject);
+
+    tree.set(message.id, { parent: parent.id, relation });
+  }
+
+  return tree;
+}
+
+/**
+ * The emails that record a change of state: significant, and not a repeat of
+ * one already seen in this application.
+ *
+ * The two questions stay apart, which is what they always were. Where an email
+ * sits in the drawer is the tree above. Whether it records a change of state is
+ * this, and it is unchanged: the model sees one email at a time and no thread
+ * context (D17), which is what stops company names bleeding between emails, but
+ * it also means a resend looks exactly like the original to it. It answers
+ * "significant" both times, and it is right both times, because read on its own
+ * the email really is significant. Only the whole set can tell.
+ */
+export function milestonesIn(messages: EmailMessage[]): { message: EmailMessage; status: Status }[] {
+  const tree = treeIn(messages);
+  const out: { message: EmailMessage; status: Status }[] = [];
+
+  for (const message of messages) {
+    const said = classificationOf(message);
+    if (!said?.isSignificant || tree.get(message.id)?.relation === "REPEAT") continue;
+    out.push({ message, status: said.status as Status });
+  }
+
+  return out;
+}
+
+export type HeadState = { status: Status; stageDetail: StageDetail | null };
+
+/**
+ * What state an application is in, worked out from its emails alone.
+ *
+ * Pure, and called from both stages on purpose. Stage 5 asks it what the row
+ * should say. Stage 4 asks it what a candidate row is waiting on, and it
+ * cannot read the `status` column to find out: that column is written when a
+ * row is created and not touched again until stage 5, which runs after the
+ * whole matching pass has finished. Half way through a pass the column is
+ * therefore hours out of date, and an email arriving now would be measured
+ * against the state the row was in when it was made.
+ *
+ * One definition, used by the stage that decides where an email goes and by
+ * the stage that decides what the row says.
+ */
+export function headState(messages: EmailMessage[]): HeadState {
+  const milestones = milestonesIn(messages);
+
+  // An acknowledgement of receipt is a floor, not a stage. Systems send
+  // "we have your application" at any point, often after an assessment has
+  // already been set, and it says nothing about how far along the application
+  // is. So once an application has moved past being merely submitted, a later
+  // bare acknowledgement does not move it back. Anything that is an actual
+  // outcome still wins on date alone.
+  const movedOn = milestones.findIndex((row) => row.status !== "APPLIED");
+  const meaningful =
+    movedOn === -1
+      ? milestones
+      : milestones.filter(
+          (row) =>
+            row.status !== "APPLIED" ||
+            row.message.receivedAt.getTime() < milestones[movedOn].message.receivedAt.getTime(),
+        );
+
+  if (!meaningful.length) return { status: "APPLIED", stageDetail: null };
+
+  const latest = Math.max(...meaningful.map((row) => row.message.receivedAt.getTime()));
+  const newest = meaningful
+    .filter((row) => row.message.receivedAt.getTime() === latest)
+    .sort((a, b) => TIE_ORDER.indexOf(a.status) - TIE_ORDER.indexOf(b.status))[0];
+
+  const status = newest.status;
+  return {
+    status,
+    stageDetail:
+      status === "IN_PROGRESS" ? (classificationOf(newest.message)?.stageDetail as StageDetail | null) ?? null : null,
+  };
+}
+
 export async function recomputeApplication(db: Db, applicationId: number): Promise<void> {
   const application = await db.application.findUnique({ where: { id: applicationId } });
   if (!application) return;
@@ -111,36 +248,17 @@ export async function recomputeApplication(db: Db, applicationId: number): Promi
   const companyName = commonestCompanyName(messages) ?? identity?.companyName ?? application.companyName;
   const companyNormalized = normalizeCompany(companyName);
 
-  // Which emails are repeats of an earlier one, and therefore which of them
-  // record a milestone. This is the first point in the pipeline where the
-  // other emails of an application are visible: the model sees one email at a
-  // time and no thread context (D17), which is what stops company names
-  // bleeding between emails, but it also means a resend looks exactly like the
-  // original to it. It answers "significant" both times, and it is right both
-  // times, because read on its own the email really is significant.
-  const firstSaid = new Map<string, number>();
-  const repeats = new Map<number, number | null>();
+  // The tree is rewritten from the whole set on every recalculation and never
+  // authored, exactly like every other field on a row (PRD 3.6).
+  const tree = treeIn(messages);
 
   for (const message of messages) {
-    const said = classificationOf(message);
-    if (!said?.isSignificant) {
-      repeats.set(message.id, null);
-      continue;
-    }
-
-    // The state has to match as well as the wording. Two rounds that happen to
-    // share a subject are two rounds, and they will differ in status or stage.
-    const key = [said.status, said.stageDetail ?? "", normalizeSubject(message.subject)].join("|");
-    const earlier = firstSaid.get(key);
-
-    repeats.set(message.id, earlier ?? null);
-    if (earlier === undefined) firstSaid.set(key, message.id);
-  }
-
-  for (const message of messages) {
-    const repeatOf = repeats.get(message.id) ?? null;
-    if (message.repeatOfMessageId !== repeatOf) {
-      await db.emailMessage.update({ where: { id: message.id }, data: { repeatOfMessageId: repeatOf } });
+    const node = tree.get(message.id) ?? { parent: null, relation: null };
+    if (message.parentMessageId !== node.parent || message.parentRelation !== node.relation) {
+      await db.emailMessage.update({
+        where: { id: message.id },
+        data: { parentMessageId: node.parent, parentRelation: node.relation },
+      });
     }
   }
 
@@ -148,49 +266,18 @@ export async function recomputeApplication(db: Db, applicationId: number): Promi
   // arrive, so the first occurrence always survives whatever order they came
   // in, and a message that stops being a repeat gets its milestone back.
   await db.applicationStatusHistory.deleteMany({ where: { applicationId } });
-  for (const message of messages) {
-    const said = classificationOf(message);
-    if (!said?.isSignificant || repeats.get(message.id)) continue;
+  for (const milestone of milestonesIn(messages)) {
     await db.applicationStatusHistory.create({
-      data: { applicationId, messageId: message.id, status: said.status, detectedAt: message.receivedAt },
+      data: {
+        applicationId,
+        messageId: milestone.message.id,
+        status: milestone.status,
+        detectedAt: milestone.message.receivedAt,
+      },
     });
   }
 
-  const history = await db.applicationStatusHistory.findMany({
-    where: { applicationId },
-    orderBy: [{ detectedAt: "desc" }],
-    include: { message: true },
-  });
-
-  // An acknowledgement of receipt is a floor, not a stage. Systems send
-  // "we have your application" at any point, often after an assessment has
-  // already been set, and it says nothing about how far along the application
-  // is. So once an application has moved past being merely submitted, a later
-  // bare acknowledgement does not move it back. Anything that is an actual
-  // outcome still wins on date alone.
-  const oldestFirst = [...history].reverse();
-  const movedOn = oldestFirst.findIndex((row) => row.status !== "APPLIED");
-  const meaningful =
-    movedOn === -1
-      ? history
-      : history.filter(
-          (row) =>
-            row.status !== "APPLIED" ||
-            row.detectedAt.getTime() < oldestFirst[movedOn].detectedAt.getTime(),
-        );
-
-  const newest = meaningful.length
-    ? meaningful
-        .filter((row) => row.detectedAt.getTime() === meaningful[0].detectedAt.getTime())
-        .sort(
-          (a, b) =>
-            TIE_ORDER.indexOf(a.status as Status) - TIE_ORDER.indexOf(b.status as Status),
-        )[0]
-    : null;
-
-  const status = (newest?.status as Status) ?? "APPLIED";
-  const stageDetail =
-    status === "IN_PROGRESS" && newest ? classificationOf(newest.message)?.stageDetail ?? null : null;
+  const { status, stageDetail } = headState(messages);
 
   const atsVendor =
     messages.map((message) => vendorForDomain(message.senderDomain)).find(Boolean) ?? null;

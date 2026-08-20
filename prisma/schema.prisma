@@ -74,16 +74,24 @@ model EmailMessage {
 
   applicationId Int? @map("application_id")
 
-  /// The earlier email in the same application that this one repeats, or null.
-  /// A derived fact, worked out in stage 5, which is the first place the other
-  /// emails of an application are visible. `is_significant` is left saying what
-  /// the model said about this email read on its own, which is true, so the two
-  /// facts can still be told apart.
-  repeatOfMessageId Int? @map("repeat_of_message_id")
+  /// The email whose line in the drawer this one is shown under, or null when
+  /// this email holds a line of its own. A derived fact, worked out in stage 5,
+  /// which is the first place the other emails of an application are visible,
+  /// and rewritten on every recalculation. Never authored.
+  ///
+  /// `is_significant` is left saying what the model said about this email read
+  /// on its own, which is true, so the two facts stay apart: this column says
+  /// where the email is shown, that one says whether it records a change of
+  /// state (LOOP2 3.2 rule 6).
+  parentMessageId Int?    @map("parent_message_id")
+  /// REPEAT | REMINDER | UPDATE. A label for display only. The nesting is
+  /// decided by parent_message_id and does not depend on this. Null exactly
+  /// when parent_message_id is null, which a CHECK in the migration enforces.
+  parentRelation  String? @map("parent_relation")
 
   account     GmailAccount @relation(fields: [gmailAccountId], references: [id], onDelete: Cascade)
-  repeatOf    EmailMessage?  @relation("MessageRepeats", fields: [repeatOfMessageId], references: [id], onDelete: SetNull)
-  repeats     EmailMessage[] @relation("MessageRepeats")
+  parent      EmailMessage?  @relation("MessageTree", fields: [parentMessageId], references: [id], onDelete: SetNull)
+  children    EmailMessage[] @relation("MessageTree")
   application Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
   statusHistory ApplicationStatusHistory[]
   correction    ApplicationCorrection?
@@ -93,7 +101,7 @@ model EmailMessage {
   @@index([classificationStatus])
   @@index([applicationId])
   @@index([receivedAt])
-  @@index([repeatOfMessageId])
+  @@index([parentMessageId])
   @@map("email_messages")
 }
 

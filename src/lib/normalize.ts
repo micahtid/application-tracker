@@ -120,6 +120,20 @@ export function roleSimilarity(a: string | null, b: string | null): number {
  */
 const SUBJECT_PREFIX = /^\s*(?:re|fw|fwd|reminder|resending|resend|second notice|action required)\s*[:\-]\s*/i;
 
+/**
+ * The markers a system puts in front of a message it is sending as a nudge,
+ * read off the subject before anything is normalised away.
+ *
+ * Narrower than SUBJECT_PREFIX on purpose. "Action required" is how plenty of
+ * systems word a first invitation, so it collapses into the same notice for
+ * the purpose of spotting a resend, but it is not a reminder about anything.
+ */
+const REMINDER_MARKER = /\b(?:reminder|resending|resend|second notice)\b\s*[:\-]/i;
+
+export function hasReminderMarker(subject: string | null | undefined): boolean {
+  return REMINDER_MARKER.test(subject ?? "");
+}
+
 export function normalizeSubject(subject: string | null | undefined): string {
   let value = (subject ?? "").trim();
 

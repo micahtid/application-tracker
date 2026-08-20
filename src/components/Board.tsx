@@ -7,6 +7,7 @@ import {
   ChevronRight,
   CircleCheck,
   Clock,
+  CornerDownRight,
   Ellipsis,
   Eye,
   EyeOff,
@@ -15,8 +16,51 @@ import {
   RotateCcw,
 } from "lucide-react";
 import Highlight from "./Highlight";
-import { SECTIONS, formatDate, type ApplicationView } from "@/lib/view";
+import { SECTIONS, formatDate, type ApplicationView, type EmailView } from "@/lib/view";
 import { STATUSES, type Status } from "@/lib/constants";
+
+const RELATION_LABELS: Record<string, string> = {
+  REPEAT: "Sent again",
+  REMINDER: "Reminder",
+  UPDATE: "Update",
+};
+
+/**
+ * One line of a drawer, and the lines shown under it. The tree is one level
+ * deep by construction (LOOP2 3.2 rule 3), so this renders children directly
+ * rather than calling itself: a grandchild has no meaning to draw.
+ */
+function EmailLine({ email, query }: { email: EmailView; query: string }) {
+  return (
+    <li className="email">
+      <a href={email.href} target="_blank" rel="noopener noreferrer">
+        <Mail className="lucide" />
+        <span className="email__title">
+          <Highlight text={email.title} query={query} />
+        </span>
+        <span className="email__date">{formatDate(email.date)}</span>
+      </a>
+      {email.children.length ? (
+        <ul className="emails emails--nested">
+          {email.children.map((child) => (
+            <li className="email email--child" key={child.id}>
+              <a href={child.href} target="_blank" rel="noopener noreferrer">
+                <CornerDownRight className="lucide" />
+                {child.relation ? (
+                  <span className="email__relation">{RELATION_LABELS[child.relation] ?? child.relation}</span>
+                ) : null}
+                <span className="email__title">
+                  <Highlight text={child.title} query={query} />
+                </span>
+                <span className="email__date">{formatDate(child.date)}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
 
 const SECTION_ICONS: Record<Status, React.ElementType> = {
   ACCEPTED: CircleCheck,
@@ -223,15 +267,7 @@ function ApplicationRow({
           <ul className="emails">
             {application.emails.length ? (
               application.emails.map((email) => (
-                <li className="email" key={email.id}>
-                  <a href={email.href} target="_blank" rel="noopener noreferrer">
-                    <Mail className="lucide" />
-                    <span className="email__title">
-                      <Highlight text={email.title} query={query} />
-                    </span>
-                    <span className="email__date">{formatDate(email.date)}</span>
-                  </a>
-                </li>
+                <EmailLine key={email.id} email={email} query={query} />
               ))
             ) : (
               <li className="email__none">No emails yet.</li>

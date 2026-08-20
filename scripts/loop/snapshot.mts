@@ -9,7 +9,17 @@
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import { LIVE_DB, LOOP_DIR, WORK_DB, dbUrl, ensureLoopDir, flag, openDb } from "./common.mts";
+import {
+  LIVE_DB,
+  LOOP_DIR,
+  SNAPSHOT_STATE,
+  WORK_DB,
+  dbUrl,
+  ensureLoopDir,
+  flag,
+  openDb,
+  writeJson,
+} from "./common.mts";
 
 if (!fs.existsSync(LIVE_DB)) {
   console.error(`There is no database at ${LIVE_DB}.`);
@@ -20,6 +30,17 @@ if (!fs.existsSync(LIVE_DB)) {
 // then be scoring a torn database rather than the board.
 const live = openDb(LIVE_DB);
 const open = await live.syncRun.findFirst({ where: { status: "RUNNING" } });
+
+/**
+ * What every classification ever run has cost, read before the copy is taken.
+ *
+ * `llm_usage` is a ledger the scratch database inherits along with everything
+ * else, so summing it after a pass gives the total spend of the mailbox's whole
+ * history rather than the price of the pass. Recording the total here is what
+ * lets `cost.pass_usd` be the difference, and therefore lets "it read 0" mean
+ * "this iteration bought nothing".
+ */
+const spentBefore = (await live.llmUsage.aggregate({ _sum: { costUsd: true } }))._sum.costUsd ?? 0;
 await live.$disconnect();
 
 if (open && !flag("force")) {
@@ -47,7 +68,10 @@ execFileSync("npx", ["prisma", "migrate", "deploy"], {
   shell: true,
 });
 
+writeJson(SNAPSHOT_STATE, { at: new Date().toISOString(), costUsdBefore: spentBefore });
+
 const size = fs.statSync(WORK_DB).size;
 console.log(`Copied ${LIVE_DB}`);
 console.log(`     to ${WORK_DB}  (${(size / 1024).toFixed(0)} kB)`);
+console.log(`Classification has cost ${spentBefore.toFixed(4)} so far. cost.pass_usd counts from here.`);
 console.log(`Everything the loop produces stays under ${LOOP_DIR}, which is gitignored.`);

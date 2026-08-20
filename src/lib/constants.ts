@@ -30,7 +30,7 @@ export const CLASSIFIER_VERSION = 1;
  * Raising this costs nothing, because it re-reads answers already on disk.
  * Raising CLASSIFIER_VERSION costs a pass over the mailbox.
  */
-export const GROUPING_VERSION = 2;
+export const GROUPING_VERSION = 3;
 
 /** A message that has failed this many times is left alone (Part 9). */
 export const MAX_CLASSIFICATION_ATTEMPTS = 3;

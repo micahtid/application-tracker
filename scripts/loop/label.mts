@@ -34,10 +34,19 @@ const seenIn = new Map<string, string>();
 type Section = "none" | "applications" | "notRelated" | "prefilter" | "failed";
 let section: Section = "none";
 let current: GroupLabel | null = null;
+/** The line an indented line below it belongs to. Cleared by every new group. */
+let lastTopLevel: string | null = null;
 
 const FIELD = /^-\s*(company|role|season|year|status)\s*:\s*(.*)$/i;
-const GROUPED = /^-\s*([0-9a-f]{6,32})\s*\|\s*sig\s*:\s*(yes|no)\b\s*\|(.*)$/i;
+const GROUPED = /^-\s*([0-9a-f]{6,32})\s*\|\s*sig\s*:\s*(yes|no)\b\s*\|\s*(?:rel\s*:\s*(REPEAT|REMINDER|UPDATE)\s*\|)?(.*)$/i;
 const SAMPLED = /^-\s*([0-9a-f]{6,32})\s*\|\s*related\s*:\s*(yes|no)\b\s*\|(.*)$/i;
+
+/**
+ * Two spaces means "shown under the nearest line above with less indentation".
+ * Anything deeper is an error rather than a deeper tree, because the drawer is
+ * one level and a grandchild would have no meaning to read (LOOP2 3.2 rule 3).
+ */
+const INDENT = 2;
 
 function value(raw: string): string | null {
   const trimmed = raw.trim();
@@ -45,6 +54,7 @@ function value(raw: string): string | null {
 }
 
 function closeGroup(): void {
+  lastTopLevel = null;
   if (!current) return;
   // A block with no message lines is dropped: that is how a row that should
   // not exist is deleted.
@@ -99,15 +109,41 @@ lines.forEach((line, index) => {
     if (!messageMatch) { problems.push(`line ${at}: cannot read "${trimmed.slice(0, 60)}"`); return; }
     if (!current) { problems.push(`line ${at}: a message outside any group`); return; }
 
-    const [, id, sig] = messageMatch;
+    const [, id, sig, rel] = messageMatch;
     const already = seenIn.get(id);
     if (already) {
       problems.push(`line ${at}: message ${id} is in both ${already} and ${current.id}`);
       return;
     }
+
+    const depth = line.length - line.trimStart().length;
+    if (depth % INDENT) {
+      problems.push(`line ${at}: indented ${depth} spaces, which is not a whole number of levels`);
+      return;
+    }
+    if (depth > INDENT) {
+      problems.push(`line ${at}: indented ${depth} spaces. The drawer is one level deep, so a child of a child is an error`);
+      return;
+    }
+    if (depth === INDENT && !lastTopLevel) {
+      problems.push(`line ${at}: indented, but there is no line above it in this group to sit under`);
+      return;
+    }
+    const parent = depth === INDENT ? lastTopLevel : null;
+    if (rel && !parent) {
+      problems.push(`line ${at}: rel: on a line that is not indented. A relation without a parent is half a fact`);
+      return;
+    }
+
     seenIn.set(id, current.id);
     current.messages.push(id);
-    messages[id] = { related: true, significant: sig.toLowerCase() === "yes" };
+    if (!parent) lastTopLevel = id;
+    messages[id] = {
+      related: true,
+      significant: sig.toLowerCase() === "yes",
+      parent,
+      relation: parent ? (rel ? rel.toUpperCase() : "UPDATE") : null,
+    };
     return;
   }
 
@@ -123,6 +159,8 @@ lines.forEach((line, index) => {
   messages[id] = {
     related: related.toLowerCase() === "yes",
     significant: false,
+    parent: null,
+    relation: null,
     why: section === "prefilter" ? "dropped by the prefilter" : "judged not related",
   };
 });
@@ -146,10 +184,12 @@ writeJson(LABELS_MESSAGES, messages);
 writeJson(LABELS_APPLICATIONS, { revision: labelRevision(), groups });
 
 const grouped = groups.reduce((total, group) => total + group.messages.length, 0);
+const children = Object.values(messages).filter((label) => label.parent).length;
 const relatedSampled = Object.values(messages).filter((label) => label.related).length - grouped;
 
 console.log(`Wrote ${LABELS_APPLICATIONS}`);
 console.log(`      ${LABELS_MESSAGES}`);
 console.log(`  ${groups.length} groups over ${grouped} messages`);
+console.log(`  ${children} of them are shown under an earlier email, ${grouped - children} hold a line of their own`);
 console.log(`  ${Object.keys(messages).length} messages labelled in total`);
 console.log(`  ${relatedSampled} of the sampled not related messages were marked related after all`);

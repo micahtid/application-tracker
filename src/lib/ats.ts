@@ -1,38 +1,59 @@
 /**
- * Applicant tracking systems. Two jobs:
+ * Applicant tracking systems. Three jobs:
  *   1. The sender domain sweep (D5), which is not narrowed by keywords.
  *   2. The blocklist that stops a vendor being returned as the employer (3.3).
+ *   3. Which of two kinds of go between sent an email (LOOP2 Invariant 1).
+ *
+ * `kind` carries real weight, and getting one backwards is expensive in both
+ * directions:
+ *
+ *   PLATFORM sends the employer's own mail. It can therefore begin an
+ *   application, and several rows on this board exist only because a platform
+ *   sent their confirmation. Label one of these ASSESSMENT and those rows stop
+ *   being created at all.
+ *
+ *   ASSESSMENT runs exams for an employer. A company that runs exams has never
+ *   received anybody's application, so an email from one can only ever
+ *   continue an application that already exists, never start one. Label one of
+ *   these PLATFORM and its exams go on splitting applications in two.
+ *
+ * This is a fact about what those businesses are, not a fact about any one
+ * mailbox, which is why it can live in a list at all.
  */
 export const ATS_VENDORS = [
-  { vendor: "Greenhouse", domains: ["greenhouse.io", "us.greenhouse-mail.io", "greenhouse-mail.io"] },
-  { vendor: "Lever", domains: ["lever.co", "hire.lever.co"] },
-  { vendor: "Workday", domains: ["myworkday.com", "myworkdayjobs.com", "workday.com"] },
-  { vendor: "Ashby", domains: ["ashbyhq.com", "ashbyhq.io"] },
-  { vendor: "iCIMS", domains: ["icims.com"] },
-  { vendor: "SmartRecruiters", domains: ["smartrecruiters.com", "smartrecruiters.io"] },
-  { vendor: "Taleo", domains: ["taleo.net", "taleo.com"] },
-  { vendor: "Jobvite", domains: ["jobvite.com", "jobvite.net"] },
-  { vendor: "Workable", domains: ["workable.com", "workablemail.com"] },
-  { vendor: "SuccessFactors", domains: ["successfactors.com", "sap.com"] },
-  { vendor: "BambooHR", domains: ["bamboohr.com"] },
-  { vendor: "Rippling", domains: ["rippling.com", "rippling-ats.com"] },
-  { vendor: "Breezy", domains: ["breezy.hr"] },
-  { vendor: "Recruitee", domains: ["recruitee.com"] },
-  { vendor: "Teamtailor", domains: ["teamtailor.com"] },
-  { vendor: "Paylocity", domains: ["paylocity.com"] },
-  { vendor: "Dayforce", domains: ["dayforcehcm.com", "ceridian.com"] },
-  { vendor: "Oracle Recruiting", domains: ["oraclecloud.com"] },
-  { vendor: "Eightfold", domains: ["eightfold.ai"] },
-  { vendor: "Phenom", domains: ["phenompeople.com"] },
-  { vendor: "Avature", domains: ["avature.net"] },
-  { vendor: "HireVue", domains: ["hirevue.com"] },
-  { vendor: "CodeSignal", domains: ["codesignal.com"] },
-  { vendor: "HackerRank", domains: ["hackerrank.com"] },
-  { vendor: "Karat", domains: ["karat.com"] },
-  { vendor: "Modern Hire", domains: ["modernhire.com"] },
-  { vendor: "Gem", domains: ["gem.com", "gemhq.com"] },
-  { vendor: "Pinpoint", domains: ["pinpointhq.com"] },
+  { vendor: "Greenhouse", kind: "PLATFORM", domains: ["greenhouse.io", "us.greenhouse-mail.io", "greenhouse-mail.io"] },
+  { vendor: "Lever", kind: "PLATFORM", domains: ["lever.co", "hire.lever.co"] },
+  { vendor: "Workday", kind: "PLATFORM", domains: ["myworkday.com", "myworkdayjobs.com", "workday.com"] },
+  { vendor: "Ashby", kind: "PLATFORM", domains: ["ashbyhq.com", "ashbyhq.io"] },
+  { vendor: "iCIMS", kind: "PLATFORM", domains: ["icims.com"] },
+  { vendor: "SmartRecruiters", kind: "PLATFORM", domains: ["smartrecruiters.com", "smartrecruiters.io"] },
+  { vendor: "Taleo", kind: "PLATFORM", domains: ["taleo.net", "taleo.com"] },
+  { vendor: "Jobvite", kind: "PLATFORM", domains: ["jobvite.com", "jobvite.net"] },
+  { vendor: "Workable", kind: "PLATFORM", domains: ["workable.com", "workablemail.com"] },
+  { vendor: "SuccessFactors", kind: "PLATFORM", domains: ["successfactors.com", "sap.com"] },
+  { vendor: "BambooHR", kind: "PLATFORM", domains: ["bamboohr.com"] },
+  { vendor: "Rippling", kind: "PLATFORM", domains: ["rippling.com", "rippling-ats.com"] },
+  { vendor: "Breezy", kind: "PLATFORM", domains: ["breezy.hr"] },
+  { vendor: "Recruitee", kind: "PLATFORM", domains: ["recruitee.com"] },
+  { vendor: "Teamtailor", kind: "PLATFORM", domains: ["teamtailor.com"] },
+  { vendor: "Paylocity", kind: "PLATFORM", domains: ["paylocity.com"] },
+  { vendor: "Dayforce", kind: "PLATFORM", domains: ["dayforcehcm.com", "ceridian.com"] },
+  { vendor: "Oracle Recruiting", kind: "PLATFORM", domains: ["oraclecloud.com"] },
+  { vendor: "Eightfold", kind: "PLATFORM", domains: ["eightfold.ai"] },
+  { vendor: "Phenom", kind: "PLATFORM", domains: ["phenompeople.com"] },
+  { vendor: "Avature", kind: "PLATFORM", domains: ["avature.net"] },
+  { vendor: "HireVue", kind: "ASSESSMENT", domains: ["hirevue.com"] },
+  { vendor: "CodeSignal", kind: "ASSESSMENT", domains: ["codesignal.com"] },
+  { vendor: "HackerRank", kind: "ASSESSMENT", domains: ["hackerrank.com", "hackerrankforwork.com"] },
+  { vendor: "Karat", kind: "ASSESSMENT", domains: ["karat.com"] },
+  { vendor: "Modern Hire", kind: "ASSESSMENT", domains: ["modernhire.com"] },
+  { vendor: "Gem", kind: "PLATFORM", domains: ["gem.com", "gemhq.com"] },
+  { vendor: "Pinpoint", kind: "PLATFORM", domains: ["pinpointhq.com"] },
+  { vendor: "Codility", kind: "ASSESSMENT", domains: ["codility.com"] },
+  { vendor: "Criteria", kind: "ASSESSMENT", domains: ["criteriacorp.com"] },
 ] as const;
+
+export type VendorKind = "PLATFORM" | "ASSESSMENT";
 
 export const ATS_DOMAINS: string[] = ATS_VENDORS.flatMap((entry) => [...entry.domains]);
 
@@ -58,14 +79,28 @@ export const ATS_BLOCKLIST: string[] = [
   "hiring team",
 ];
 
-/** The vendor behind a sender domain, or null when it is not an ATS. */
-export function vendorForDomain(domain: string | null | undefined): string | null {
+/** The list entry behind a sender domain, or null when it is not an ATS. */
+export function atsForDomain(domain: string | null | undefined) {
   if (!domain) return null;
   const lower = domain.toLowerCase();
   for (const entry of ATS_VENDORS) {
-    if (entry.domains.some((d) => lower === d || lower.endsWith("." + d))) return entry.vendor;
+    if (entry.domains.some((d) => lower === d || lower.endsWith("." + d))) return entry;
   }
   return null;
+}
+
+/** The vendor behind a sender domain, or null when it is not an ATS. */
+export function vendorForDomain(domain: string | null | undefined): string | null {
+  return atsForDomain(domain)?.vendor ?? null;
+}
+
+/**
+ * True when the sender runs exams rather than sending the employer's own mail.
+ * A domain the list does not hold at all answers false, which is the safe way
+ * round: an unknown sender behaves exactly as it does today.
+ */
+export function isAssessmentVendor(domain: string | null | undefined): boolean {
+  return atsForDomain(domain)?.kind === "ASSESSMENT";
 }
 
 /** True when the model handed back an ATS vendor instead of the employer. */

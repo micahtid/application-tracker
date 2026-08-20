@@ -130,6 +130,47 @@ const FIXTURES: Fixture[] = [
   { day: "2026-06-01", thread: "t33", sender: "careers@hooli.example", subject: "Application received", company: "Hooli", role: "Search Intern", status: "APPLIED", significant: true, title: "Application Confirmation" },
   { day: "2026-06-05", thread: "t34", sender: "careers@hooli.example", subject: "Interview invitation", company: "Hooli", role: "Search Intern", status: "IN_PROGRESS", stage: "INTERVIEW", significant: true, title: "Interview Invitation" },
   { day: "2026-06-09", thread: "t35", sender: "careers@hooli.example", subject: "Update: application complete", company: "Hooli", role: "Search Intern", status: "APPLIED", significant: true, title: "Application Complete" },
+
+  // Invariant: a company that runs exams never receives an application, so an
+  // exam email continues an application rather than starting one, whatever
+  // title it carries. The employer announced the assessment; the vendor named
+  // the paper after the programme instead of the posting, and the two titles
+  // share one word.
+  { day: "2026-07-01", thread: "t36", sender: "careers@stark.example", subject: "Application received", company: "Stark Devices", role: "Applied Robotics Engineer Intern, Malibu", status: "APPLIED", significant: true, title: "Application Confirmation" },
+  { day: "2026-07-02", thread: "t37", sender: "no-reply@stark.example", subject: "Next Steps: Technical Assessment", company: "Stark Devices", role: "Applied Robotics Engineer Intern, Malibu", status: "IN_PROGRESS", stage: "ASSESSMENT", significant: true, title: "Assessment Invitation" },
+  { day: "2026-07-03", thread: "t38", sender: "mailer@hackerrankforwork.com", subject: "Stark Global ENG Intern Test Invitation", company: "Stark Devices", role: "Global ENG and Robotics Intern", status: "IN_PROGRESS", stage: "ASSESSMENT", significant: true, title: "Assessment Invitation" },
+  // ... and the completion notice, which names no role at all, so every row at
+  // that employer would accept it. Not settled is not the same as nothing
+  // found, and the step has to run in both cases or this email is guessed at.
+  { day: "2026-07-04", thread: "t39", sender: "mailer@hackerrankforwork.com", subject: "Thanks for taking the Stark Global ENG Intern Test", company: "Stark Devices", role: null, status: "IN_PROGRESS", stage: "ASSESSMENT", significant: false, title: "Assessment Completion Confirmation" },
+
+  // Invariant: the guard is "exactly one". Two postings at one employer are
+  // both waiting on an assessment here, so the vendor's email cannot say which
+  // it belongs to, and a third row is the honest answer rather than a guess.
+  { day: "2026-07-05", thread: "t40", sender: "careers@wayne.example", subject: "Complete your pre interview assessment", company: "Wayne Systems", role: "Software Engineering, Gotham", status: "IN_PROGRESS", stage: "ASSESSMENT", significant: true, title: "Assessment Invitation" },
+  { day: "2026-07-05", thread: "t41", sender: "careers@wayne.example", subject: "Complete your pre interview assessment", company: "Wayne Systems", role: "Software Engineering, Bludhaven", status: "IN_PROGRESS", stage: "ASSESSMENT", significant: true, title: "Assessment Invitation" },
+  { day: "2026-07-06", thread: "t42", sender: "mailer@codility.com", subject: "Wayne invites you to a test", company: "Wayne Systems", role: "Engineering Test", status: "IN_PROGRESS", stage: "ASSESSMENT", significant: true, title: "Assessment Invitation" },
+
+  // Invariant: an exam vendor writing about an employer with no application at
+  // all still creates one. Refusing would lose the email altogether, and a row
+  // that says only "there was an exam" is more than nothing.
+  { day: "2026-07-07", thread: "t43", sender: "mailer@codility.com", subject: "Oscorp invites you to a test", company: "Oscorp", role: "Chemistry Test", status: "IN_PROGRESS", stage: "ASSESSMENT", significant: true, title: "Assessment Invitation" },
+
+  // Invariant: a platform sends the employer's own mail, so it can begin an
+  // application. Several rows on the real board exist only because a platform
+  // sent their confirmation, and labelling one of these an exam vendor would
+  // delete them without a word.
+  { day: "2026-07-08", thread: "t44", sender: "no-reply@greenhouse.io", subject: "Thank you for applying", company: "Tyrell", role: "Genetics Intern", status: "APPLIED", significant: true, title: "Application Confirmation" },
+
+  // Invariant: what a row is waiting on is read from its emails, not from its
+  // status column. That column still says APPLIED here, because it is written
+  // when the row is made and not touched again until stage 5, which runs after
+  // the whole matching pass. Read the column and this exam starts its own row.
+  { day: "2026-07-09", thread: "t45", sender: "careers@abstergo.example", subject: "Application received", company: "Abstergo", role: "Animus Platform Intern", status: "APPLIED", significant: true, title: "Application Confirmation" },
+  { day: "2026-07-10", thread: "t46", sender: "careers@abstergo.example", subject: "Next Steps: Technical Assessment", company: "Abstergo", role: "Animus Platform Intern", status: "IN_PROGRESS", stage: "ASSESSMENT", significant: true, title: "Assessment Invitation" },
+  { day: "2026-07-11", thread: "t47", sender: "mailer@criteriacorp.com", subject: "Abstergo invites you to complete an assessment", company: "Abstergo", role: "Historical Analysis Battery", status: "IN_PROGRESS", stage: "ASSESSMENT", significant: true, title: "Assessment Invitation" },
+  // ... and a nudge about that stage, worded like neither of the two papers.
+  { day: "2026-07-12", thread: "t48", sender: "careers@abstergo.example", subject: "Reminder: Animus competency assessment completion", company: "Abstergo", role: "Animus Platform Intern", status: "IN_PROGRESS", stage: "ASSESSMENT", significant: false, title: "Assessment Completion Reminder" },
 ];
 
 async function seed() {
@@ -179,7 +220,10 @@ async function snapshot() {
   const applications = await prisma.application.findMany({
     orderBy: [{ companyName: "asc" }, { id: "asc" }],
     include: {
-      messages: { select: { gmailMessageId: true }, orderBy: { receivedAt: "asc" } },
+      messages: {
+        select: { id: true, gmailMessageId: true, parentMessageId: true, parentRelation: true, isSignificant: true, subject: true },
+        orderBy: { receivedAt: "asc" },
+      },
       statusHistory: true,
     },
   });
@@ -194,6 +238,11 @@ async function snapshot() {
     stage: application.stageDetail,
     ats: application.atsVendor,
     emails: application.messages.map((message) => message.gmailMessageId),
+    tree: application.messages.map((message) => ({
+      id: message.gmailMessageId,
+      parent: application.messages.find((other) => other.id === message.parentMessageId)?.gmailMessageId ?? null,
+      relation: message.parentRelation,
+    })),
   }));
 }
 
@@ -220,7 +269,7 @@ const unattached = await prisma.emailMessage.count({ where: { applicationId: nul
 
 console.log(JSON.stringify(first, null, 2));
 
-expect("nineteen applications", first.length === 19);
+expect("twenty six applications", first.length === 26);
 expect("running it again changes nothing", JSON.stringify(first) === JSON.stringify(second));
 expect(
   "two emails from one company make one row",
@@ -295,6 +344,107 @@ expect(
 expect(
   "one thread carrying two different jobs makes two rows",
   first.filter((row) => row.company === "Northwind").length === 2,
+);
+expect(
+  "an exam is a step inside an application, not an application",
+  first.filter((row) => row.company === "Stark Devices").length === 1,
+);
+expect(
+  "an exam email whose title agrees with nothing still lands on the one row waiting for it",
+  first.find((row) => row.company === "Stark Devices")?.emails.length === 4,
+);
+expect(
+  "two postings waiting on an assessment at once make a third row rather than a guess",
+  first.filter((row) => row.company === "Wayne Systems").length === 3,
+);
+expect(
+  "an exam vendor writing about an employer with no application still creates one",
+  first.filter((row) => row.company === "Oscorp").length === 1,
+);
+expect(
+  "a platform sending a first confirmation still creates an application",
+  first.filter((row) => row.company === "Tyrell").length === 1,
+);
+expect(
+  "what a row is waiting on is read from its emails, not from its status column",
+  first.filter((row) => row.company === "Abstergo").length === 1,
+);
+
+// Invariant: being a repeat is one case of being shown under an earlier email,
+// and is stored as one. The risk in a rename is a change of behaviour smuggled
+// inside it, so the two columns are checked to say exactly one thing each.
+const tree = first.flatMap((row) => row.tree);
+expect(
+  "a relation is present exactly when a parent is",
+  tree.every((node) => (node.parent === null) === (node.relation === null)),
+);
+expect(
+  "a resend is still labelled REPEAT, which is what it always meant",
+  tree.filter((node) => node.relation === "REPEAT").length > 0,
+);
+// Invariant: a drawer shows one line for each state the application reached,
+// and every other email under the line for its own state. This row reached
+// three: applied, interviewing, rejected. The fourth email is a scheduling
+// reply that states no new state, so it is shown under the line for the state
+// it does state rather than nowhere at all.
+expect(
+  "one line for each state the application reached, and no more",
+  (() => {
+    const row = first.find((item) => item.company === "Massive Dynamic")!;
+    return row.tree.filter((node) => node.parent === null).length === 3 && row.tree.length === 4;
+  })(),
+);
+// Invariant: the exam sits under the announcement of the stage it belongs to,
+// because they are the same stage and the announcement came first. Neither
+// title is compared with the other, which is the whole point: they do not
+// agree, and no comparison of them could put this right.
+expect(
+  "an exam is shown under the announcement of the stage it belongs to",
+  (() => {
+    const row = first.find((item) => item.company === "Stark Devices")!;
+    const invitation = row.tree[1];
+    return (
+      row.tree.filter((node) => node.parent === null).length === 2 &&
+      row.tree[2].parent === invitation.id &&
+      row.tree[3].parent === invitation.id
+    );
+  })(),
+);
+// Invariant: a nudge about a stage is shown beside the papers rather than
+// under one of them, because a tree one level deep needs no ruling between two
+// invitations a reader can see side by side anyway.
+expect(
+  "a reminder is labelled a reminder and sits alongside what it reminds about",
+  (() => {
+    const row = first.find((item) => item.company === "Abstergo")!;
+    const announcement = row.tree[1];
+    const reminder = row.tree[3];
+    return (
+      row.tree.length === 4 &&
+      reminder.relation === "REMINDER" &&
+      // Beside the two papers rather than under either of them. Which paper it
+      // means is a question the drawer never has to answer.
+      reminder.parent === announcement.id &&
+      row.tree[2].parent === announcement.id
+    );
+  })(),
+);
+expect(
+  "the two resends of one notice are shown under it, and it is not shown under anything",
+  (() => {
+    const row = first.find((item) => item.company === "Soylent Foods")!;
+    const shown = row.tree.filter((node) => node.parent !== null);
+    return (
+      row.tree.length === 4 &&
+      shown.length === 2 &&
+      shown.every((node) => node.parent === row.tree[0].id && node.relation === "REPEAT")
+    );
+  })(),
+);
+expect(
+  "no email is its own parent, and no parent has a parent",
+  tree.every((node) => node.id !== node.parent) &&
+    tree.every((node) => !node.parent || tree.find((other) => other.id === node.parent)?.parent === null),
 );
 
 let failures = 0;

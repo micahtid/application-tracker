@@ -53,6 +53,7 @@ const messagesById = new Map(
   (
     await db.emailMessage.findMany({
       select: {
+        id: true,
         gmailMessageId: true,
         subject: true,
         senderDomain: true,
@@ -63,6 +64,7 @@ const messagesById = new Map(
         classificationStatus: true,
         classificationError: true,
         applicationId: true,
+        parentMessageId: true,
       },
     })
   ).map((message) => [message.gmailMessageId, message]),
@@ -142,6 +144,53 @@ if (seeded) {
   }
 }
 
+/**
+ * The group's messages in reading order: every line that holds a line of its
+ * own, oldest first, each followed by the lines shown under it.
+ *
+ * A label wins over the pipeline wherever one exists, because the labels are
+ * the truth and the sheet is how they are corrected. Where none exists the
+ * pipeline's answer is offered as a starting point, exactly as `sig:` is.
+ */
+function treeOf(ids: string[]): [string, string | null][] {
+  const byGmailId = new Map(ids.map((id) => [id, messagesById.get(id)]));
+  const rowIdToGmailId = new Map<number, string>();
+  for (const [id, message] of byGmailId) if (message) rowIdToGmailId.set(message.id, id);
+
+  const parentOf = new Map<string, string | null>();
+  for (const id of ids) {
+    const known = labels.messages[id];
+    if (known && known.parent !== undefined) {
+      parentOf.set(id, known.parent && byGmailId.has(known.parent) ? known.parent : null);
+      continue;
+    }
+    const parent = byGmailId.get(id)?.parentMessageId ?? null;
+    parentOf.set(id, parent === null ? null : rowIdToGmailId.get(parent) ?? null);
+  }
+
+  // One level deep, always. A parent that is itself shown under something else
+  // would make the sheet unreadable, so the grandchild is lifted to its
+  // grandparent rather than dropped.
+  for (const id of ids) {
+    const parent = parentOf.get(id);
+    if (parent && parentOf.get(parent)) parentOf.set(id, parentOf.get(parent)!);
+  }
+
+  const at = (id: string) => byGmailId.get(id)?.receivedAt.getTime() ?? 0;
+  const order = (a: string, b: string) => at(a) - at(b) || a.localeCompare(b);
+
+  const out: [string, string | null][] = [];
+  for (const id of [...ids].filter((id) => !parentOf.get(id)).sort(order)) {
+    out.push([id, null]);
+    for (const child of ids.filter((other) => parentOf.get(other) === id).sort(order)) {
+      out.push([child, id]);
+    }
+  }
+  // A child whose parent is not in this group at all still has to be shown.
+  for (const id of ids) if (!out.some(([shown]) => shown === id)) out.push([id, null]);
+  return out;
+}
+
 blocks.sort((a, b) => (a.company ?? "").localeCompare(b.company ?? "") || a.id.localeCompare(b.id));
 
 const lines: string[] = [];
@@ -161,6 +210,14 @@ lines.push("  naming it after its own earliest message id.");
 lines.push("- **`sig:`** means *this email records a real new milestone*. A reminder, a resend, or a");
 lines.push("  second copy of a notice already seen in this application is `sig:no`, however");
 lines.push("  reasonable it looks read on its own.");
+lines.push("- **Indentation** is the other question, and a different one: *where is this email shown*.");
+lines.push("  Two spaces means this email is shown under the nearest line above it with less");
+lines.push("  indentation, because it reports on that email's step rather than starting one of its");
+lines.push("  own. Move a line and change its indentation together. A child of a child is an error,");
+lines.push("  not a deeper tree.");
+lines.push("- **`rel:`** rides on indented lines only, and says which kind of report it is:");
+lines.push("  `REPEAT` for the same notice sent again, `REMINDER` for a nudge about it, `UPDATE`");
+lines.push("  for anything else. It is a chip in the drawer and nothing else depends on it.");
 lines.push("- **Recall**: in the last two sections, flip `related:no` to `related:yes` for anything");
 lines.push("  that really was about an application you submitted. That is the only way recall is");
 lines.push("  ever measured (F7).");
@@ -184,12 +241,13 @@ for (const block of blocks) {
   lines.push(`- season: ${field(block.season)}`);
   lines.push(`- year: ${field(block.year)}`);
   lines.push(`- status: ${field(block.status)}`);
-  for (const id of block.messages) {
+  for (const [id, parent] of treeOf(block.messages)) {
     const message = messagesById.get(id);
     const known = labels.messages[id];
     const significant = known ? known.significant : Boolean(message?.isSignificant);
+    const relation = parent ? ` rel:${known?.relation ?? "UPDATE"} |` : "";
     lines.push(
-      `- ${id} | sig:${significant ? "yes" : "no "} | ${message ? message.receivedAt.toISOString().slice(0, 10) : "?"} | ${clean(message?.senderDomain)} | ${clean(message?.subject)}`,
+      `${parent ? "  " : ""}- ${id} | sig:${significant ? "yes" : "no "} |${relation} ${message ? message.receivedAt.toISOString().slice(0, 10) : "?"} | ${clean(message?.senderDomain)} | ${clean(message?.subject)}`,
     );
   }
   lines.push("");
@@ -202,7 +260,15 @@ const notRelated = await db.emailMessage.findMany({
   select: { gmailMessageId: true, subject: true, senderEmail: true, receivedAt: true },
 });
 
-const sample = deterministicSample(notRelated, (message) => message.gmailMessageId, RECALL_SAMPLE);
+// A message already moved into a group has been answered: the label says it
+// is related, whatever the model said. Listing it again under "not related"
+// asks the same question twice and reads back as a contradiction.
+const settled = new Set(labels.applications.groups.flatMap((group) => group.messages));
+const sample = deterministicSample(
+  notRelated.filter((message) => !settled.has(message.gmailMessageId)),
+  (message) => message.gmailMessageId,
+  RECALL_SAMPLE,
+);
 sample.sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime());
 
 lines.push(`## Not related (${sample.length} of ${notRelated.length}, sampled)`);

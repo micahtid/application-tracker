@@ -12,7 +12,8 @@ import {
   rolesMatch,
   sameEmployer,
 } from "@/lib/normalize";
-import { classificationOf } from "./recompute";
+import { isAssessmentVendor } from "@/lib/ats";
+import { classificationOf, headState } from "./recompute";
 import type { Classification } from "@/lib/llm";
 
 /**
@@ -117,6 +118,46 @@ async function requisitionContradicts(
 ): Promise<boolean> {
   if (!incoming.size) return false;
   return requisitionsDisagree(await requisitionsOf(db, applicationId), incoming);
+}
+
+/**
+ * LOOP2 Invariant 1. A company that runs exams never receives an application,
+ * so an email from one can only ever continue an application that already
+ * exists.
+ *
+ * The rules this sits behind compare two job titles to decide whether two
+ * applications are the same. That is the right question about two
+ * applications, and the wrong question about an exam: the vendor names the
+ * paper after the programme it belongs to rather than after the posting, and a
+ * hiring process does not begin with an exam anyway.
+ *
+ * It is the last thing tried, so a row that matches on its title still wins on
+ * its title. And it acts only when exactly one application at the employer is
+ * waiting on an assessment, because an employer running two postings through
+ * one vendor gives no way to tell which paper belongs to which, and guessing
+ * there would merge two real applications.
+ *
+ * "Waiting on an assessment" is read from the emails already attached rather
+ * than from the row's `status` column, which stage 5 has not written yet.
+ */
+async function assessmentHandOff(
+  db: Db,
+  message: EmailMessage,
+  candidates: Application[],
+): Promise<Application | null> {
+  if (!isAssessmentVendor(message.senderDomain)) return null;
+
+  const waiting: Application[] = [];
+  for (const candidate of candidates) {
+    const attached = await db.emailMessage.findMany({
+      where: { applicationId: candidate.id },
+      orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
+    });
+    const state = headState(attached);
+    if (state.status === "IN_PROGRESS" && state.stageDetail === "ASSESSMENT") waiting.push(candidate);
+  }
+
+  return waiting.length === 1 ? waiting[0] : null;
 }
 
 function scoreCandidate(candidate: Application, classification: Classification): number {
@@ -313,13 +354,21 @@ export async function attachClassified(db: Db): Promise<MatchOutcome> {
     let target: Application | null = null;
 
     if (usable.length === 1) {
+      // Settled on its title. Nothing below is consulted.
       target = usable[0];
-    } else if (usable.length > 1) {
-      // Several rows could take it, so the loose score decides which, with the
-      // row id breaking a dead heat so the answer never depends on row order.
-      target = usable
-        .map((candidate) => ({ candidate, score: scoreCandidate(candidate, classification) }))
-        .sort((a, b) => b.score - a.score || a.candidate.id - b.candidate.id)[0].candidate;
+    } else {
+      // Not settled: either no row will take it, or several will and the score
+      // would be picking between them. An exam is neither of those questions,
+      // so it is asked first, and only then does the score get its turn.
+      target = await assessmentHandOff(db, message, candidates);
+
+      if (!target && usable.length > 1) {
+        // Several rows could take it, so the loose score decides which, with the
+        // row id breaking a dead heat so the answer never depends on row order.
+        target = usable
+          .map((candidate) => ({ candidate, score: scoreCandidate(candidate, classification) }))
+          .sort((a, b) => b.score - a.score || a.candidate.id - b.candidate.id)[0].candidate;
+      }
     }
 
     if (!target) {

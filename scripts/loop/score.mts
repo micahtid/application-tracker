@@ -16,9 +16,11 @@
  */
 import fs from "node:fs";
 import {
+  FLOORS,
   HISTORY,
   LAST_RESULT,
   SCORECARD,
+  SNAPSHOT_STATE,
   arg,
   ensureLoopDir,
   halfOf,
@@ -27,7 +29,9 @@ import {
   readJson,
   readLabels,
   type Half,
+  type SnapshotState,
 } from "./common.mts";
+import { drawerTree, shownIn } from "../../src/lib/drawer.ts";
 import { normalizeCompany } from "../../src/lib/normalize.ts";
 import { GROUPING_VERSION, CLASSIFIER_VERSION } from "../../src/lib/constants.ts";
 import { findSplitSuspects } from "../../src/lib/pipeline/duplicates.ts";
@@ -55,7 +59,17 @@ const applications = await db.application.findMany({
   include: {
     messages: {
       orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
-      select: { gmailMessageId: true, receivedAt: true },
+      select: {
+        id: true,
+        gmailMessageId: true,
+        emailTitle: true,
+        receivedAt: true,
+        senderDomain: true,
+        isSignificant: true,
+        isApplicationRelated: true,
+        parentMessageId: true,
+        parentRelation: true,
+      },
     },
     statusHistory: { include: { message: { select: { gmailMessageId: true } } } },
   },
@@ -170,6 +184,8 @@ const metrics: Record<string, Record<Half, Tally>> = {
   "state.milestone_precision": empty(),
   "recall.related": empty(),
   "prefilter.false_drop": empty(),
+  "tree.parent_accuracy": empty(),
+  "tree.top_level_precision": empty(),
 };
 
 function count(metric: string, half: Half, hit: boolean): void {
@@ -284,6 +300,65 @@ for (const [id, label] of Object.entries(messageLabels)) {
   }
 }
 
+// The tree and the drawer. Two different questions, counted separately.
+//
+//   tree.parent_accuracy  reads the stored parent, so it says whether the
+//                         pipeline worked out the right shape.
+//   tree.top_level_precision and drawer.hidden read the drawer, so they say
+//                         whether that shape reaches a person.
+
+const gmailIdOfRow = new Map<number, string>();
+for (const application of applications) {
+  for (const message of application.messages) gmailIdOfRow.set(message.id, message.gmailMessageId);
+}
+
+const computedParent = new Map<string, string | null>();
+for (const application of applications) {
+  for (const message of application.messages) {
+    computedParent.set(
+      message.gmailMessageId,
+      message.parentMessageId === null ? null : gmailIdOfRow.get(message.parentMessageId) ?? null,
+    );
+  }
+}
+
+/** Broken down by relation, so nesting a reminder and nesting a completion
+ *  notice can be told apart even though one rule does both (LOOP2 4.2). */
+const parentByRelation = new Map<string, Tally>();
+let hidden = 0;
+const topLevelSpread = new Map<number, number>();
+
+for (const application of applications) {
+  const tree = drawerTree(application.messages);
+  const shown = new Set(shownIn(tree).map((message) => message.gmailMessageId));
+  const related = application.messages.filter((message) => message.isApplicationRelated);
+
+  hidden += related.filter((message) => !shown.has(message.gmailMessageId)).length;
+  topLevelSpread.set(tree.length, (topLevelSpread.get(tree.length) ?? 0) + 1);
+
+  for (const node of tree) {
+    const id = node.message.gmailMessageId;
+    const group = groupOfMessage.get(id);
+    const label = messageLabels[id];
+    if (!group || !label) continue;
+    count("tree.top_level_precision", halfOfGroup.get(group)!, !label.parent);
+  }
+}
+
+for (const [id, label] of Object.entries(messageLabels)) {
+  if (!label.parent) continue;
+  const group = groupOfMessage.get(id);
+  if (!group) continue;
+  const hit = computedParent.get(id) === label.parent;
+  count("tree.parent_accuracy", halfOfGroup.get(group)!, hit);
+
+  const relation = label.relation ?? "UPDATE";
+  const tally = parentByRelation.get(relation) ?? { hit: 0, total: 0 };
+  tally.total += 1;
+  if (hit) tally.hit += 1;
+  parentByRelation.set(relation, tally);
+}
+
 // ---------------------------------------------------------------- reporting
 
 function ratio(tally: Tally): number | null {
@@ -310,7 +385,18 @@ const groupedLabels = applicationLabels.groups.reduce((sum, group) => sum + grou
 
 const failures = await db.emailMessage.count({ where: { classificationStatus: "FAILED" } });
 const suspects = await findSplitSuspects(db);
+/**
+ * What this loop has spent, rather than what the mailbox has ever spent.
+ *
+ * `llm_usage` is copied into the scratch database along with everything else,
+ * so its sum is the whole history of classification and reads the same however
+ * little an iteration bought. loop:snapshot records that total when it takes
+ * the copy; the difference since is the only number that can mean "this
+ * iteration was free" (LOOP2 2).
+ */
 const cost = await db.llmUsage.aggregate({ _sum: { costUsd: true } });
+const snapshot = readJson<SnapshotState | null>(SNAPSHOT_STATE, null);
+const spentThisPass = (cost._sum.costUsd ?? 0) - (snapshot?.costUsdBefore ?? 0);
 
 const iteration = arg("iteration") ?? "?";
 const note = arg("note") ?? "";
@@ -377,8 +463,30 @@ const rows: Row[] = [
   },
   { metric: "group.split_suspects", tune: String(suspects.length), holdout: "—", target: "advisory" },
   { metric: "classify.failed", tune: String(failures), holdout: "—", target: "0" },
-  { metric: "cost.pass_usd", tune: (cost._sum.costUsd ?? 0).toFixed(4), holdout: "—", target: "0 unless the prompt changed" },
+  { metric: "cost.pass_usd", tune: spentThisPass.toFixed(4), holdout: "—", target: "0 unless the prompt changed" },
+  {
+    metric: "tree.parent_accuracy",
+    tune: show(ratio(metrics["tree.parent_accuracy"].TUNE), metrics["tree.parent_accuracy"].TUNE.total),
+    holdout: show(ratio(metrics["tree.parent_accuracy"].HOLDOUT), metrics["tree.parent_accuracy"].HOLDOUT.total),
+    target: "≥ 0.95",
+  },
+  {
+    metric: "tree.top_level_precision",
+    tune: show(ratio(metrics["tree.top_level_precision"].TUNE), metrics["tree.top_level_precision"].TUNE.total),
+    holdout: show(ratio(metrics["tree.top_level_precision"].HOLDOUT), metrics["tree.top_level_precision"].HOLDOUT.total),
+    target: "≥ 0.95",
+  },
+  { metric: "drawer.hidden", tune: String(hidden), holdout: "—", target: "0" },
+  { metric: "drawer.top_level", tune: spread(topLevelSpread), holdout: "—", target: "no row above the states it reached" },
 ];
+
+/** `37×1 10×2 3×3`: how many rows show how many top level lines. */
+function spread(counts: Map<number, number>): string {
+  return [...counts.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([lines, rows]) => `${rows}×${lines}`)
+    .join(" ") || "—";
+}
 
 const lines: string[] = [];
 lines.push(`# Scorecard — iteration ${iteration}`);
@@ -394,21 +502,74 @@ for (const row of rows) lines.push(`| \`${row.metric}\` | ${row.tune} | ${row.ho
 lines.push("");
 lines.push(`⚠ marks a metric computed over fewer than ${MIN_TRUSTED} labelled things. Read it, do not trust it.`);
 lines.push("");
-
-// The disagreements themselves, which is what the triage step actually reads.
-if (suspects.length) {
-  lines.push("## Rows that look like one application split in two");
-  lines.push("");
-  lines.push("Advisory. Nothing acts on these; they are the pairs a rule change would next reach.");
-  lines.push("");
-  for (const suspect of suspects) {
-    lines.push();
-    lines.push();
-    lines.push();
-  }
+if (parentByRelation.size) {
+  lines.push(
+    "`tree.parent_accuracy` by relation: " +
+      [...parentByRelation.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([relation, tally]) => `${relation} ${tally.hit}/${tally.total}`)
+        .join(", "),
+  );
   lines.push("");
 }
 
+/**
+ * Gate 5, the ratchet. Every inherited metric has a floor and none of them may
+ * fall below it. Written down rather than remembered, because LOOP2 changes
+ * code that ten scored iterations already tuned, and a trade has to be argued
+ * for in writing rather than noticed later.
+ */
+type Floor = { TUNE?: number; HOLDOUT?: number; direction?: "up" | "down" };
+const floors = readJson<Record<string, Floor>>(FLOORS, {});
+const readings: Record<string, { TUNE: number | null; HOLDOUT: number | null }> = {
+  ...Object.fromEntries(
+    Object.entries(metrics).map(([name, halves]) => [
+      name,
+      { TUNE: ratio(halves.TUNE), HOLDOUT: ratio(halves.HOLDOUT) },
+    ]),
+  ),
+  "sig.f1": { TUNE: f1("TUNE"), HOLDOUT: f1("HOLDOUT") },
+  "group.split": { TUNE: splitCount.TUNE, HOLDOUT: splitCount.HOLDOUT },
+  "group.merge": { TUNE: mergeCount.TUNE, HOLDOUT: mergeCount.HOLDOUT },
+  "prefilter.false_drop": { TUNE: falseDrops, HOLDOUT: null },
+  "classify.failed": { TUNE: failures, HOLDOUT: null },
+  "rebuild.stable": { TUNE: replay.stable === undefined ? null : replay.stable ? 1 : 0, HOLDOUT: null },
+  "corrections.preserved": { TUNE: replay.correctionsPreserved ?? null, HOLDOUT: null },
+  "cost.pass_usd": { TUNE: spentThisPass, HOLDOUT: null },
+  "drawer.hidden": { TUNE: hidden, HOLDOUT: null },
+};
+
+const falls: string[] = [];
+for (const [metric, floor] of Object.entries(floors)) {
+  for (const half of HALVES) {
+    const limit = floor[half];
+    const value = readings[metric]?.[half];
+    if (limit === undefined || value === null || value === undefined) continue;
+    // "down" is for the counts, where a floor is a ceiling: fewer is better.
+    // Half a digit of slack, because a floor is quoted at the three decimals
+    // the scorecard prints and the reading behind it carries more.
+    const slack = 5e-4;
+    const fell = floor.direction === "down" ? value > limit + slack : value < limit - slack;
+    if (fell) falls.push(`\`${metric}\` ${half} is ${value} against a floor of ${limit}`);
+  }
+}
+
+lines.push("## The ratchet");
+lines.push("");
+if (!Object.keys(floors).length) {
+  lines.push(`No floors are recorded yet. Write ${FLOORS.replace(process.cwd(), ".")} to hold Gate 5.`);
+} else if (falls.length) {
+  lines.push("**Gate 5 is not met.** A metric a previous iteration earned has fallen:");
+  lines.push("");
+  for (const fall of falls) lines.push(`- ${fall}`);
+  lines.push("");
+  lines.push("Either the change is reverted, or the trade is written down in the report with its reason.");
+} else {
+  lines.push(`Held. ${Object.keys(floors).length} inherited metrics are at or above their floor.`);
+}
+lines.push("");
+
+// The disagreements themselves, which is what the triage step actually reads.
 if (suspects.length) {
   lines.push("## Rows that look like one application split in two");
   lines.push("");
@@ -475,10 +636,21 @@ const record = {
     ]),
     ["sig.f1", { TUNE: f1("TUNE"), HOLDOUT: f1("HOLDOUT") }],
   ]),
-  counts: { split: splitCount, merge: mergeCount, falseDrops, failures, splitSuspects: suspects.length },
+  counts: {
+    split: splitCount,
+    merge: mergeCount,
+    falseDrops,
+    failures,
+    splitSuspects: suspects.length,
+    drawerHidden: hidden,
+    drawerTopLevel: Object.fromEntries(topLevelSpread),
+    parentByRelation: Object.fromEntries(parentByRelation),
+  },
   stable: replay.stable ?? null,
   correctionsPreserved: replay.correctionsPreserved ?? null,
-  costUsd: cost._sum.costUsd ?? 0,
+  costUsd: spentThisPass,
+  costUsdTotal: cost._sum.costUsd ?? 0,
+  floorsHeld: falls.length === 0,
 };
 fs.appendFileSync(HISTORY, JSON.stringify(record) + "\n");
 

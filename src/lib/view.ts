@@ -6,6 +6,10 @@ export type EmailView = {
   title: string;
   date: string;
   href: string;
+  /** REPEAT | REMINDER | UPDATE, or null on an email that holds its own line. */
+  relation: "REPEAT" | "REMINDER" | "UPDATE" | null;
+  /** Always present, often empty, and never nested further (LOOP2 3.2 rule 3). */
+  children: EmailView[];
 };
 
 export type ApplicationView = {
@@ -60,7 +64,11 @@ export function matchQuery(application: ApplicationView, query: string) {
     .toLowerCase();
 
   const inHeader = header.includes(needle);
-  const inEmails = application.emails.some((email) => email.title.toLowerCase().includes(needle));
+  // Every line the drawer shows, at either level. A hit on a nested line still
+  // opens the row, because the row is where the reader will go looking for it.
+  const inEmails = application.emails
+    .flatMap((email) => [email, ...email.children])
+    .some((email) => email.title.toLowerCase().includes(needle));
 
   // When the only match is inside an email title, that row opens itself so the
   // hit is visible (5.4).
@@ -89,8 +97,8 @@ export function sortApplications(
       case "company-desc":
         return byCompany(b, a);
       case "emails":
-        // Significant emails only, so a long scheduling thread cannot outrank
-        // real milestones (5.4).
+        // Top level lines only, so a long exchange about one step cannot
+        // outrank a row that really reached more of them (5.4).
         return b.emails.length - a.emails.length || byCompany(a, b);
       default:
         return (b.latestEmailAt ?? "").localeCompare(a.latestEmailAt ?? "") || byCompany(a, b);
