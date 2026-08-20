@@ -1,7 +1,17 @@
 import type { Application, EmailMessage } from "@prisma/client";
-import { prisma } from "@/lib/db";
+import type { Db } from "@/lib/db";
 import { CLASSIFIER_VERSION } from "@/lib/constants";
-import { ROLE_MATCH_THRESHOLD, dedupeKey, normalizeCompany, roleSimilarity } from "@/lib/normalize";
+import {
+  ROLE_MATCH_THRESHOLD,
+  dedupeKey,
+  namePrefixes,
+  normalizeCompany,
+  requisitionNumbers,
+  requisitionsDisagree,
+  roleSimilarity,
+  rolesMatch,
+  sameEmployer,
+} from "@/lib/normalize";
 import { classificationOf } from "./recompute";
 import type { Classification } from "@/lib/llm";
 
@@ -16,24 +26,97 @@ import type { Classification } from "@/lib/llm";
 
 export type MatchOutcome = { attached: number; created: number; touched: number[] };
 
-/** The alias table remembers company names already matched together (3.5). */
-async function candidatesFor(normalized: string): Promise<Application[]> {
-  const names = new Set([normalized]);
+/**
+ * The alias table remembers company names already matched together (3.5), and
+ * a second pass catches the ones nothing has matched yet.
+ *
+ * Both passes stay on the `company_normalized` index. The first is an equality
+ * lookup over every leading prefix of the incoming name, which catches the
+ * case where the stored name is the shorter one. The second is a prefix
+ * pattern on the first token, which the same index serves, and catches the
+ * case where the incoming name is the shorter one.
+ */
+async function candidatesFor(db: Db, normalized: string): Promise<Application[]> {
+  const names = new Set([normalized, ...namePrefixes(normalized)]);
+  const aliased = new Set<string>();
 
-  const alias = await prisma.companyAlias.findUnique({ where: { aliasNormalized: normalized } });
-  if (alias) names.add(normalizeCompany(alias.canonicalCompanyName));
+  const alias = await db.companyAlias.findUnique({ where: { aliasNormalized: normalized } });
+  if (alias) aliased.add(normalizeCompany(alias.canonicalCompanyName));
 
-  const aliasesTo = await prisma.companyAlias.findMany({
+  const aliasesTo = await db.companyAlias.findMany({
     where: { canonicalCompanyName: { not: "" } },
     select: { aliasNormalized: true, canonicalCompanyName: true },
   });
   for (const row of aliasesTo) {
-    if (normalizeCompany(row.canonicalCompanyName) === normalized) names.add(row.aliasNormalized);
+    if (normalizeCompany(row.canonicalCompanyName) === normalized) aliased.add(row.aliasNormalized);
   }
 
-  // The indexed equality lookup does the narrowing, so the loose comparison
-  // below never runs at scale.
-  return prisma.application.findMany({ where: { companyNormalized: { in: [...names] } } });
+  const firstToken = normalized.split(" ")[0] ?? normalized;
+
+  const [byName, byPrefix] = await Promise.all([
+    db.application.findMany({ where: { companyNormalized: { in: [...names, ...aliased] } } }),
+    db.application.findMany({ where: { companyNormalized: { startsWith: firstToken } } }),
+  ]);
+
+  const found = new Map<number, Application>();
+  for (const row of [...byName, ...byPrefix]) found.set(row.id, row);
+
+  // The indexed lookups do the narrowing, so the loose comparison below never
+  // runs at scale. An alias is an explicit statement that two names are one
+  // employer, so it is taken at its word.
+  return [...found.values()].filter(
+    (row) => aliased.has(row.companyNormalized) || sameEmployer(normalized, row.companyNormalized),
+  );
+}
+
+/**
+ * Two roles disagree when both are stated and neither title's words are all
+ * present in the other's. Neither side saying anything is not a disagreement:
+ * an email that names no role contradicts nothing.
+ */
+function rolesDisagree(role: string | null, classification: Classification): boolean {
+  return !rolesMatch(role, classification.roleTitle);
+}
+
+/** True when both sides quote a posting number and they quote the same one. */
+async function requisitionAgrees(
+  db: Db,
+  applicationId: number,
+  incoming: Set<string>,
+): Promise<boolean> {
+  if (!incoming.size) return false;
+  const known = await requisitionsOf(db, applicationId);
+  for (const value of incoming) if (known.has(value)) return true;
+  return false;
+}
+
+/** Every posting number quoted by any email already on an application. */
+async function requisitionsOf(db: Db, applicationId: number): Promise<Set<string>> {
+  const messages = await db.emailMessage.findMany({
+    where: { applicationId },
+    select: { subject: true, bodyText: true },
+  });
+
+  const all = new Set<string>();
+  for (const message of messages) {
+    for (const value of requisitionNumbers(message.subject, message.bodyText)) all.add(value);
+  }
+  return all;
+}
+
+/**
+ * An employer that quotes a posting number in one email and a different one in
+ * the next is telling you these are two applications, whatever the titles say.
+ * Two postings can be worded identically, and often are; the number is the one
+ * thing that cannot be.
+ */
+async function requisitionContradicts(
+  db: Db,
+  applicationId: number,
+  incoming: Set<string>,
+): Promise<boolean> {
+  if (!incoming.size) return false;
+  return requisitionsDisagree(await requisitionsOf(db, applicationId), incoming);
 }
 
 function scoreCandidate(candidate: Application, classification: Classification): number {
@@ -51,7 +134,7 @@ function scoreCandidate(candidate: Application, classification: Classification):
   return score;
 }
 
-async function createApplication(classification: Classification, message: EmailMessage) {
+async function createApplication(db: Db, classification: Classification, message: EmailMessage) {
   const companyName = classification.companyName!;
   const companyNormalized = normalizeCompany(companyName);
   const key = dedupeKey({
@@ -59,12 +142,21 @@ async function createApplication(classification: Classification, message: EmailM
     roleTitle: classification.roleTitle,
     season: classification.season,
     year: classification.year,
+    requisitions: requisitionNumbers(message.subject, message.bodyText),
   });
 
-  const existing = await prisma.application.findUnique({ where: { dedupeKey: key } });
+  const existing = await db.application.findUnique({ where: { dedupeKey: key } });
   if (existing) return existing;
 
-  return prisma.application.create({
+  // An employer that writes itself as two words here may write itself as one
+  // word in the next email, and a prefix lookup cannot see across a space that
+  // is not there. Recording the run together form as an alias when the row is
+  // made means the later email finds it on the alias index, which is what the
+  // alias table has always been for.
+  const joined = companyNormalized.replace(/ /g, "");
+  if (joined !== companyNormalized) await rememberAlias(db, joined, companyName);
+
+  return db.application.create({
     data: {
       companyName,
       companyNormalized,
@@ -83,11 +175,12 @@ async function createApplication(classification: Classification, message: EmailM
 }
 
 async function attach(
+  db: Db,
   message: EmailMessage,
   applicationId: number,
   classification: Classification,
 ): Promise<void> {
-  await prisma.emailMessage.update({
+  await db.emailMessage.update({
     where: { id: message.id },
     data: { applicationId },
   });
@@ -96,7 +189,7 @@ async function attach(
   // "sounds good, see you Thursday" reply would drag an offer out of
   // Accepted (3.6).
   if (classification.isSignificant) {
-    await prisma.applicationStatusHistory.upsert({
+    await db.applicationStatusHistory.upsert({
       where: {
         applicationId_messageId_status: {
           applicationId,
@@ -115,17 +208,17 @@ async function attach(
   }
 }
 
-async function rememberAlias(aliasNormalized: string, canonicalCompanyName: string) {
+async function rememberAlias(db: Db, aliasNormalized: string, canonicalCompanyName: string) {
   if (!aliasNormalized || aliasNormalized === normalizeCompany(canonicalCompanyName)) return;
-  await prisma.companyAlias.upsert({
+  await db.companyAlias.upsert({
     where: { aliasNormalized },
     create: { aliasNormalized, canonicalCompanyName },
     update: {},
   });
 }
 
-export async function attachClassified(): Promise<MatchOutcome> {
-  const messages = await prisma.emailMessage.findMany({
+export async function attachClassified(db: Db): Promise<MatchOutcome> {
+  const messages = await db.emailMessage.findMany({
     where: {
       classificationStatus: "OK",
       classifierVersion: CLASSIFIER_VERSION,
@@ -145,30 +238,44 @@ export async function attachClassified(): Promise<MatchOutcome> {
     const classification = classificationOf(message);
     if (!classification || !classification.isApplicationRelated) continue;
 
+    const incomingRequisitions = requisitionNumbers(message.subject, message.bodyText);
+
     // 1. Thread already linked to an application. Present only sometimes,
     //    never depended on, but it is what links a bare "Re: your application"
     //    that names no company at all.
+    //
+    //    A thread is evidence, not proof. Mail clients thread by subject, so
+    //    two applications acknowledged in the same words arrive in one thread,
+    //    and an email that names a different job than the thread already
+    //    points at is a different application however it was delivered.
     if (message.threadId) {
-      const sibling = await prisma.emailMessage.findFirst({
+      const sibling = await db.emailMessage.findFirst({
         where: { threadId: message.threadId, applicationId: { not: null } },
         orderBy: { receivedAt: "asc" },
       });
       if (sibling?.applicationId) {
-        await attach(message, sibling.applicationId, classification);
-        if (classification.companyName) {
-          const application = await prisma.application.findUnique({
-            where: { id: sibling.applicationId },
-          });
-          if (application) {
+        const application = await db.application.findUnique({
+          where: { id: sibling.applicationId },
+        });
+
+        const contradicted =
+          application &&
+          (rolesDisagree(application.roleTitle, classification) ||
+            (await requisitionContradicts(db, application.id, incomingRequisitions)));
+
+        if (!contradicted) {
+          await attach(db, message, sibling.applicationId, classification);
+          if (classification.companyName && application) {
             await rememberAlias(
+              db,
               normalizeCompany(classification.companyName),
               application.companyName,
             );
           }
+          touched.add(sibling.applicationId);
+          attached += 1;
+          continue;
         }
-        touched.add(sibling.applicationId);
-        attached += 1;
-        continue;
       }
     }
 
@@ -181,31 +288,48 @@ export async function attachClassified(): Promise<MatchOutcome> {
 
     // 2 and 3. Indexed equality lookup, then a loose role comparison inside
     //          that candidate set only.
-    const candidates = await candidatesFor(normalized);
+    const found = await candidatesFor(db, normalized);
+
+    // A row that names a different posting is not a candidate at all, however
+    // well the titles happen to score against each other.
+    const candidates: Application[] = [];
+    for (const candidate of found) {
+      if (!(await requisitionContradicts(db, candidate.id, incomingRequisitions))) {
+        candidates.push(candidate);
+      }
+    }
+
+    // A shared posting number settles it, however differently the two emails
+    // word the title. Otherwise the titles have to agree.
+    const numbered: Application[] = [];
+    const titled: Application[] = [];
+    for (const candidate of candidates) {
+      if (await requisitionAgrees(db, candidate.id, incomingRequisitions)) numbered.push(candidate);
+      else if (!rolesDisagree(candidate.roleTitle, classification)) titled.push(candidate);
+    }
+
+    const usable = numbered.length ? numbered : titled;
 
     let target: Application | null = null;
 
-    if (candidates.length === 1) {
-      const only = candidates[0];
-      const bothRolesKnown = Boolean(only.roleTitle && classification.roleTitle);
-      const clearlyDifferent =
-        bothRolesKnown && roleSimilarity(only.roleTitle, classification.roleTitle) < ROLE_MATCH_THRESHOLD;
-      target = clearlyDifferent ? null : only;
-    } else if (candidates.length > 1) {
-      const ranked = candidates
+    if (usable.length === 1) {
+      target = usable[0];
+    } else if (usable.length > 1) {
+      // Several rows could take it, so the loose score decides which, with the
+      // row id breaking a dead heat so the answer never depends on row order.
+      target = usable
         .map((candidate) => ({ candidate, score: scoreCandidate(candidate, classification) }))
-        .sort((a, b) => b.score - a.score);
-      target = ranked[0].score >= ROLE_MATCH_THRESHOLD ? ranked[0].candidate : null;
+        .sort((a, b) => b.score - a.score || a.candidate.id - b.candidate.id)[0].candidate;
     }
 
     if (!target) {
-      target = await createApplication(classification, message);
+      target = await createApplication(db, classification, message);
       created += 1;
     } else {
-      await rememberAlias(normalized, target.companyName);
+      await rememberAlias(db, normalized, target.companyName);
     }
 
-    await attach(message, target.id, classification);
+    await attach(db, message, target.id, classification);
     touched.add(target.id);
     attached += 1;
   }

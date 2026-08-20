@@ -1,12 +1,18 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { jsonSchema } from "./schema";
-import { parseClassification, type ClassifyResult, type ProviderAdapter } from "./types";
+import {
+  parseRaw,
+  withLargerCapOnce,
+  type ClassifyResult,
+  type ProviderAdapter,
+} from "./types";
 import { RetryableError, withRetry } from "@/lib/retry";
 
 /** Confirmed against the Claude API docs: $1 per million in, $5 per million out. */
 const MODEL = "claude-haiku-4-5";
 const INPUT_PER_MTOK = 1.0;
 const OUTPUT_PER_MTOK = 5.0;
+const MAX_TOKENS = 1024;
 
 function client(apiKey: string): Anthropic {
   return new Anthropic({ apiKey, maxRetries: 0 });
@@ -36,12 +42,12 @@ export const anthropicAdapter: ProviderAdapter = {
   },
 
   async classify(apiKey, system, user): Promise<ClassifyResult> {
-    return withRetry(async () => {
+    return withLargerCapOnce((maxTokens) => withRetry(async () => {
       let response;
       try {
         response = await client(apiKey).messages.create({
           model: MODEL,
-          max_tokens: 1024,
+          max_tokens: maxTokens,
           system,
           messages: [{ role: "user", content: user }],
           output_config: { format: { type: "json_schema", schema: jsonSchema() } },
@@ -61,7 +67,7 @@ export const anthropicAdapter: ProviderAdapter = {
       const outputTokens = response.usage.output_tokens;
 
       return {
-        classification: parseClassification(JSON.parse(raw)),
+        classification: parseRaw(raw),
         raw,
         usage: {
           model: MODEL,
@@ -72,6 +78,6 @@ export const anthropicAdapter: ProviderAdapter = {
             (outputTokens / 1_000_000) * OUTPUT_PER_MTOK,
         },
       };
-    });
+    }), MAX_TOKENS);
   },
 };

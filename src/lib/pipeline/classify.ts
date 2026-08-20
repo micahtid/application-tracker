@@ -1,11 +1,11 @@
-import { prisma } from "@/lib/db";
+import type { Db } from "@/lib/db";
 import {
   CLASSIFIER_VERSION,
   LLM_CONCURRENCY,
   MAX_CLASSIFICATION_ATTEMPTS,
   type Provider,
 } from "@/lib/constants";
-import { adapterFor } from "@/lib/llm";
+import { MalformedOutputError, adapterFor } from "@/lib/llm";
 import { SYSTEM_PROMPT, buildUserContent } from "@/lib/llm/prompt";
 import { prefilter } from "@/lib/prefilter";
 import { mapWithConcurrency } from "@/lib/retry";
@@ -37,16 +37,16 @@ function needsClassifying() {
   };
 }
 
-export async function pendingCount(): Promise<number> {
-  return prisma.emailMessage.count({ where: needsClassifying() });
+export async function pendingCount(db: Db): Promise<number> {
+  return db.emailMessage.count({ where: needsClassifying() });
 }
 
 /**
  * The prefilter rules are part of `classifier_version` too, so a version bump
  * has to reconsider everything the old rules threw away (3.4).
  */
-export async function revisitSkipped(): Promise<void> {
-  const stale = await prisma.emailMessage.findMany({
+export async function revisitSkipped(db: Db): Promise<void> {
+  const stale = await db.emailMessage.findMany({
     where: {
       classificationStatus: "SKIPPED_PREFILTER",
       OR: [{ classifierVersion: null }, { classifierVersion: { not: CLASSIFIER_VERSION } }],
@@ -60,7 +60,7 @@ export async function revisitSkipped(): Promise<void> {
       subject: message.subject,
     });
 
-    await prisma.emailMessage.update({
+    await db.emailMessage.update({
       where: { id: message.id },
       data: verdict.keep
         ? { classificationStatus: "PENDING", classificationError: null }
@@ -70,6 +70,7 @@ export async function revisitSkipped(): Promise<void> {
 }
 
 export async function classifyPending(
+  db: Db,
   provider: Provider,
   apiKey: string,
   syncRunId: number,
@@ -77,7 +78,7 @@ export async function classifyPending(
 ): Promise<ClassifyOutcome> {
   const adapter = adapterFor(provider);
 
-  const messages = await prisma.emailMessage.findMany({
+  const messages = await db.emailMessage.findMany({
     where: needsClassifying(),
     orderBy: { receivedAt: "asc" },
   });
@@ -106,8 +107,8 @@ export async function classifyPending(
 
       const { classification, usage, raw } = result;
 
-      await prisma.$transaction([
-        prisma.emailMessage.update({
+      await db.$transaction([
+        db.emailMessage.update({
           where: { id: message.id },
           data: {
             classificationStatus: "OK",
@@ -123,7 +124,7 @@ export async function classifyPending(
         }),
         // Cost is worked out when the row is written, so a later price change
         // never rewrites what was actually spent (Q8).
-        prisma.llmUsage.create({
+        db.llmUsage.create({
           data: {
             syncRunId,
             model: usage.model,
@@ -140,12 +141,19 @@ export async function classifyPending(
       const detail = error instanceof Error ? error.message : String(error);
       const attempts = message.classificationAttempts + 1;
 
-      await prisma.emailMessage.update({
+      await db.emailMessage.update({
         where: { id: message.id },
         data: {
           classificationStatus: "FAILED",
           classificationAttempts: attempts,
           classificationError: detail.slice(0, 500),
+          // An answer that would not parse is kept as the model wrote it, so
+          // the failure can be read rather than guessed at (LOOP Invariant 7).
+          // Nothing downstream trusts it: reading a saved answer already
+          // tolerates one that does not parse.
+          ...(error instanceof MalformedOutputError
+            ? { llmClassificationRaw: error.raw.slice(0, 8000) }
+            : {}),
         },
       });
 

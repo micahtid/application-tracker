@@ -1,5 +1,10 @@
 import { geminiSchema } from "./schema";
-import { parseClassification, type ClassifyResult, type ProviderAdapter } from "./types";
+import {
+  parseRaw,
+  withLargerCapOnce,
+  type ClassifyResult,
+  type ProviderAdapter,
+} from "./types";
 import { RetryableError, isRetryableStatus, withRetry } from "@/lib/retry";
 
 /**
@@ -8,6 +13,7 @@ import { RetryableError, isRetryableStatus, withRetry } from "@/lib/retry";
  * temperature, top_p and top_k are deprecated on this model, so none are sent.
  */
 const MODEL = "gemini-3.7-flash";
+const MAX_TOKENS = 2048;
 const INPUT_PER_MTOK = 0.75;
 const OUTPUT_PER_MTOK = 3.75;
 const BASE = "https://generativelanguage.googleapis.com/v1beta";
@@ -38,7 +44,7 @@ export const geminiAdapter: ProviderAdapter = {
   },
 
   async classify(apiKey, system, user): Promise<ClassifyResult> {
-    return withRetry(async () => {
+    return withLargerCapOnce((maxTokens) => withRetry(async () => {
       const response = await fetch(`${BASE}/models/${MODEL}:generateContent`, {
         method: "POST",
         headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
@@ -48,7 +54,7 @@ export const geminiAdapter: ProviderAdapter = {
           generationConfig: {
             responseMimeType: "application/json",
             responseSchema: geminiSchema(),
-            maxOutputTokens: 2048,
+            maxOutputTokens: maxTokens,
           },
         }),
       });
@@ -76,7 +82,7 @@ export const geminiAdapter: ProviderAdapter = {
       const outputTokens = body.usageMetadata?.candidatesTokenCount ?? 0;
 
       return {
-        classification: parseClassification(JSON.parse(raw)),
+        classification: parseRaw(raw),
         raw,
         usage: {
           model: MODEL,
@@ -87,6 +93,6 @@ export const geminiAdapter: ProviderAdapter = {
             (outputTokens / 1_000_000) * OUTPUT_PER_MTOK,
         },
       };
-    });
+    }), MAX_TOKENS);
   },
 };

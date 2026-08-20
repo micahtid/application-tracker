@@ -38,6 +38,45 @@ export type ProviderAdapter = {
   classify(apiKey: string, system: string, user: string): Promise<ClassifyResult>;
 };
 
+/**
+ * A structured answer that does not parse (LOOP Invariant 7).
+ *
+ * This is its own failure, not a transport failure. A 500 or a rate limit is
+ * worth sending the identical request again; an answer cut off part way
+ * through a string is not, because the identical request produces the identical
+ * cut. The output cap is the likely cause, so it is tried once more with a
+ * larger one, and the text that would not parse is carried on the error so it
+ * can be stored and looked at rather than thrown away.
+ */
+export class MalformedOutputError extends Error {
+  constructor(readonly raw: string, readonly detail: string) {
+    super(`The model's answer did not parse: ${detail}`);
+    this.name = "MalformedOutputError";
+  }
+}
+
+/** Parses a provider's raw answer, or throws something that says what it was. */
+export function parseRaw(raw: string): Classification {
+  try {
+    return parseClassification(JSON.parse(raw));
+  } catch (error) {
+    throw new MalformedOutputError(raw, error instanceof Error ? error.message : String(error));
+  }
+}
+
+/**
+ * One attempt, then one more with a larger cap if the answer was truncated.
+ * Every adapter shares it, so the policy is written once.
+ */
+export async function withLargerCapOnce<T>(attempt: (maxTokens: number) => Promise<T>, cap: number) {
+  try {
+    return await attempt(cap);
+  } catch (error) {
+    if (!(error instanceof MalformedOutputError)) throw error;
+    return attempt(cap * 4);
+  }
+}
+
 function text(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();

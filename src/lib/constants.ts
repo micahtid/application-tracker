@@ -22,6 +22,16 @@ export const SYNC_COOLDOWN_MS = 5 * 60 * 1000;
  */
 export const CLASSIFIER_VERSION = 1;
 
+/**
+ * The other half of the same idea, covering everything after classification:
+ * the matching rules in stage 4 and the recalculation rules in stage 5. Raise
+ * it to group every message again on the next sync.
+ *
+ * Raising this costs nothing, because it re-reads answers already on disk.
+ * Raising CLASSIFIER_VERSION costs a pass over the mailbox.
+ */
+export const GROUPING_VERSION = 2;
+
 /** A message that has failed this many times is left alone (Part 9). */
 export const MAX_CLASSIFICATION_ATTEMPTS = 3;
 

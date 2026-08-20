@@ -18,6 +18,9 @@ model UserSettings {
   llmProvider        String?   @map("llm_provider")
   llmApiKeyEncrypted String?   @map("llm_api_key_encrypted")
   readFromDate       DateTime? @map("read_from_date")
+  /// The GROUPING_VERSION the applications were last rebuilt with. A value
+  /// behind the constant makes the next sync rebuild once (LOOP Invariant 1).
+  groupingVersion    Int?      @map("grouping_version")
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
@@ -71,15 +74,26 @@ model EmailMessage {
 
   applicationId Int? @map("application_id")
 
+  /// The earlier email in the same application that this one repeats, or null.
+  /// A derived fact, worked out in stage 5, which is the first place the other
+  /// emails of an application are visible. `is_significant` is left saying what
+  /// the model said about this email read on its own, which is true, so the two
+  /// facts can still be told apart.
+  repeatOfMessageId Int? @map("repeat_of_message_id")
+
   account     GmailAccount @relation(fields: [gmailAccountId], references: [id], onDelete: Cascade)
+  repeatOf    EmailMessage?  @relation("MessageRepeats", fields: [repeatOfMessageId], references: [id], onDelete: SetNull)
+  repeats     EmailMessage[] @relation("MessageRepeats")
   application Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
   statusHistory ApplicationStatusHistory[]
+  correction    ApplicationCorrection?
 
   @@unique([gmailAccountId, gmailMessageId])
   @@index([threadId])
   @@index([classificationStatus])
   @@index([applicationId])
   @@index([receivedAt])
+  @@index([repeatOfMessageId])
   @@map("email_messages")
 }
 
@@ -97,9 +111,6 @@ model Application {
   status           String    @default("APPLIED")
   /// ASSESSMENT | INTERVIEW
   stageDetail      String?   @map("stage_detail")
-  /// Set by hand. Beats the calculated status.
-  statusOverride   String?   @map("status_override")
-  isHidden         Boolean   @default(false) @map("is_hidden")
   firstEmailAt     DateTime? @map("first_email_at")
   latestEmailAt    DateTime? @map("latest_email_at")
   atsVendor        String?   @map("ats_vendor")
@@ -134,6 +145,34 @@ model ApplicationStatusHistory {
   @@map("application_status_history")
 }
 
+/**
+ * The two corrections made by hand, kept off Application because a rebuild
+ * deletes every application row (LOOP Invariant 1).
+ *
+ * Keyed by the anchor message: the oldest message in the application at the
+ * moment the correction was made. Gmail message ids never change, so after a
+ * rebuild the correction attaches itself again to whichever row now holds that
+ * message. A correction therefore follows its anchor.
+ */
+model ApplicationCorrection {
+  id              Int      @id @default(autoincrement())
+  anchorMessageId Int      @unique @map("anchor_message_id")
+  isHidden        Boolean  @default(false) @map("is_hidden")
+  /// ACCEPTED | IN_PROGRESS | APPLIED | REJECTED. Beats the calculated status.
+  statusOverride  String?  @map("status_override")
+  /// What the row said when the correction was made. A rebuild compares these
+  /// so a correction whose anchor landed somewhere it no longer fits is
+  /// reported rather than quietly applied.
+  companySnapshot String?  @map("company_snapshot")
+  roleSnapshot    String?  @map("role_snapshot")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  message EmailMessage @relation(fields: [anchorMessageId], references: [id], onDelete: Cascade)
+
+  @@map("application_corrections")
+}
+
 model CompanyAlias {
   id                  Int      @id @default(autoincrement())
   aliasNormalized     String   @unique @map("alias_normalized")
@@ -154,6 +193,15 @@ model SyncRun {
   messagesClassified Int       @default(0) @map("messages_classified")
   errors             Int       @default(0)
   errorSummary       String?   @map("error_summary")
+  /// Application pairs that look like one application split in two. A report,
+  /// not a constraint: the unique rule on dedupe_key can only ever notice an
+  /// identical repeat, which the serial pass already prevents (LOOP F5).
+  splitSuspects      Int       @default(0) @map("split_suspects")
+  /// Applications rebuilt from scratch because GROUPING_VERSION moved on.
+  applicationsRebuilt Int      @default(0) @map("applications_rebuilt")
+  /// Things worth saying that are not failures: a rebuild, a correction whose
+  /// anchor moved somewhere it no longer fits.
+  notes              String?
   /// RUNNING | OK | PARTIAL | FAILED
   status             String    @default("RUNNING")
 

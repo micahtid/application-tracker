@@ -1,5 +1,10 @@
 import { jsonSchema } from "./schema";
-import { parseClassification, type ClassifyResult, type ProviderAdapter } from "./types";
+import {
+  parseRaw,
+  withLargerCapOnce,
+  type ClassifyResult,
+  type ProviderAdapter,
+} from "./types";
 import { RetryableError, isRetryableStatus, withRetry } from "@/lib/retry";
 
 /**
@@ -8,6 +13,7 @@ import { RetryableError, isRetryableStatus, withRetry } from "@/lib/retry";
  * real cost on the response, which is preferred over our own sum (Q8).
  */
 const MODEL = "google/gemini-3.7-flash";
+const MAX_TOKENS = 1024;
 const INPUT_PER_MTOK = 0.375;
 const OUTPUT_PER_MTOK = 1.875;
 const BASE = "https://openrouter.ai/api/v1";
@@ -46,7 +52,7 @@ export const openrouterAdapter: ProviderAdapter = {
   },
 
   async classify(apiKey, system, user): Promise<ClassifyResult> {
-    return withRetry(async () => {
+    return withLargerCapOnce((maxTokens) => withRetry(async () => {
       const response = await fetch(`${BASE}/chat/completions`, {
         method: "POST",
         headers: {
@@ -56,7 +62,7 @@ export const openrouterAdapter: ProviderAdapter = {
         },
         body: JSON.stringify({
           model: MODEL,
-          max_tokens: 1024,
+          max_tokens: maxTokens,
           usage: { include: true },
           messages: [
             { role: "system", content: system },
@@ -90,7 +96,7 @@ export const openrouterAdapter: ProviderAdapter = {
       const reported = body.usage?.cost;
 
       return {
-        classification: parseClassification(JSON.parse(raw)),
+        classification: parseRaw(raw),
         raw,
         usage: {
           model: MODEL,
@@ -103,6 +109,6 @@ export const openrouterAdapter: ProviderAdapter = {
                 (outputTokens / 1_000_000) * OUTPUT_PER_MTOK,
         },
       };
-    });
+    }), MAX_TOKENS);
   },
 };

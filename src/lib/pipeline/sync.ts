@@ -6,6 +6,8 @@ import { sweepAndStore } from "./fetch";
 import { classifyPending, revisitSkipped } from "./classify";
 import { attachClassified } from "./match";
 import { recomputeAll } from "./recompute";
+import { rebuildIfStale } from "./rebuild";
+import { findSplitSuspects } from "./duplicates";
 
 /**
  * The whole pipeline, in order, with one sync at a time (D23).
@@ -89,6 +91,7 @@ async function execute(
   startDate: Date,
 ): Promise<void> {
   const failures: string[] = [];
+  const notes: string[] = [];
   let permanentFailures = 0;
 
   try {
@@ -109,9 +112,9 @@ async function execute(
     const apiKey = await getApiKey();
     if (!apiKey) throw new Error("No API key is saved.");
 
-    await revisitSkipped();
+    await revisitSkipped(prisma);
 
-    const outcome = await classifyPending(provider, apiKey, syncRunId, async (done) => {
+    const outcome = await classifyPending(prisma, provider, apiKey, syncRunId, async (done) => {
       await prisma.syncRun.update({
         where: { id: syncRunId },
         data: { messagesClassified: done },
@@ -126,8 +129,14 @@ async function execute(
       );
     }
 
-    const matched = await attachClassified();
-    await recomputeAll(matched.touched);
+    // A grouping rule that has moved on regroups the whole message set once,
+    // which is what lets a matching fix reach mail that is already on the
+    // board. Unchanged version, no rebuild, no cost.
+    const rebuilt = await rebuildIfStale(prisma);
+    if (rebuilt) notes.push(`Regrouped ${rebuilt.applications} applications.`, ...rebuilt.notes);
+
+    const matched = await attachClassified(prisma);
+    await recomputeAll(prisma, matched.touched);
 
     // Applications can also change because a message was attached to one of
     // them by an earlier run that never finished recalculating.
@@ -135,7 +144,15 @@ async function execute(
       where: { firstEmailAt: null },
       select: { id: true },
     });
-    await recomputeAll(orphaned.map((row) => row.id));
+    await recomputeAll(prisma, orphaned.map((row) => row.id));
+
+    // Advisory only. Nothing acts on it, and nothing in the board changes
+    // because of it (LOOP Invariant 6).
+    const suspects = await findSplitSuspects(prisma);
+    if (suspects.length) {
+      const many = suspects.length === 1 ? "" : "s";
+      notes.push(`${suspects.length} pair${many} of rows look like one application split in two.`);
+    }
 
     await prisma.gmailAccount.update({
       where: { id: accountId },
@@ -150,6 +167,9 @@ async function execute(
         messagesClassified: outcome.classified,
         errors: permanentFailures,
         errorSummary: failures.length ? failures.join(" ") : null,
+        applicationsRebuilt: rebuilt?.applications ?? 0,
+        splitSuspects: suspects.length,
+        notes: notes.length ? notes.join(" ") : null,
       },
     });
   } catch (error) {
