@@ -1,4 +1,17 @@
 PLANNING.md
 
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Secrets and local data. .env.local holds the key that decrypts the API key.
+.env.local
+.env*.local
+prisma/*.db
+prisma/*.db-journal
+
 .DS_Store
 Thumbs.db
+prisma/check.db*

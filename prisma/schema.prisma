@@ -1,0 +1,177 @@
+// Internship Applications Tracker.
+// SQLite has no enum type, so every enum in the PRD is a String here and the
+// allowed values are named in a comment above the field.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// One row only. The CHECK (id = 1) rule is added by hand in the migration.
+model UserSettings {
+  id                 Int       @id @default(1)
+  /// OPENROUTER | ANTHROPIC | GEMINI
+  llmProvider        String?   @map("llm_provider")
+  llmApiKeyEncrypted String?   @map("llm_api_key_encrypted")
+  readFromDate       DateTime? @map("read_from_date")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  @@map("user_settings")
+}
+
+model GmailAccount {
+  id             Int       @id @default(autoincrement())
+  emailAddress   String    @unique @map("email_address")
+  displayName    String?   @map("display_name")
+  refreshToken   String    @map("refresh_token")
+  accessToken    String?   @map("access_token")
+  tokenExpiresAt DateTime? @map("token_expires_at")
+  connectedAt    DateTime  @default(now()) @map("connected_at")
+  lastSyncAt     DateTime? @map("last_sync_at")
+  /// False means the refresh token was rejected. Drives the Reconnect screen.
+  isActive       Boolean   @default(true) @map("is_active")
+
+  messages EmailMessage[]
+
+  @@map("gmail_accounts")
+}
+
+model EmailMessage {
+  id               Int      @id @default(autoincrement())
+  gmailAccountId   Int      @map("gmail_account_id")
+  gmailMessageId   String   @map("gmail_message_id")
+  rfc822MessageId  String?  @map("rfc822_message_id")
+  threadId         String?  @map("thread_id")
+  senderName       String?  @map("sender_name")
+  senderEmail      String?  @map("sender_email")
+  senderDomain     String?  @map("sender_domain")
+  subject          String?
+  snippet          String?
+  bodyText         String?  @map("body_text")
+  /// JSON array of Gmail label ids.
+  labels           String?
+  receivedAt       DateTime @map("received_at")
+
+  /// PENDING | OK | FAILED | SKIPPED_PREFILTER
+  classificationStatus String  @default("PENDING") @map("classification_status")
+  classifierVersion    Int?    @map("classifier_version")
+  llmModel             String? @map("llm_model")
+  classificationAttempts Int   @default(0) @map("classification_attempts")
+  classificationError  String? @map("classification_error")
+
+  isApplicationRelated Boolean? @map("is_application_related")
+  isSignificant        Boolean? @map("is_significant")
+  emailTitle           String?  @map("email_title")
+  llmClassificationRaw String?  @map("llm_classification_raw")
+
+  applicationId Int? @map("application_id")
+
+  account     GmailAccount @relation(fields: [gmailAccountId], references: [id], onDelete: Cascade)
+  application Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  statusHistory ApplicationStatusHistory[]
+
+  @@unique([gmailAccountId, gmailMessageId])
+  @@index([threadId])
+  @@index([classificationStatus])
+  @@index([applicationId])
+  @@index([receivedAt])
+  @@map("email_messages")
+}
+
+model Application {
+  id               Int       @id @default(autoincrement())
+  companyName      String    @map("company_name")
+  companyNormalized String   @map("company_normalized")
+  companyDomain    String?   @map("company_domain")
+  roleTitle        String?   @map("role_title")
+  dedupeKey        String    @unique @map("dedupe_key")
+  /// Summer | Spring | Fall
+  season           String?
+  year             Int?
+  /// ACCEPTED | IN_PROGRESS | APPLIED | REJECTED
+  status           String    @default("APPLIED")
+  /// ASSESSMENT | INTERVIEW
+  stageDetail      String?   @map("stage_detail")
+  /// Set by hand. Beats the calculated status.
+  statusOverride   String?   @map("status_override")
+  isHidden         Boolean   @default(false) @map("is_hidden")
+  firstEmailAt     DateTime? @map("first_email_at")
+  latestEmailAt    DateTime? @map("latest_email_at")
+  atsVendor        String?   @map("ats_vendor")
+  confidence       Float?
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  messages      EmailMessage[]
+  statusHistory ApplicationStatusHistory[]
+
+  @@index([companyNormalized])
+  @@index([status])
+  @@index([latestEmailAt])
+  @@index([season, year])
+  @@map("applications")
+}
+
+model ApplicationStatusHistory {
+  id            Int      @id @default(autoincrement())
+  applicationId Int      @map("application_id")
+  /// ACCEPTED | IN_PROGRESS | APPLIED | REJECTED
+  status        String
+  messageId     Int      @map("message_id")
+  /// The received_at of the email that produced this status.
+  detectedAt    DateTime @map("detected_at")
+
+  application Application  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  message     EmailMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, messageId, status])
+  @@index([applicationId])
+  @@map("application_status_history")
+}
+
+model CompanyAlias {
+  id                  Int      @id @default(autoincrement())
+  aliasNormalized     String   @unique @map("alias_normalized")
+  canonicalCompanyName String  @map("canonical_company_name")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  @@map("company_aliases")
+}
+
+model SyncRun {
+  id                 Int       @id @default(autoincrement())
+  startedAt          DateTime  @default(now()) @map("started_at")
+  finishedAt         DateTime? @map("finished_at")
+  /// FULL | INCREMENTAL
+  mode               String
+  messagesDiscovered Int       @default(0) @map("messages_discovered")
+  messagesFetched    Int       @default(0) @map("messages_fetched")
+  messagesClassified Int       @default(0) @map("messages_classified")
+  errors             Int       @default(0)
+  errorSummary       String?   @map("error_summary")
+  /// RUNNING | OK | PARTIAL | FAILED
+  status             String    @default("RUNNING")
+
+  usage LlmUsage[]
+
+  @@map("sync_runs")
+}
+
+model LlmUsage {
+  id           Int      @id @default(autoincrement())
+  syncRunId    Int?     @map("sync_run_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  model        String
+  inputTokens  Int      @map("input_tokens")
+  outputTokens Int      @map("output_tokens")
+  costUsd      Float    @map("cost_usd")
+
+  syncRun SyncRun? @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
+
+  @@map("llm_usage")
+}
