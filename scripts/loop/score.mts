@@ -31,8 +31,9 @@ import {
   type Half,
   type SnapshotState,
 } from "./common.mts";
-import { drawerTree, shownIn } from "../../src/lib/drawer.ts";
-import { normalizeCompany } from "../../src/lib/normalize.ts";
+import { TITLE_KEYWORD_RULES, drawerTitle, drawerTree, shownIn } from "../../src/lib/drawer.ts";
+import { classificationOf } from "../../src/lib/pipeline/recompute.ts";
+import { normalizeCompany, sameEmployer } from "../../src/lib/normalize.ts";
 import { GROUPING_VERSION, CLASSIFIER_VERSION } from "../../src/lib/constants.ts";
 import { findSplitSuspects } from "../../src/lib/pipeline/duplicates.ts";
 
@@ -67,6 +68,7 @@ const applications = await db.application.findMany({
         senderDomain: true,
         isSignificant: true,
         isApplicationRelated: true,
+        llmClassificationRaw: true,
         parentMessageId: true,
         parentRelation: true,
       },
@@ -182,11 +184,30 @@ const metrics: Record<string, Record<Half, Tally>> = {
   "identity.role_filled": empty(),
   "state.head": empty(),
   "state.milestone_precision": empty(),
+  "stage.accuracy": empty(),
+  "event.accuracy": empty(),
   "recall.related": empty(),
+  "precision.related": empty(),
   "prefilter.false_drop": empty(),
   "tree.parent_accuracy": empty(),
   "tree.top_level_precision": empty(),
 };
+
+/**
+ * Whether a row's company and a label's company are the same employer.
+ *
+ * Judged by the pipeline's own definition rather than by a stricter one. An
+ * employer writes itself several ways across one hiring process, and
+ * `sameEmployer` is what decides everywhere else in the code that two of those
+ * ways are one employer. Scoring the same question more strictly counts a row
+ * wrong for a spelling the pipeline is right to treat as the same name, and
+ * makes the metric wobble every time a pass reads the header again.
+ */
+function namesOneEmployer(predicted: string | null, labelled: string | null): boolean {
+  const left = normalizeCompany(predicted ?? "");
+  const right = normalizeCompany(labelled ?? "");
+  return left === right || sameEmployer(left, right);
+}
 
 function count(metric: string, half: Half, hit: boolean): void {
   metrics[metric][half].total += 1;
@@ -216,7 +237,7 @@ for (const group of applicationLabels.groups) {
     count(
       "identity.company",
       half,
-      normalizeCompany(application.companyName) === normalizeCompany(group.company ?? ""),
+      namesOneEmployer(application.companyName, group.company),
     );
     // Scoped to applications where some email does say, because no algorithm
     // can invent a role no email states.
@@ -300,6 +321,47 @@ for (const [id, label] of Object.entries(messageLabels)) {
   }
 }
 
+/**
+ * precision.related, the other direction of the same gate (LOOP3 5.2).
+ *
+ * `recall.related` has always counted mail wrongly thrown away and nothing
+ * counted mail wrongly let in, so a change that loosens the gate could only
+ * ever look like an improvement. Every one of these is labelled by hand out of
+ * mail the pipeline already rejected, so none of them sits in a labelled
+ * group and there is no half to put them in. They all count as TUNE, exactly
+ * as the false drops do.
+ */
+for (const [id, label] of Object.entries(messageLabels)) {
+  if (label.related) continue;
+  const state = messageState.get(id);
+  count("precision.related", "TUNE", !state?.isApplicationRelated);
+}
+
+/**
+ * stage.accuracy and event.accuracy, over the emails a label answers for.
+ *
+ * The stored answer is the model's, read back through the same parser the
+ * board reads it through, so what is scored is what a person would see rather
+ * than what the raw JSON happens to hold.
+ */
+const storedMessages = new Map<string, (typeof applications)[number]["messages"][number]>();
+for (const application of applications) {
+  for (const message of application.messages) storedMessages.set(message.gmailMessageId, message);
+}
+
+for (const [id, label] of Object.entries(messageLabels)) {
+  const group = groupOfMessage.get(id);
+  if (!group) continue;
+  const half = halfOfGroup.get(group)!;
+  // Read back through the pipeline's own parser, so a missing answer scores as
+  // a miss rather than as the fallback the parser would have supplied had the
+  // model given one.
+  const said = classificationOf(storedMessages.get(id) ?? { llmClassificationRaw: null });
+
+  if (label.stage) count("stage.accuracy", half, said?.stageDetail === label.stage);
+  if (label.event) count("event.accuracy", half, said?.emailEvent === label.event);
+}
+
 // The tree and the drawer. Two different questions, counted separately.
 //
 //   tree.parent_accuracy  reads the stored parent, so it says whether the
@@ -326,6 +388,15 @@ for (const application of applications) {
  *  notice can be told apart even though one rule does both (LOOP2 4.2). */
 const parentByRelation = new Map<string, Tally>();
 let hidden = 0;
+/**
+ * Nested lines that read exactly as a line already shown above them in the
+ * same drawer (LOOP3 5.2).
+ *
+ * A drawer that says the same six words three times has told the reader
+ * nothing twice. Counted over the composed titles rather than the stored ones,
+ * because the composed title is what a person actually reads.
+ */
+let duplicateLines = 0;
 const topLevelSpread = new Map<number, number>();
 
 for (const application of applications) {
@@ -335,6 +406,16 @@ for (const application of applications) {
 
   hidden += related.filter((message) => !shown.has(message.gmailMessageId)).length;
   topLevelSpread.set(tree.length, (topLevelSpread.get(tree.length) ?? 0) + 1);
+
+  const above = new Set<string>();
+  for (const node of tree) {
+    above.add(drawerTitle(node.message));
+    for (const child of node.children) {
+      const title = drawerTitle(child.message);
+      if (above.has(title)) duplicateLines += 1;
+      above.add(title);
+    }
+  }
 
   for (const node of tree) {
     const id = node.message.gmailMessageId;
@@ -428,7 +509,10 @@ const rows: Row[] = [
       ["identity.role_filled", "1.0"],
       ["state.head", "≥ 0.95"],
       ["state.milestone_precision", "≥ 0.98"],
+      ["stage.accuracy", "≥ 0.95"],
+      ["event.accuracy", "≥ 0.95"],
       ["recall.related", "1.0"],
+      ["precision.related", "1.0"],
     ] as const
   ).map(([metric, target]) => ({
     metric,
@@ -477,6 +561,13 @@ const rows: Row[] = [
     target: "≥ 0.95",
   },
   { metric: "drawer.hidden", tune: String(hidden), holdout: "—", target: "0" },
+  { metric: "drawer.duplicate_lines", tune: String(duplicateLines), holdout: "—", target: "0" },
+  {
+    metric: "title.keyword_rules",
+    tune: String(TITLE_KEYWORD_RULES.length),
+    holdout: "—",
+    target: "0 from iteration 2",
+  },
   { metric: "drawer.top_level", tune: spread(topLevelSpread), holdout: "—", target: "no row above the states it reached" },
 ];
 
@@ -537,6 +628,8 @@ const readings: Record<string, { TUNE: number | null; HOLDOUT: number | null }> 
   "corrections.preserved": { TUNE: replay.correctionsPreserved ?? null, HOLDOUT: null },
   "cost.pass_usd": { TUNE: spentThisPass, HOLDOUT: null },
   "drawer.hidden": { TUNE: hidden, HOLDOUT: null },
+  "drawer.duplicate_lines": { TUNE: duplicateLines, HOLDOUT: null },
+  "title.keyword_rules": { TUNE: TITLE_KEYWORD_RULES.length, HOLDOUT: null },
 };
 
 const falls: string[] = [];
@@ -596,7 +689,7 @@ for (const group of applicationLabels.groups) {
   if (aligned) {
     const groups = groupsInApplication.get(aligned.application.id) ?? new Set();
     if (groups.size > 1) problems.push(`shares a row with ${groups.size - 1} other labelled group(s)`);
-    if (normalizeCompany(aligned.application.companyName) !== normalizeCompany(group.company ?? "")) {
+    if (!namesOneEmployer(aligned.application.companyName, group.company)) {
       problems.push(`company "${aligned.application.companyName}" not "${group.company}"`);
     }
     if (group.role && !aligned.application.roleTitle) problems.push("role is empty but an email states it");
@@ -643,6 +736,8 @@ const record = {
     failures,
     splitSuspects: suspects.length,
     drawerHidden: hidden,
+    drawerDuplicateLines: duplicateLines,
+    titleKeywordRules: TITLE_KEYWORD_RULES.length,
     drawerTopLevel: Object.fromEntries(topLevelSpread),
     parentByRelation: Object.fromEntries(parentByRelation),
   },

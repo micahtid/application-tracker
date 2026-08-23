@@ -121,6 +121,27 @@ async function requisitionContradicts(
 }
 
 /**
+ * Whether this email came from a third party running one step for an employer
+ * (LOOP3 Invariant 5).
+ *
+ * The model reads the email and says so, because it is plain in the email
+ * itself: a company sending you to take its test on somebody else's behalf
+ * says as much in its first sentence. The vendor list is consulted too, and it
+ * can only add certainty: a sender the list knows is treated as one whatever
+ * the model answered, and a sender the list has never heard of is treated
+ * exactly as well as one it has.
+ *
+ * That is the whole difference from LOOP2, where this question was answered by
+ * a lookup alone. Thirty names were written down, three of the five vendors in
+ * one mailbox had to be added by hand when they turned up, and in anybody
+ * else's mailbox the defect that list was written to fix came straight back
+ * without a word.
+ */
+function runsAStepForAnEmployer(message: EmailMessage, classification: Classification): boolean {
+  return classification.senderRole === "ASSESSMENT_VENDOR" || isAssessmentVendor(message.senderDomain);
+}
+
+/**
  * LOOP2 Invariant 1. A company that runs exams never receives an application,
  * so an email from one can only ever continue an application that already
  * exists.
@@ -143,9 +164,10 @@ async function requisitionContradicts(
 async function assessmentHandOff(
   db: Db,
   message: EmailMessage,
+  classification: Classification,
   candidates: Application[],
 ): Promise<Application | null> {
-  if (!isAssessmentVendor(message.senderDomain)) return null;
+  if (!runsAStepForAnEmployer(message, classification)) return null;
 
   const waiting: Application[] = [];
   for (const candidate of candidates) {
@@ -154,7 +176,12 @@ async function assessmentHandOff(
       orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
     });
     const state = headState(attached);
-    if (state.status === "IN_PROGRESS" && state.stageDetail === "ASSESSMENT") waiting.push(candidate);
+    // Any step the applicant has been sent away to do, not the assessment
+    // stage alone. The stage vocabulary grew in LOOP3 and a row waiting on a
+    // recorded interview or a background check is waiting on a third party
+    // exactly as a row waiting on a test is. Reading one value out of four
+    // would have quietly narrowed this rule as the list grew.
+    if (state.status === "IN_PROGRESS" && state.stageDetail) waiting.push(candidate);
   }
 
   return waiting.length === 1 ? waiting[0] : null;
@@ -360,7 +387,7 @@ export async function attachClassified(db: Db): Promise<MatchOutcome> {
       // Not settled: either no row will take it, or several will and the score
       // would be picking between them. An exam is neither of those questions,
       // so it is asked first, and only then does the score get its turn.
-      target = await assessmentHandOff(db, message, candidates);
+      target = await assessmentHandOff(db, message, classification, candidates);
 
       if (!target && usable.length > 1) {
         // Several rows could take it, so the loose score decides which, with the

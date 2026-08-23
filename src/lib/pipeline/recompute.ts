@@ -20,7 +20,7 @@ import type { StageDetail, Status } from "@/lib/constants";
  */
 
 /** The saved model answer for one email, or null when there is not one. */
-export function classificationOf(message: EmailMessage): Classification | null {
+export function classificationOf(message: { llmClassificationRaw: string | null }): Classification | null {
   if (!message.llmClassificationRaw) return null;
   try {
     return parseClassification(JSON.parse(message.llmClassificationRaw));

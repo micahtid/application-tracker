@@ -17,7 +17,16 @@
  *
  *   npm run loop:reclassify -- --budget 0.20 [--sample 40] [--failed-only]
  */
-import { arg, deterministicSample, flag, openWorkDb } from "./common.mts";
+import {
+  SNAPSHOT_STATE,
+  arg,
+  deterministicSample,
+  flag,
+  openWorkDb,
+  readJson,
+  writeJson,
+  type SnapshotState,
+} from "./common.mts";
 import { decryptSecret } from "../../src/lib/crypto.ts";
 import { adapterFor, type Provider } from "../../src/lib/llm/index.ts";
 import { SYSTEM_PROMPT, buildUserContent } from "../../src/lib/llm/prompt.ts";
@@ -39,6 +48,26 @@ const provider = settings?.llmProvider as Provider | undefined;
 if (!apiKey || !provider) {
   console.error("The scratch database carries no provider or API key, so stage 3 cannot run.");
   process.exit(1);
+}
+
+/**
+ * `cost.pass_usd` is the difference between what the ledger holds now and the
+ * marker `loop:snapshot` left behind, so on the second paid iteration it would
+ * read the price of both passes and break a ceiling written for one.
+ *
+ * The marker means "the spend before the thing being measured", so a paid pass
+ * moves it to the current total before it buys anything. A free iteration
+ * never touches it and still reads 0, which is what makes "this iteration was
+ * free" checkable rather than claimed.
+ */
+const ledger = (await db.llmUsage.aggregate({ _sum: { costUsd: true } }))._sum.costUsd ?? 0;
+const state = readJson<SnapshotState | null>(SNAPSHOT_STATE, null);
+
+// A retry of what failed belongs to the pass that failed it, so it leaves the
+// marker where that pass left it and its price lands on the same iteration.
+if (!flag("failed-only")) {
+  writeJson(SNAPSHOT_STATE, { at: state?.at ?? new Date().toISOString(), costUsdBefore: ledger });
+  console.log(`The ledger holds $${ledger.toFixed(4)}. cost.pass_usd counts this pass from there.`);
 }
 
 const where = flag("failed-only")

@@ -17,18 +17,16 @@ import {
 } from "lucide-react";
 import Highlight from "./Highlight";
 import { SECTIONS, formatDate, type ApplicationView, type EmailView } from "@/lib/view";
-import { STATUSES, type Status } from "@/lib/constants";
-
-const RELATION_LABELS: Record<string, string> = {
-  REPEAT: "Sent again",
-  REMINDER: "Reminder",
-  UPDATE: "Update",
-};
+import { STAGE_LABELS, STATUSES, type Status } from "@/lib/constants";
 
 /**
  * One line of a drawer, and the lines shown under it. The tree is one level
  * deep by construction (LOOP2 3.2 rule 3), so this renders children directly
  * rather than calling itself: a grandchild has no meaning to draw.
+ *
+ * A nested line carries no chip saying what kind of report it is. The title
+ * already says it, and a notice sent three times reads as three identical
+ * lines, which is exactly what happened.
  */
 function EmailLine({ email, query }: { email: EmailView; query: string }) {
   return (
@@ -46,9 +44,6 @@ function EmailLine({ email, query }: { email: EmailView; query: string }) {
             <li className="email email--child" key={child.id}>
               <a href={child.href} target="_blank" rel="noopener noreferrer">
                 <CornerDownRight className="lucide" />
-                {child.relation ? (
-                  <span className="email__relation">{RELATION_LABELS[child.relation] ?? child.relation}</span>
-                ) : null}
                 <span className="email__title">
                   <Highlight text={child.title} query={query} />
                 </span>
@@ -193,14 +188,14 @@ function ApplicationRow({
           </span>
           <span className="tags">
             {application.statusOverride ? (
-              <span className="tag tag--override" title="Status set by hand">
+              <span className="tag tag--override" title="Status Set Manually">
                 <Check className="lucide" />
                 {STATUS_LABELS[application.statusOverride]}
               </span>
             ) : null}
             {application.status === "IN_PROGRESS" && application.stageDetail ? (
               <span className="tag tag--stage">
-                {application.stageDetail === "ASSESSMENT" ? "Assessment" : "Interview"}
+                {STAGE_LABELS[application.stageDetail]}
               </span>
             ) : null}
             {application.season ? <span className="tag">{application.season}</span> : null}
@@ -214,7 +209,7 @@ function ApplicationRow({
             type="button"
             aria-haspopup="true"
             aria-expanded={menuOpen}
-            aria-label="Row options"
+            aria-label="Row Options"
             onClick={(event) => {
               event.stopPropagation();
               onToggleMenu(menuOpen ? null : application.id);
@@ -235,7 +230,7 @@ function ApplicationRow({
                 ) : (
                   <EyeOff className="lucide" style={{ opacity: 1 }} />
                 )}
-                {application.isHidden ? "Show on the board" : "Hide this row"}
+                {application.isHidden ? "Show on the Board" : "Hide This Row"}
               </button>
 
               <p className="menu__label menu__label--sep">Set Status</p>
@@ -254,7 +249,7 @@ function ApplicationRow({
               <div className="menu__foot">
                 <button className="menu__clear" type="button" onClick={() => onSetStatus(application, null)}>
                   <RotateCcw className="lucide" />
-                  Auto, from the emails
+                  Set Automatically from Emails
                 </button>
               </div>
             </div>
@@ -270,7 +265,7 @@ function ApplicationRow({
                 <EmailLine key={email.id} email={email} query={query} />
               ))
             ) : (
-              <li className="email__none">No emails yet.</li>
+              <li className="email__none">No Emails Yet.</li>
             )}
           </ul>
         </div>

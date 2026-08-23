@@ -16,7 +16,7 @@
     "loop:review": "tsx scripts/loop/review.mts",
     "loop:label": "tsx scripts/loop/label.mts",
     "loop:replay": "tsx scripts/loop/replay.mts",
-    "loop:reclassify": "tsx scripts/loop/reclassify.mts",
+    "loop:reclassify": "tsx --env-file=.env.local scripts/loop/reclassify.mts",
     "loop:score": "tsx scripts/loop/score.mts",
     "loop:diff": "tsx scripts/loop/diff.mts"
   },

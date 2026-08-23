@@ -1,4 +1,4 @@
-import type { Status } from "@/lib/constants";
+import type { StageDetail, Status } from "@/lib/constants";
 
 /** The board's shape, as the browser sees it. */
 export type EmailView = {
@@ -20,7 +20,7 @@ export type ApplicationView = {
   year: number | null;
   status: Status;
   statusOverride: Status | null;
-  stageDetail: "ASSESSMENT" | "INTERVIEW" | null;
+  stageDetail: StageDetail | null;
   isHidden: boolean;
   latestEmailAt: string | null;
   firstEmailAt: string | null;

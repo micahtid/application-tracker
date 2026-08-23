@@ -19,8 +19,11 @@ import {
   deterministicSample,
   openWorkDb,
   readLabels,
+  LABEL_EVENTS,
+  LABEL_STAGES,
   type GroupLabel,
 } from "./common.mts";
+import { classificationOf } from "../../src/lib/pipeline/recompute.ts";
 
 const RECALL_SAMPLE = 25;
 
@@ -65,10 +68,18 @@ const messagesById = new Map(
         classificationError: true,
         applicationId: true,
         parentMessageId: true,
+        llmClassificationRaw: true,
       },
     })
   ).map((message) => [message.gmailMessageId, message]),
 );
+
+/** The stage the pipeline currently reads on an email, offered as a starting point. */
+function stageOf(id: string): string | null {
+  const message = messagesById.get(id);
+  if (!message) return null;
+  return classificationOf(message)?.stageDetail ?? null;
+}
 
 const labels = readLabels();
 const seeded = labels.applications.groups.length > 0;
@@ -115,8 +126,14 @@ if (seeded) {
   }
 
   for (const application of applications) {
-    const ids = application.messages.map((message) => message.gmailMessageId);
-    if (ids.every((id) => labelled.has(id))) continue;
+    // A message already judged not related keeps that answer wherever the
+    // pipeline has since put it. Listing it inside an application block would
+    // ask the opposite question, and reading the sheet back would silently
+    // flip the label to "related" because that is what the section means.
+    const ids = application.messages
+      .map((message) => message.gmailMessageId)
+      .filter((id) => labels.messages[id]?.related !== false);
+    if (!ids.length || ids.every((id) => labelled.has(id))) continue;
     blocks.push({
       id: groupIdFor(ids),
       company: application.companyName,
@@ -215,6 +232,13 @@ lines.push("  Two spaces means this email is shown under the nearest line above 
 lines.push("  indentation, because it reports on that email's step rather than starting one of its");
 lines.push("  own. Move a line and change its indentation together. A child of a child is an error,");
 lines.push("  not a deeper tree.");
+lines.push("- **`stage:`** is what this email asks the applicant to go and do, and `-` means it asks");
+lines.push(`  for nothing. One of ${LABEL_STAGES.join(", ")}, defined by what the`);
+lines.push("  applicant has to do rather than by what the employer called it: a test with right");
+lines.push("  answers, something recorded alone and reviewed later, something live with a person,");
+lines.push("  or something supplied and checked rather than judged.");
+lines.push("- **`event:`** is what kind of report the email is, and `-` means none of them fit.");
+lines.push(`  One of ${LABEL_EVENTS.join(", ")}.`);
 lines.push("- **`rel:`** rides on indented lines only, and says which kind of report it is:");
 lines.push("  `REPEAT` for the same notice sent again, `REMINDER` for a nudge about it, `UPDATE`");
 lines.push("  for anything else. It is a chip in the drawer and nothing else depends on it.");
@@ -246,8 +270,14 @@ for (const block of blocks) {
     const known = labels.messages[id];
     const significant = known ? known.significant : Boolean(message?.isSignificant);
     const relation = parent ? ` rel:${known?.relation ?? "UPDATE"} |` : "";
+    // Seeded from the label where one exists, and from the pipeline's own
+    // answer where none does, exactly as `sig:` is. The pipeline has no answer
+    // for the event at all yet, so that one starts empty and is written by
+    // hand once (LOOP3 5.1).
+    const stage = known?.stage !== undefined ? known.stage : stageOf(id);
+    const event = known?.event !== undefined ? known.event : null;
     lines.push(
-      `${parent ? "  " : ""}- ${id} | sig:${significant ? "yes" : "no "} |${relation} ${message ? message.receivedAt.toISOString().slice(0, 10) : "?"} | ${clean(message?.senderDomain)} | ${clean(message?.subject)}`,
+      `${parent ? "  " : ""}- ${id} | sig:${significant ? "yes" : "no "} | stage:${field(stage ?? null)} | event:${field(event ?? null)} |${relation} ${message ? message.receivedAt.toISOString().slice(0, 10) : "?"} | ${clean(message?.senderDomain)} | ${clean(message?.subject)}`,
     );
   }
   lines.push("");
@@ -255,20 +285,38 @@ for (const block of blocks) {
 
 // Recall is invisible by construction: an application never ingested never
 // appears. Sampling what the pipeline threw away is the only way to see it.
+//
+// Everything already judged not related is listed too, whatever the pipeline
+// now says about it. That is what `precision.related` is counted over, and a
+// message that quietly left the sheet when the model changed its mind would
+// take the label with it and shrink the metric that exists to notice.
 const notRelated = await db.emailMessage.findMany({
-  where: { isApplicationRelated: false, classificationStatus: "OK" },
-  select: { gmailMessageId: true, subject: true, senderEmail: true, receivedAt: true },
+  where: {
+    OR: [
+      { isApplicationRelated: false, classificationStatus: "OK" },
+      { gmailMessageId: { in: Object.entries(labels.messages).filter(([, l]) => !l.related).map(([id]) => id) } },
+    ],
+  },
+  select: { gmailMessageId: true, subject: true, senderEmail: true, receivedAt: true, isApplicationRelated: true },
 });
 
 // A message already moved into a group has been answered: the label says it
 // is related, whatever the model said. Listing it again under "not related"
 // asks the same question twice and reads back as a contradiction.
 const settled = new Set(labels.applications.groups.flatMap((group) => group.messages));
-const sample = deterministicSample(
-  notRelated.filter((message) => !settled.has(message.gmailMessageId)),
-  (message) => message.gmailMessageId,
-  RECALL_SAMPLE,
-);
+const candidates = notRelated.filter((message) => !settled.has(message.gmailMessageId));
+
+// Every message already answered stays on the sheet, and the sample tops the
+// list up to its usual size out of the ones nobody has looked at yet.
+const answered = candidates.filter((message) => labels.messages[message.gmailMessageId]);
+const sample = [
+  ...answered,
+  ...deterministicSample(
+    candidates.filter((message) => !labels.messages[message.gmailMessageId]),
+    (message) => message.gmailMessageId,
+    Math.max(0, RECALL_SAMPLE - answered.length),
+  ),
+];
 sample.sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime());
 
 lines.push(`## Not related (${sample.length} of ${notRelated.length}, sampled)`);
@@ -278,8 +326,11 @@ lines.push("");
 for (const message of sample) {
   const known = labels.messages[message.gmailMessageId];
   const related = known ? known.related : false;
+  // The pipeline disagreeing with a label here is the whole of
+  // `precision.related`, so it is called out rather than left to be noticed.
+  const disputed = message.isApplicationRelated ? " | the pipeline now calls this application mail" : "";
   lines.push(
-    `- ${message.gmailMessageId} | related:${related ? "yes" : "no "} | ${message.receivedAt.toISOString().slice(0, 10)} | ${clean(message.senderEmail)} | ${clean(message.subject)}`,
+    `- ${message.gmailMessageId} | related:${related ? "yes" : "no "} | ${message.receivedAt.toISOString().slice(0, 10)} | ${clean(message.senderEmail)} | ${clean(message.subject)}${disputed}`,
   );
 }
 lines.push("");

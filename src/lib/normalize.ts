@@ -71,10 +71,24 @@ export function namePrefixes(normalized: string): string[] {
 
 const ROLE_NOISE = new Set([
   "intern", "internship", "interns", "co", "op", "coop", "program", "programme",
-  "summer", "spring", "fall", "winter", "2024", "2025", "2026", "2027", "2028",
+  "summer", "spring", "fall", "winter",
   "the", "a", "an", "and", "for", "of", "at", "in", "to", "role", "position",
   "opportunity", "job", "opening", "i", "ii", "iii", "new", "grad", "student",
 ]);
+
+/**
+ * A year in a job title, matched as the kind of word it is (LOOP3 Invariant 1).
+ *
+ * The five years this list used to name would have expired: in 2029 a title
+ * carrying that year stops being normalised away, two emails about one posting
+ * stop matching, and one application quietly becomes two. Nothing announces
+ * it, because the bug arrives on a date rather than in a mailbox.
+ *
+ * Every bare four digit number in a job title is a year. A posting number is
+ * longer than that and is read separately, by `requisitionNumbers`, which is
+ * the one place a number in an email is allowed to mean something.
+ */
+const YEAR = /^\d{4}$/;
 
 function roleTokens(role: string): Set<string> {
   return new Set(
@@ -82,7 +96,7 @@ function roleTokens(role: string): Set<string> {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, " ")
       .split(" ")
-      .filter((word) => word && !ROLE_NOISE.has(word)),
+      .filter((word) => word && !ROLE_NOISE.has(word) && !YEAR.test(word)),
   );
 }
 

@@ -36,6 +36,8 @@ type Fixture = {
   year?: number | null;
   status: string;
   stage?: string | null;
+  event?: string | null;
+  sender_role?: string | null;
   significant: boolean;
   title: string;
 };
@@ -171,6 +173,86 @@ const FIXTURES: Fixture[] = [
   { day: "2026-07-11", thread: "t47", sender: "mailer@criteriacorp.com", subject: "Abstergo invites you to complete an assessment", company: "Abstergo", role: "Historical Analysis Battery", status: "IN_PROGRESS", stage: "ASSESSMENT", significant: true, title: "Assessment Invitation" },
   // ... and a nudge about that stage, worded like neither of the two papers.
   { day: "2026-07-12", thread: "t48", sender: "careers@abstergo.example", subject: "Reminder: Animus competency assessment completion", company: "Abstergo", role: "Animus Platform Intern", status: "IN_PROGRESS", stage: "ASSESSMENT", significant: false, title: "Assessment Completion Reminder" },
+
+  // Invariant: a rule about a kind of word matches the kind, never a list of
+  // examples. Two emails about one posting quote its title with the year
+  // written differently, and one row is the right answer whichever year it is.
+  // The first pair uses years the old hardcoded list happened to name, so it
+  // is the guard on what already worked.
+  { day: "2026-08-01", thread: "t49", sender: "careers@gringotts.example", subject: "Application received", company: "Gringotts", role: "Software Engineer Intern 2027", status: "APPLIED", significant: true, title: "Application Confirmation" },
+  { day: "2026-08-02", thread: "t50", sender: "careers@gringotts.example", subject: "Next steps", company: "Gringotts", role: "Software Engineer Intern 2028", status: "IN_PROGRESS", stage: "INTERVIEW", significant: true, title: "Recruiter Screen" },
+  // ... and the second uses years twenty years out, which is the whole point:
+  // a list of examples expires on a date and nothing announces it.
+  { day: "2026-08-03", thread: "t51", sender: "careers@zorg.example", subject: "Application received", company: "Zorg", role: "Data Engineer Intern 2046", status: "APPLIED", significant: true, title: "Application Confirmation" },
+  { day: "2026-08-04", thread: "t52", sender: "careers@zorg.example", subject: "Next steps", company: "Zorg", role: "Data Engineer Intern 2047", status: "IN_PROGRESS", stage: "INTERVIEW", significant: true, title: "Recruiter Screen" },
+
+  // Invariant: a stage is what the applicant has to go and do, not what the
+  // employer called it. A test with right answers and a camera you answer
+  // alone in front of are different steps, need different nerve, and used to
+  // be filed as the same thing because there was nowhere else to put one.
+  { day: "2026-09-01", thread: "t53", sender: "careers@bluesun.example", subject: "Application received", company: "Blue Sun", role: "Systems Intern", status: "APPLIED", event: "CONFIRMATION", significant: true, title: "Application Confirmation" },
+  { day: "2026-09-02", thread: "t54", sender: "careers@bluesun.example", subject: "Coding assessment", company: "Blue Sun", role: "Systems Intern", status: "IN_PROGRESS", stage: "ASSESSMENT", event: "INVITATION", significant: true, title: "Coding Assessment" },
+  { day: "2026-09-03", thread: "t55", sender: "careers@bluesun.example", subject: "Recorded competency interview", company: "Blue Sun", role: "Systems Intern", status: "IN_PROGRESS", stage: "RECORDED_INTERVIEW", event: "INVITATION", significant: true, title: "Recorded Competency Interview" },
+
+  // ... and a take home is marked, so it is an assessment however long the
+  // applicant is given for it. The stage is defined by being marked, never by
+  // being timed.
+  { day: "2026-09-04", thread: "t56", sender: "careers@encom.example", subject: "Take home project", company: "Encom", role: "Graphics Intern", status: "IN_PROGRESS", stage: "ASSESSMENT", event: "INVITATION", significant: true, title: "Take Home Project" },
+
+  // A recruiter phone screen, a panel and a whole day on site are all one
+  // person talking to another, whatever the day is called.
+  { day: "2026-09-05", thread: "t57", sender: "talent@nakatomi.example", subject: "Recruiter phone screen", company: "Nakatomi", role: "Security Intern", status: "IN_PROGRESS", stage: "INTERVIEW", event: "INVITATION", significant: true, title: "Phone Screen" },
+  { day: "2026-09-06", thread: "t58", sender: "talent@nakatomi.example", subject: "Panel interview", company: "Nakatomi", role: "Security Intern", status: "IN_PROGRESS", stage: "INTERVIEW", event: "INVITATION", significant: true, title: "Panel Interview" },
+  { day: "2026-09-07", thread: "t59", sender: "talent@nakatomi.example", subject: "Superday, our final round", company: "Nakatomi", role: "Security Intern", status: "IN_PROGRESS", stage: "INTERVIEW", event: "INVITATION", significant: true, title: "Final Round" },
+
+  // Invariant: a check after an offer is a step of the same application. It is
+  // supplied and checked rather than judged, which is the fourth stage, and
+  // this mailbox has never seen one.
+  { day: "2026-09-08", thread: "t60", sender: "talent@nakatomi.example", subject: "Your offer", company: "Nakatomi", role: "Security Intern", status: "ACCEPTED", event: "DECISION", significant: true, title: "Offer" },
+  { day: "2026-09-09", thread: "t61", sender: "talent@nakatomi.example", subject: "Background check consent", company: "Nakatomi", role: "Security Intern", status: "ACCEPTED", stage: "VERIFICATION", event: "REQUEST", significant: false, title: "Background Check" },
+  { day: "2026-09-10", thread: "t62", sender: "talent@nakatomi.example", subject: "Onboarding forms", company: "Nakatomi", role: "Security Intern", status: "ACCEPTED", stage: "VERIFICATION", event: "REQUEST", significant: false, title: "Onboarding Paperwork" },
+
+  // Invariant: an exam email continues an application rather than starting
+  // one, and what the row is waiting on is any step the applicant was sent
+  // away to do. This row is waiting on a recording rather than on a test,
+  // which is a distinction the stage vocabulary only gained in LOOP3, and the
+  // vendor's paper still belongs to it.
+  { day: "2026-09-11", thread: "t63", sender: "careers@genco.example", subject: "Application received", company: "Genco", role: "Olive Oil Logistics Intern", status: "APPLIED", event: "CONFIRMATION", significant: true, title: "Application Confirmation" },
+  { day: "2026-09-12", thread: "t64", sender: "careers@genco.example", subject: "Recorded interview", company: "Genco", role: "Olive Oil Logistics Intern", status: "IN_PROGRESS", stage: "RECORDED_INTERVIEW", event: "INVITATION", significant: true, title: "Recorded Interview" },
+  { day: "2026-09-13", thread: "t65", sender: "mailer@hirevue.com", subject: "Genco invites you to record your answers", company: "Genco", role: "Logistics Video Set", status: "IN_PROGRESS", stage: "RECORDED_INTERVIEW", event: "INVITATION", significant: true, title: "Recorded Interview" },
+
+  // Invariant: a reminder announces nothing. The nudge is worded differently
+  // from the invitation on purpose, which is what makes it a reminder and what
+  // stops the resend rule in stage 5 from catching it, so the model is asked
+  // not to call it significant and the history stays honest without a rule
+  // that reads wording.
+  { day: "2026-09-14", thread: "t66", sender: "careers@vandelay.example", subject: "Complete your assessment", company: "Vandelay", role: "Import Analytics Intern", status: "IN_PROGRESS", stage: "ASSESSMENT", event: "INVITATION", significant: true, title: "Assessment Invitation" },
+  { day: "2026-09-15", thread: "t67", sender: "careers@vandelay.example", subject: "A friendly nudge about your next step", company: "Vandelay", role: "Import Analytics Intern", status: "IN_PROGRESS", stage: "ASSESSMENT", event: "REMINDER", significant: false, title: "Assessment Reminder" },
+  // ... and a nudge that also carries something new in itself still counts.
+  { day: "2026-09-16", thread: "t68", sender: "careers@vandelay.example", subject: "Your assessment deadline has moved to Friday", company: "Vandelay", role: "Import Analytics Intern", status: "IN_PROGRESS", stage: "ASSESSMENT", event: "UPDATE", significant: true, title: "Assessment Deadline Update" },
+
+  // Invariant: a rule may be helped by a list of names and may never fail for
+  // want of one. This exam vendor is in no list anywhere in the code, and the
+  // paper it sends still lands on the one application waiting for it, because
+  // the email says what its sender is and the model was asked.
+  { day: "2026-10-01", thread: "t69", sender: "careers@spacelyspr.example", subject: "Application received", company: "Spacely Sprockets", role: "Cogswell Rivalry Intern", status: "APPLIED", event: "CONFIRMATION", sender_role: "EMPLOYER", significant: true, title: "Application Confirmation" },
+  { day: "2026-10-02", thread: "t70", sender: "careers@spacelyspr.example", subject: "Next steps: your assessment", company: "Spacely Sprockets", role: "Cogswell Rivalry Intern", status: "IN_PROGRESS", stage: "ASSESSMENT", event: "INVITATION", sender_role: "EMPLOYER", significant: true, title: "Assessment Invitation" },
+  { day: "2026-10-03", thread: "t71", sender: "tests@quizzitron.example", subject: "Spacely invites you to a sprocket aptitude test", company: "Spacely Sprockets", role: "Sprocket Aptitude Battery", status: "IN_PROGRESS", stage: "ASSESSMENT", event: "INVITATION", sender_role: "ASSESSMENT_VENDOR", significant: true, title: "Assessment Invitation" },
+
+  // ... and a platform nobody has heard of still begins an application, which
+  // is the mistake in the other direction: read this sender as an exam vendor
+  // and the row it starts is never created at all.
+  { day: "2026-10-04", thread: "t72", sender: "no-reply@hirestack.example", subject: "Thank you for applying", company: "Duff Brewing", role: "Fermentation Intern", status: "APPLIED", event: "CONFIRMATION", sender_role: "PLATFORM", significant: true, title: "Application Confirmation" },
+
+  // ... and an employer writing for itself is neither.
+  { day: "2026-10-05", thread: "t73", sender: "careers@vandelay.example", subject: "Thanks for applying", company: "Vandelay", role: "Latex Sales Intern", status: "APPLIED", event: "CONFIRMATION", sender_role: "EMPLOYER", significant: true, title: "Application Confirmation" },
+
+  // Invariant: a step that is supplied and checked rather than judged is
+  // administration. It holds a line of its own in the drawer, because the
+  // applicant does have to go and do it, and it moves nothing: the row stays
+  // where it was and the history records nothing.
+  { day: "2026-10-06", thread: "t74", sender: "careers@bluth.example", subject: "Application received", company: "Bluth Homes", role: "Banana Stand Intern", status: "APPLIED", event: "CONFIRMATION", significant: true, title: "Application Confirmation" },
+  { day: "2026-10-07", thread: "t75", sender: "careers@bluth.example", subject: "Confirm your identity to continue", company: "Bluth Homes", role: "Banana Stand Intern", status: "APPLIED", stage: "VERIFICATION", event: "REQUEST", significant: false, title: "Identity Check" },
 ];
 
 async function seed() {
@@ -205,6 +287,8 @@ async function seed() {
             year: fixture.year ?? null,
             status: fixture.status,
             stage_detail: fixture.stage ?? null,
+            email_event: fixture.event ?? null,
+            sender_role: fixture.sender_role ?? "EMPLOYER",
             is_significant: fixture.significant,
             email_title: fixture.title,
             confidence_score: 0.9,
@@ -269,7 +353,79 @@ const unattached = await prisma.emailMessage.count({ where: { applicationId: nul
 
 console.log(JSON.stringify(first, null, 2));
 
-expect("twenty six applications", first.length === 26);
+expect("thirty seven applications", first.length === 37);
+expect(
+  "an administrative step holds its own line and moves nothing",
+  (() => {
+    const row = first.find((item) => item.company === "Bluth Homes")!;
+    return (
+      row.status === "APPLIED" &&
+      row.milestones === 1 &&
+      row.tree.filter((node) => node.parent === null).length === 2
+    );
+  })(),
+);
+expect(
+  "an exam vendor no list has ever heard of still continues an application",
+  first.filter((row) => row.company === "Spacely Sprockets").length === 1 &&
+    first.find((row) => row.company === "Spacely Sprockets")?.emails.length === 3,
+);
+expect(
+  "a platform no list has ever heard of still begins one",
+  first.filter((row) => row.company === "Duff Brewing").length === 1,
+);
+expect(
+  "an employer writing for itself is neither of those",
+  first.filter((row) => row.company === "Vandelay").length === 2,
+);
+expect(
+  "a reminder writes no milestone, and the invitation and the moved deadline both do",
+  (() => {
+    const row = first.find((item) => item.company === "Vandelay")!;
+    return row.emails.length === 3 && row.milestones === 2;
+  })(),
+);
+expect(
+  "a recorded interview is its own stage, not a test",
+  first.find((row) => row.company === "Blue Sun")?.stage === "RECORDED_INTERVIEW",
+);
+expect(
+  "a coding test and a recording at one employer are one row and two steps",
+  (() => {
+    const row = first.find((item) => item.company === "Blue Sun")!;
+    return row.emails.length === 3 && row.tree.filter((node) => node.parent === null).length === 3;
+  })(),
+);
+expect(
+  "a take home is an assessment, because it is marked rather than timed",
+  first.find((row) => row.company === "Encom")?.stage === "ASSESSMENT",
+);
+expect(
+  "a phone screen, a panel and a whole day on site are all one interview stage",
+  (() => {
+    const row = first.find((item) => item.company === "Nakatomi")!;
+    // Three invitations to one stage, so one line with the other two under it,
+    // then the offer and the two checks that follow it.
+    return row.tree.filter((node) => node.parent === null).length === 3 && row.emails.length === 6;
+  })(),
+);
+expect(
+  "a check after an offer belongs to the application that made it",
+  first.filter((row) => row.company === "Nakatomi").length === 1,
+);
+expect(
+  "an exam vendor's paper lands on the row waiting on a recording, not on a test",
+  first.filter((row) => row.company === "Genco").length === 1 &&
+    first.find((row) => row.company === "Genco")?.emails.length === 3,
+);
+expect(
+  "a year the old list named is still noise in a title",
+  first.filter((row) => row.company === "Gringotts").length === 1,
+);
+expect(
+  "a year twenty years from now is noise too",
+  first.filter((row) => row.company === "Zorg").length === 1,
+);
 expect("running it again changes nothing", JSON.stringify(first) === JSON.stringify(second));
 expect(
   "two emails from one company make one row",
@@ -445,6 +601,104 @@ expect(
   "no email is its own parent, and no parent has a parent",
   tree.every((node) => node.id !== node.parent) &&
     tree.every((node) => !node.parent || tree.find((other) => other.id === node.parent)?.parent === null),
+);
+
+// ------------------------------------------------------------------ titles
+//
+// The drawer's own rule, checked directly rather than through the database,
+// because it is pure and because what it must never do is read a word out of
+// the model's freeform title (LOOP3 P1).
+
+const { drawerTitle, TITLE_KEYWORD_RULES } = await import("../src/lib/drawer");
+
+function titleOf(parts: {
+  status?: string;
+  stage?: string | null;
+  event?: string | null;
+  title?: string;
+  relation?: string | null;
+}): string {
+  return drawerTitle({
+    id: 1,
+    gmailMessageId: "title-check",
+    emailTitle: parts.title ?? "Whatever The Model Called It",
+    receivedAt: new Date("2026-01-01T00:00:00Z"),
+    senderDomain: null,
+    isSignificant: true,
+    isApplicationRelated: true,
+    llmClassificationRaw: JSON.stringify({
+      status: parts.status ?? "IN_PROGRESS",
+      stage_detail: parts.stage ?? null,
+      email_event: parts.event ?? null,
+      is_application_related: true,
+      is_significant: true,
+      email_title: parts.title ?? "Whatever The Model Called It",
+    }),
+    parentMessageId: parts.relation ? 2 : null,
+    parentRelation: parts.relation ?? null,
+  });
+}
+
+expect("no branch of the display reads a word out of the model's title", TITLE_KEYWORD_RULES.length === 0);
+expect(
+  "a recorded interview reads as one",
+  titleOf({ stage: "RECORDED_INTERVIEW", event: "INVITATION" }) === "Recorded Interview Invitation",
+);
+expect(
+  "a test at the same stage still reads as a test",
+  titleOf({ stage: "ASSESSMENT", event: "INVITATION" }) === "Technical Assessment Invitation",
+);
+expect(
+  "a check reads as a check",
+  titleOf({ status: "APPLIED", stage: "VERIFICATION", event: "REQUEST" }) === "Verification Request",
+);
+// An answer this code has never seen degrades to the fallback and still draws
+// a line. It never disappears and never stops the drawer saying something.
+expect(
+  "an event value nothing recognises falls back rather than vanishing",
+  titleOf({ stage: "ASSESSMENT", event: "ESCALATION" }) === "Technical Assessment Update",
+);
+// Rung 3 of the ladder. Both enums empty means the answer was given before
+// either field existed, and the model's own words beat a standard phrase that
+// would be confidently wrong.
+expect(
+  "with no stage and no event the model's own title is shown",
+  titleOf({ status: "IN_PROGRESS", title: "Something Nobody Has A Word For" }) ===
+    "Something Nobody Has A Word For",
+);
+// The fixture that proves P1 is gone, and the one that would have failed on
+// every day of this project so far.
+expect(
+  "a composed title is the same whatever language the model wrote its own in",
+  (() => {
+    const english = titleOf({ stage: "ASSESSMENT", event: "REMINDER", title: "Assessment Reminder" });
+    const french = titleOf({ stage: "ASSESSMENT", event: "REMINDER", title: "Rappel: évaluation technique" });
+    const empty = titleOf({ stage: "ASSESSMENT", event: "REMINDER", title: "" });
+    return english === french && french === empty && english === "Technical Assessment Reminder";
+  })(),
+);
+// A resend says nothing new, and says which kind of nothing.
+expect(
+  "a resent invitation reads as a reminder",
+  titleOf({ stage: "ASSESSMENT", event: "INVITATION", relation: "REPEAT" }) ===
+    "Technical Assessment Reminder",
+);
+expect(
+  "a resent receipt reads as a duplicate, because there is nothing to be reminded of",
+  titleOf({ status: "APPLIED", event: "CONFIRMATION", relation: "REPEAT" }) ===
+    "Duplicate Application Confirmation",
+);
+// An application the person ended is stored REJECTED because it really did
+// end. Only a rejection is a rejection.
+expect(
+  "an application that ended does not claim the applicant was turned down",
+  titleOf({ status: "REJECTED", event: "CONFIRMATION" }) === "Application Closed" &&
+    titleOf({ status: "REJECTED", event: "DECISION" }) === "Application Closed",
+);
+expect(
+  "an offer reads as an offer, and news about one reads as news",
+  titleOf({ status: "ACCEPTED", event: "DECISION" }) === "Offer" &&
+    titleOf({ status: "ACCEPTED", event: "UPDATE" }) === "Offer Update",
 );
 
 let failures = 0;

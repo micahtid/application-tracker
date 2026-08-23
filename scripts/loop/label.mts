@@ -11,6 +11,8 @@ import fs from "node:fs";
 import {
   LABELS_APPLICATIONS,
   LABELS_MESSAGES,
+  LABEL_EVENTS,
+  LABEL_STAGES,
   REVIEW_SHEET,
   labelRevision,
   writeJson,
@@ -38,8 +40,39 @@ let current: GroupLabel | null = null;
 let lastTopLevel: string | null = null;
 
 const FIELD = /^-\s*(company|role|season|year|status)\s*:\s*(.*)$/i;
-const GROUPED = /^-\s*([0-9a-f]{6,32})\s*\|\s*sig\s*:\s*(yes|no)\b\s*\|\s*(?:rel\s*:\s*(REPEAT|REMINDER|UPDATE)\s*\|)?(.*)$/i;
+const GROUPED = /^-\s*([0-9a-f]{6,32})\s*\|(.*)$/i;
 const SAMPLED = /^-\s*([0-9a-f]{6,32})\s*\|\s*related\s*:\s*(yes|no)\b\s*\|(.*)$/i;
+
+/**
+ * The `key:value` chips a message line carries, read in whatever order they
+ * appear and stopping at the first thing that is not one.
+ *
+ * Written as a scan rather than as one long pattern because the sheet gained
+ * two chips in LOOP3 and will gain more. A pattern that spells out every
+ * combination has to be rewritten each time, and the failure when it is not is
+ * a line silently read as unparseable prose.
+ */
+const CHIP = /^\s*(sig|stage|event|rel)\s*:\s*([A-Za-z_-]*)\s*$/;
+
+function chipsOf(tail: string): { chips: Map<string, string>; unknown: string | null } {
+  const chips = new Map<string, string>();
+  for (const part of tail.split("|")) {
+    const match = part.match(CHIP);
+    if (!match) break;                       // the date and the subject, from here on
+    const [, key, value] = match;
+    if (chips.has(key.toLowerCase())) return { chips, unknown: `${key} appears twice` };
+    chips.set(key.toLowerCase(), value.trim());
+  }
+  return { chips, unknown: null };
+}
+
+/** `-` is how every field on the sheet says "genuinely empty". */
+function oneOf(raw: string | undefined, allowed: readonly string[]): string | null | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === "" || raw === "-") return null;
+  const upper = raw.toUpperCase();
+  return allowed.includes(upper) ? upper : undefined;
+}
 
 /**
  * Two spaces means "shown under the nearest line above with less indentation".
@@ -109,7 +142,32 @@ lines.forEach((line, index) => {
     if (!messageMatch) { problems.push(`line ${at}: cannot read "${trimmed.slice(0, 60)}"`); return; }
     if (!current) { problems.push(`line ${at}: a message outside any group`); return; }
 
-    const [, id, sig, rel] = messageMatch;
+    const [, id, tail] = messageMatch;
+    const { chips, unknown } = chipsOf(tail);
+    if (unknown) { problems.push(`line ${at}: ${unknown}`); return; }
+
+    const sig = chips.get("sig");
+    if (sig !== "yes" && sig !== "no") {
+      problems.push(`line ${at}: sig: must be yes or no, not "${sig ?? ""}"`);
+      return;
+    }
+    const rel = chips.get("rel");
+    if (rel !== undefined && !["REPEAT", "REMINDER", "UPDATE"].includes(rel.toUpperCase())) {
+      problems.push(`line ${at}: rel: "${rel}" is not REPEAT, REMINDER or UPDATE`);
+      return;
+    }
+
+    const stage = oneOf(chips.get("stage"), LABEL_STAGES);
+    if (stage === undefined && chips.has("stage")) {
+      problems.push(`line ${at}: stage: "${chips.get("stage")}" is not one of ${LABEL_STAGES.join(", ")}`);
+      return;
+    }
+    const event = oneOf(chips.get("event"), LABEL_EVENTS);
+    if (event === undefined && chips.has("event")) {
+      problems.push(`line ${at}: event: "${chips.get("event")}" is not one of ${LABEL_EVENTS.join(", ")}`);
+      return;
+    }
+
     const already = seenIn.get(id);
     if (already) {
       problems.push(`line ${at}: message ${id} is in both ${already} and ${current.id}`);
@@ -143,6 +201,8 @@ lines.forEach((line, index) => {
       significant: sig.toLowerCase() === "yes",
       parent,
       relation: parent ? (rel ? rel.toUpperCase() : "UPDATE") : null,
+      stage: stage ?? null,
+      event: event ?? null,
     };
     return;
   }
@@ -161,6 +221,8 @@ lines.forEach((line, index) => {
     significant: false,
     parent: null,
     relation: null,
+    stage: null,
+    event: null,
     why: section === "prefilter" ? "dropped by the prefilter" : "judged not related",
   };
 });
@@ -192,4 +254,7 @@ console.log(`      ${LABELS_MESSAGES}`);
 console.log(`  ${groups.length} groups over ${grouped} messages`);
 console.log(`  ${children} of them are shown under an earlier email, ${grouped - children} hold a line of their own`);
 console.log(`  ${Object.keys(messages).length} messages labelled in total`);
+console.log(
+  `  ${Object.values(messages).filter((label) => label.stage).length} carry a stage, ${Object.values(messages).filter((label) => label.event).length} carry an event`,
+);
 console.log(`  ${relatedSampled} of the sampled not related messages were marked related after all`);

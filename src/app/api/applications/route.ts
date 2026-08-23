@@ -28,6 +28,7 @@ export async function GET() {
             senderDomain: true,
             isSignificant: true,
             isApplicationRelated: true,
+            llmClassificationRaw: true,
             parentMessageId: true,
             parentRelation: true,
           },

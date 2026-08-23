@@ -1,4 +1,4 @@
-import { SEASONS, STATUSES, STAGE_DETAILS } from "@/lib/constants";
+import { SEASONS, SENDER_ROLES, STATUSES, STAGE_DETAILS, EMAIL_EVENTS } from "@/lib/constants";
 
 /**
  * The one output shape, written once (3.3). Each provider wants the schema in a
@@ -69,7 +69,23 @@ export const FIELDS: Field[] = [
     nullable: true,
     enum: STAGE_DETAILS,
     description:
-      "Only meaningful when status is IN_PROGRESS: ASSESSMENT for a test or coding challenge, INTERVIEW for a conversation with people. Otherwise null.",
+      "Which step of the process this email is about, whatever the employer calls it. Answer it whether the email invites the person to that step, nudges them about it, or reports that they have finished it. ASSESSMENT when the step is marked and has right answers: a test, a coding challenge, an aptitude test, a take home, a work sample. RECORDED_INTERVIEW when they answer questions alone, on camera or by recording, and somebody reviews it afterwards. INTERVIEW when the step is scheduled and live with one or more people, however long it runs and whatever it is called. VERIFICATION when something is supplied or consented to and then checked rather than judged: proof of identity, a passcode to continue an application, references, a background or credit or right to work check, a medical, or joining paperwork. Null when the email is about no such step, such as a plain acknowledgement that an application arrived, or an outcome.",
+  },
+  {
+    name: "email_event",
+    type: "string",
+    nullable: false,
+    enum: EMAIL_EVENTS,
+    description:
+      "What kind of report this email is. CONFIRMATION when something the person submitted has been received and nothing is asked of them. INVITATION when they are asked to do something for the first time. REMINDER when they have already been asked and this repeats the ask. COMPLETION when a step they carried out is finished or has been received. REQUEST when something is needed from them before this can go further. DECISION when it is an outcome in either direction, including an offer, a rejection, or a posting that has closed. UPDATE for anything else: it is the fallback, so use it whenever none of the others really fits.",
+  },
+  {
+    name: "sender_role",
+    type: "string",
+    nullable: false,
+    enum: SENDER_ROLES,
+    description:
+      "Who sent this email, judged from the email itself rather than from any list of companies. EMPLOYER when the employer is writing for itself, including through its own careers system. PLATFORM when a hiring or recruiting service is delivering the employer's own mail, such as an application receipt or a rejection sent on the employer's behalf. ASSESSMENT_VENDOR when a third party is running one step for the employer, such as the company whose test, questionnaire, recorded interview or background check the person is being sent to. When it is not clear, answer EMPLOYER.",
   },
   {
     name: "is_significant",
