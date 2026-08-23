@@ -199,6 +199,14 @@ model SyncRun {
   messagesDiscovered Int       @default(0) @map("messages_discovered")
   messagesFetched    Int       @default(0) @map("messages_fetched")
   messagesClassified Int       @default(0) @map("messages_classified")
+  /// DISCOVERING | FETCHING | CLASSIFYING | TIDYING
+  stage              String    @default("DISCOVERING")
+  /// How far the stage above has got, and how far it has to go: searches run
+  /// while discovering, emails while downloading and reading. The progress
+  /// readout divides by these, so a refresh with ten new emails draws the same
+  /// bar as a first run with three hundred (4).
+  stageDone          Int       @default(0) @map("stage_done")
+  stageTotal         Int       @default(0) @map("stage_total")
   errors             Int       @default(0)
   errorSummary       String?   @map("error_summary")
   /// Application pairs that look like one application split in two. A report,

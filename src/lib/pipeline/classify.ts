@@ -74,7 +74,7 @@ export async function classifyPending(
   provider: Provider,
   apiKey: string,
   syncRunId: number,
-  onProgress: (done: number) => Promise<void> | void,
+  onProgress: (progress: { done: number; total: number }) => Promise<void> | void,
 ): Promise<ClassifyOutcome> {
   const adapter = adapterFor(provider);
 
@@ -82,6 +82,10 @@ export async function classifyPending(
     where: needsClassifying(),
     orderBy: { receivedAt: "asc" },
   });
+
+  // The total is sent first so the readout has a denominator before the first
+  // email comes back (4).
+  await onProgress({ done: 0, total: messages.length });
 
   let classified = 0;
   let failed = 0;
@@ -136,7 +140,7 @@ export async function classifyPending(
       ]);
 
       classified += 1;
-      if (classified % 5 === 0) await onProgress(classified);
+      if (classified % 5 === 0) await onProgress({ done: classified, total: messages.length });
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       const attempts = message.classificationAttempts + 1;
@@ -164,7 +168,7 @@ export async function classifyPending(
     }
   });
 
-  await onProgress(classified);
+  await onProgress({ done: classified, total: messages.length });
   return { classified, failed, fatal };
 }
 

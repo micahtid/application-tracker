@@ -3,8 +3,8 @@
 /* Internship Applications Tracker.
    The design system below is the prototype stylesheet, which stays the visual
    reference. Everything the prototype did not have (the row menu, the sync
-   banner, first run progress) is written in the same idiom
-   at the bottom of this file. */
+   banner, sync progress) is written in the same idiom at the bottom of this
+   file. */
 
 /* ===============================================================
    Design tokens
@@ -889,9 +889,9 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .banner__title { font-weight: 700; letter-spacing: -0.01em; }
 .banner__text { margin: 3px 0 0; font-size: 13.5px; color: var(--text-2); }
 
-/* --- First run progress (4) ------------------------------------
-   Shown only during the first backfill, which reads and classifies a few
-   hundred emails over several minutes. Later syncs just spin the button. */
+/* --- Sync progress (4) -----------------------------------------
+   The same readout for every sync. The first backfill fills it over several
+   minutes; a refresh crosses it in seconds. The button spins alongside it. */
 .progress { margin-top: 28px; }
 .progress__row {
   display: flex; align-items: baseline; justify-content: space-between; gap: 12px;

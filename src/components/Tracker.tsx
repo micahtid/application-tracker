@@ -18,12 +18,59 @@ type SyncRun = {
   id: number;
   status: "RUNNING" | "OK" | "PARTIAL" | "FAILED";
   mode: "FULL" | "INCREMENTAL";
+  stage: "DISCOVERING" | "FETCHING" | "CLASSIFYING" | "TIDYING";
+  stageDone: number;
+  stageTotal: number;
   messagesDiscovered: number;
   messagesFetched: number;
   messagesClassified: number;
   errors: number;
   errorSummary: string | null;
 };
+
+/**
+ * One readout for every sync, the first backfill and a refresh alike (4).
+ * Each of the three stages owns a third of the bar and fills its own third as
+ * far as it has got, so the bar always moves the same way: a refresh spends
+ * most of its time searching, a first run most of its time reading.
+ */
+function syncProgress(run: SyncRun): { text: string; count: string; percent: number } {
+  const emails = (done: number, total: number) =>
+    `${done} of ${total} email${total === 1 ? "" : "s"}`;
+
+  // A stage that has not said how much work it has yet sits at the start of
+  // its own third rather than guessing.
+  const filled = (base: number) =>
+    base + 33 * (run.stageTotal ? Math.min(1, run.stageDone / run.stageTotal) : 0);
+
+  switch (run.stage) {
+    case "DISCOVERING":
+      return {
+        text:
+          run.mode === "FULL"
+            ? "Reading Your Inbox for the First Time…"
+            : "Searching Your Inbox…",
+        // Nothing is written in the count slot until there is a real number
+        // to write there.
+        count: run.messagesDiscovered ? `${run.messagesDiscovered} emails found` : "",
+        percent: Math.max(2, filled(0)),
+      };
+    case "FETCHING":
+      return {
+        text: "Downloading New Emails…",
+        count: emails(run.stageDone, run.stageTotal),
+        percent: filled(33),
+      };
+    case "CLASSIFYING":
+      return {
+        text: "Reading New Emails…",
+        count: emails(run.stageDone, run.stageTotal),
+        percent: filled(66),
+      };
+    default:
+      return { text: "Sorting What Came Back…", count: "", percent: 100 };
+  }
+}
 
 type StateResponse = {
   state: "CONNECTED" | "NOT_CONNECTED" | "RECONNECT";
@@ -222,6 +269,8 @@ export default function Tracker() {
 
   const disconnected = data ? data.state !== "CONNECTED" : false;
 
+  const progress = running && data?.sync ? syncProgress(data.sync) : null;
+
   return (
     <main className="app" role="application" aria-label="Internship Applications Tracker">
       <div className={`page${disconnected ? " is-disconnected" : ""}`}>
@@ -312,31 +361,21 @@ export default function Tracker() {
               </div>
             ) : null}
 
-            {/* A readout only during the first backfill, which takes minutes (4). */}
-            {running && data?.sync?.mode === "FULL" ? (
+            {progress ? (
               <div className="progress">
                 <div className="progress__row">
-                  <span>Reading your inbox for the first time…</span>
-                  <span className="progress__count">
-                    {data.sync.messagesClassified} of {data.sync.messagesDiscovered || "…"} emails
-                  </span>
+                  <span>{progress.text}</span>
+                  <span className="progress__count">{progress.count}</span>
                 </div>
-                <div className="progress__track">
-                  <div
-                    className="progress__bar"
-                    style={{
-                      width: `${
-                        data.sync.messagesDiscovered
-                          ? Math.min(
-                              100,
-                              Math.round(
-                                (data.sync.messagesClassified / data.sync.messagesDiscovered) * 100,
-                              ),
-                            )
-                          : 4
-                      }%`,
-                    }}
-                  />
+                <div
+                  className="progress__track"
+                  role="progressbar"
+                  aria-label="Sync Progress"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(progress.percent)}
+                >
+                  <div className="progress__bar" style={{ width: `${progress.percent}%` }} />
                 </div>
               </div>
             ) : null}

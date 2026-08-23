@@ -46,6 +46,9 @@ export async function GET() {
           messagesDiscovered: run.messagesDiscovered,
           messagesFetched: run.messagesFetched,
           messagesClassified: run.messagesClassified,
+          stage: run.stage,
+          stageDone: run.stageDone,
+          stageTotal: run.stageTotal,
           errors: run.errors,
           errorSummary: run.errorSummary,
         }

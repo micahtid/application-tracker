@@ -17,6 +17,18 @@ import { RetryableError, mapWithConcurrency, withRetry } from "@/lib/retry";
  * an interrupted sweep resumes by simply running again (D7).
  */
 
+/**
+ * What the sweep is doing right now, for the progress readout (4). Searching
+ * counts the searches it has run; downloading counts the emails it has saved.
+ */
+export type FetchProgress = {
+  stage: "DISCOVERING" | "FETCHING";
+  done: number;
+  total: number;
+  discovered: number;
+  fetched: number;
+};
+
 function retryableGmail(error: unknown): never {
   const status = (error as { code?: number; status?: number })?.code ?? 0;
   if (status === 403 || status === 429 || status >= 500) {
@@ -56,15 +68,33 @@ async function listIds(gmail: gmail_v1.Gmail, query: string): Promise<string[]> 
 export async function sweepAndStore(
   account: GmailAccount,
   startDate: Date,
-  onProgress: (progress: { discovered: number; fetched: number }) => Promise<void> | void,
-): Promise<{ discovered: number; fetched: number }> {
+  onProgress: (progress: FetchProgress) => Promise<void> | void,
+): Promise<{ discovered: number; fetched: number; toFetch: number }> {
   const auth = await authorizedClient(account);
   const gmail = gmailFor(auth);
 
   const discovered = new Set<string>();
-  for (const query of buildQueries(startDate)) {
+  const queries = buildQueries(startDate);
+
+  // The number of searches is known before the first one runs, so the readout
+  // has a denominator from the start (4).
+  await onProgress({
+    stage: "DISCOVERING",
+    done: 0,
+    total: queries.length,
+    discovered: 0,
+    fetched: 0,
+  });
+
+  for (const [index, query] of queries.entries()) {
     for (const id of await listIds(gmail, query)) discovered.add(id);
-    await onProgress({ discovered: discovered.size, fetched: 0 });
+    await onProgress({
+      stage: "DISCOVERING",
+      done: index + 1,
+      total: queries.length,
+      discovered: discovered.size,
+      fetched: 0,
+    });
   }
 
   const known = await prisma.emailMessage.findMany({
@@ -75,6 +105,16 @@ export async function sweepAndStore(
   const fresh = [...discovered].filter((id) => !knownIds.has(id));
 
   let fetched = 0;
+  const report = () =>
+    onProgress({
+      stage: "FETCHING",
+      done: fetched,
+      total: fresh.length,
+      discovered: discovered.size,
+      fetched,
+    });
+
+  await report();
 
   await mapWithConcurrency(fresh, GMAIL_CONCURRENCY, async (messageId) => {
     const response = await withRetry(() =>
@@ -118,9 +158,9 @@ export async function sweepAndStore(
     });
 
     fetched += 1;
-    if (fetched % 10 === 0) await onProgress({ discovered: discovered.size, fetched });
+    if (fetched % 10 === 0) await report();
   });
 
-  await onProgress({ discovered: discovered.size, fetched });
-  return { discovered: discovered.size, fetched };
+  await report();
+  return { discovered: discovered.size, fetched, toFetch: fresh.length };
 }

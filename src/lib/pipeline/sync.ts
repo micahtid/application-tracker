@@ -97,16 +97,30 @@ async function execute(
   try {
     const account = await prisma.gmailAccount.findUniqueOrThrow({ where: { id: accountId } });
 
+    // Every run walks the same four stages, so the readout is the same one
+    // whether this is the first backfill or a refresh (4).
     const swept = await sweepAndStore(account, startDate, async (progress) => {
       await prisma.syncRun.update({
         where: { id: syncRunId },
-        data: { messagesDiscovered: progress.discovered, messagesFetched: progress.fetched },
+        data: {
+          stage: progress.stage,
+          stageDone: progress.done,
+          stageTotal: progress.total,
+          messagesDiscovered: progress.discovered,
+          messagesFetched: progress.fetched,
+        },
       });
     });
 
     await prisma.syncRun.update({
       where: { id: syncRunId },
-      data: { messagesDiscovered: swept.discovered, messagesFetched: swept.fetched },
+      data: {
+        stage: "CLASSIFYING",
+        stageDone: 0,
+        stageTotal: 0,
+        messagesDiscovered: swept.discovered,
+        messagesFetched: swept.fetched,
+      },
     });
 
     const apiKey = await getApiKey();
@@ -114,11 +128,26 @@ async function execute(
 
     await revisitSkipped(prisma);
 
-    const outcome = await classifyPending(prisma, provider, apiKey, syncRunId, async (done) => {
-      await prisma.syncRun.update({
-        where: { id: syncRunId },
-        data: { messagesClassified: done },
-      });
+    const outcome = await classifyPending(
+      prisma,
+      provider,
+      apiKey,
+      syncRunId,
+      async (progress) => {
+        await prisma.syncRun.update({
+          where: { id: syncRunId },
+          data: {
+            stageDone: progress.done,
+            stageTotal: progress.total,
+            messagesClassified: progress.done,
+          },
+        });
+      },
+    );
+
+    await prisma.syncRun.update({
+      where: { id: syncRunId },
+      data: { stage: "TIDYING", stageDone: 0, stageTotal: 0 },
     });
 
     permanentFailures = outcome.failed;
