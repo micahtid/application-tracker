@@ -41,7 +41,7 @@ export default function Toolbar(props: ToolbarProps) {
           autoComplete="off"
           spellCheck={false}
           placeholder="Search Companies, Roles, or Emails…"
-          aria-label="Search applications"
+          aria-label="Search Applications"
           value={props.query}
           onChange={(event) => props.onQuery(event.target.value)}
         />
@@ -130,7 +130,7 @@ export default function Toolbar(props: ToolbarProps) {
                   </button>
                 ))
               ) : (
-                <p className="menu__label">No years yet</p>
+                <p className="menu__label">No Years Yet</p>
               )}
 
               <div className="menu__foot">

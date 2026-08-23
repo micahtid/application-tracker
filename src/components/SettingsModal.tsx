@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   CircleAlert,
   CircleCheck,
@@ -148,7 +149,7 @@ export default function SettingsModal({
     } else {
       setVerifiedKey("");
       setPhase("invalid");
-      setMessage(result.message ?? "Key rejected. Check it and try again.");
+      setMessage(result.message ?? "The key was rejected. Check it and try again.");
     }
   }
 
@@ -183,7 +184,13 @@ export default function SettingsModal({
 
   const provider = detected ? settings.providers[detected] : null;
 
-  return (
+  /**
+   * The dialog hangs off the body rather than off the page that opened it. A
+   * fixed box is measured against the nearest ancestor carrying a transform,
+   * and the page carries one for its entry animation, so a dialog left in
+   * place would centre itself on the whole page instead of the screen.
+   */
+  return createPortal(
     <div className="modal">
       <div className="modal__scrim" onClick={onClose} />
 
@@ -220,7 +227,7 @@ export default function SettingsModal({
                 Gmail Account
               </span>
             </div>
-            <p className="group__note">The inbox the board is read from.</p>
+            <p className="group__note">The inbox the board reads from.</p>
 
             <div className={`account${settings.account ? "" : " is-signed-out"}`}>
               <span className="account__avatar">
@@ -230,13 +237,13 @@ export default function SettingsModal({
                   <User className="lucide" />
                 )}
               </span>
-              <span className="account__mail">{settings.account?.email ?? "Not signed in"}</span>
+              <span className="account__mail">{settings.account?.email ?? "Not Signed In"}</span>
               {settings.account ? (
                 <button
                   className="icon-btn icon-btn--sm"
                   type="button"
-                  aria-label="Log out"
-                  title="Log out"
+                  aria-label="Log Out"
+                  title="Log Out"
                   onClick={onSignOut}
                 >
                   <LogOut className="lucide" />
@@ -248,14 +255,14 @@ export default function SettingsModal({
                 <a
                   className="btn btn--compact"
                   href="/api/auth/google/start"
-                  title={settings.googleConfigured ? "Sign in" : "Add a Google client first"}
+                  title={settings.googleConfigured ? "Sign In" : "Add a Google client first"}
                   aria-disabled={!settings.googleConfigured}
                   onClick={(event) => {
                     if (!settings.googleConfigured) event.preventDefault();
                   }}
                 >
                   <LogIn className="lucide" />
-                  Sign in
+                  Sign In
                 </a>
               )}
             </div>
@@ -313,7 +320,7 @@ export default function SettingsModal({
                 <button
                   className="icon-btn icon-btn--sm"
                   type="button"
-                  aria-label={revealed ? "Hide key" : "Show key"}
+                  aria-label={revealed ? "Hide Key" : "Show Key"}
                   onClick={() => setRevealed((value) => !value)}
                 >
                   {revealed ? <EyeOff className="lucide" /> : <Eye className="lucide" />}
@@ -334,15 +341,18 @@ export default function SettingsModal({
               {message}
             </p>
 
-            {provider && phase === "valid" ? (
-              <p className="provider">
-                {provider.label}
-                <span className="provider__model">{provider.model}</span>
-              </p>
-            ) : null}
-
-            <p className="usage">
-              Usage, all time <span>${settings.usageUsd.toFixed(2)}</span>
+            {/* One quiet line of read only facts about the key: who it is with,
+                which model it drives, and what it has cost so far. They are all
+                answers rather than things to fill in, so they read as one line
+                under the field instead of as sections of their own. */}
+            <p className="key-meta">
+              {provider && phase === "valid" ? (
+                <>
+                  <span className="key-meta__provider">{provider.label}</span>
+                  <span className="key-meta__model">{provider.model}</span>
+                </>
+              ) : null}
+              <span className="key-meta__usage">${settings.usageUsd.toFixed(2)}</span>
             </p>
           </section>
 
@@ -357,7 +367,7 @@ export default function SettingsModal({
               </label>
             </div>
             <p className="group__note">
-              Every sync reads this date to today. A year back is as far as it goes.
+              Every sync reads from this date to today. You can go back one year at most.
             </p>
 
             <div className="date-row">
@@ -396,6 +406,7 @@ export default function SettingsModal({
           </button>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

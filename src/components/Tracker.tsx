@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Inbox, RefreshCw, Settings, TriangleAlert, Unplug, X } from "lucide-react";
+import { Eraser, Inbox, Palette, RefreshCw, Settings, TriangleAlert, Unplug, X } from "lucide-react";
 import Board, { type Row } from "./Board";
 import Toolbar from "./Toolbar";
 import SettingsModal, { type SettingsState } from "./SettingsModal";
+import ResetModal from "./ResetModal";
 import {
   matchQuery,
   passesFilters,
@@ -106,6 +107,8 @@ export default function Tracker() {
   const [rowMenu, setRowMenu] = useState<number | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [dismissedRun, setDismissedRun] = useState<number | null>(null);
 
   const searchRef = useRef<HTMLInputElement>(null);
@@ -152,6 +155,23 @@ export default function Tracker() {
     [],
   );
 
+  /**
+   * Throw away everything the syncs built and read the mailbox again from the
+   * start. The board is reloaded before the dialog closes, so it empties in
+   * front of you rather than sitting on rows that are already gone.
+   */
+  const resetAll = useCallback(async () => {
+    setResetting(true);
+    await fetch("/api/reset", { method: "POST" });
+    await load();
+    const response = await fetch("/api/sync").then(
+      (result) => result.json() as Promise<{ sync: SyncRun | null }>,
+    );
+    setData((current) => (current ? { ...current, sync: response.sync } : current));
+    setResetting(false);
+    setResetOpen(false);
+  }, [load]);
+
   // While a sync runs, ask our own server how it is going about once a second.
   // This never contacts Google (D24).
   const running = data?.sync?.status === "RUNNING";
@@ -178,14 +198,15 @@ export default function Tracker() {
         if (document.activeElement === searchRef.current) setQuery("");
         return;
       }
-      if (event.key === "/" && document.activeElement !== searchRef.current && !settingsOpen) {
+      const modalOpen = settingsOpen || resetOpen;
+      if (event.key === "/" && document.activeElement !== searchRef.current && !modalOpen) {
         event.preventDefault();
         searchRef.current?.focus();
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [settingsOpen]);
+  }, [settingsOpen, resetOpen]);
 
   // Any click outside a row menu closes it.
   useEffect(() => {
@@ -279,24 +300,60 @@ export default function Tracker() {
             <h1 className="greeting">
               Welcome back, <span>{data?.account?.firstName ?? "there"}</span>
             </h1>
-            <button
-              className={`icon-btn${running ? " is-spinning" : ""}`}
-              type="button"
-              aria-label="Refresh"
-              title={disconnected ? "Not connected" : "Refresh"}
-              disabled={disconnected || running}
-              onClick={() => void startSync(true)}
-            >
-              <RefreshCw className="lucide" />
-            </button>
-            <button
-              className="icon-btn"
-              type="button"
-              aria-label="Settings"
-              onClick={() => setSettingsOpen(true)}
-            >
-              <Settings className="lucide" />
-            </button>
+            {/*
+              Two groups, split by a hairline: what acts on the mail, then what
+              changes settings. Inside each group the safe, often used button
+              comes first and the rare one follows, and the gear stays at the
+              end of the row, which is where a gear is looked for.
+
+              Rescan All sits beside Refresh because they are the same kind of
+              thing, and is drawn as an eraser rather than another circular
+              arrow so the dangerous one of the pair is never the one you meant
+              to click. It reddens under the pointer, and asks before it runs.
+            */}
+            <div className="masthead__tools">
+              <div className="masthead__group">
+                <button
+                  className={`icon-btn${running ? " is-spinning" : ""}`}
+                  type="button"
+                  aria-label="Refresh"
+                  title={disconnected ? "Not Connected" : "Refresh"}
+                  disabled={disconnected || running}
+                  onClick={() => void startSync(true)}
+                >
+                  <RefreshCw className="lucide" />
+                </button>
+                <button
+                  className="icon-btn icon-btn--danger"
+                  type="button"
+                  aria-label="Rescan All"
+                  title={disconnected ? "Not Connected" : "Rescan All"}
+                  disabled={disconnected || running}
+                  onClick={() => setResetOpen(true)}
+                >
+                  <Eraser className="lucide" />
+                </button>
+              </div>
+
+              <span className="masthead__rule" aria-hidden="true" />
+
+              <div className="masthead__group">
+                {/* Nothing behind it yet. Disabled rather than hidden, so the
+                    row is the row it will be and does not shuffle later. */}
+                <button className="icon-btn" type="button" aria-label="Style" title="Style" disabled>
+                  <Palette className="lucide" />
+                </button>
+                <button
+                  className="icon-btn"
+                  type="button"
+                  aria-label="Settings"
+                  title="Settings"
+                  onClick={() => setSettingsOpen(true)}
+                >
+                  <Settings className="lucide" />
+                </button>
+              </div>
+            </div>
           </div>
         </header>
 
@@ -310,7 +367,7 @@ export default function Tracker() {
             </p>
             <p className="blank__text">
               {data?.state === "RECONNECT"
-                ? "Gmail access has lapsed. Sign in again to carry on reading your inbox."
+                ? "Gmail access has expired. Sign in again to keep reading your inbox."
                 : data?.missing === "ACCOUNT"
                   ? "Sign in to Gmail to get started."
                   : "Add an API key to get started."}
@@ -344,7 +401,7 @@ export default function Tracker() {
                 <TriangleAlert className="lucide banner__icon" />
                 <div className="banner__body">
                   <p className="banner__title">
-                    {banner.status === "FAILED" ? "The last sync failed" : "The last sync half finished"}
+                    {banner.status === "FAILED" ? "The Last Sync Failed" : "The Last Sync Did Not Finish"}
                   </p>
                   <p className="banner__text">
                     {banner.errorSummary ?? "Some emails could not be read."}
@@ -439,12 +496,12 @@ export default function Tracker() {
                 <span>
                   {query ? (
                     <>
-                      No applications match <b>&quot;{query}&quot;</b>
+                      No applications match <b>&quot;{query}&quot;</b>.
                     </>
                   ) : narrowed ? (
-                    <>No applications match the current filters</>
+                    <>No applications match the current filters.</>
                   ) : (
-                    <>Nothing tracked yet. The next sync will fill this in.</>
+                    <>Nothing is tracked yet. The next sync will add anything it finds.</>
                   )}
                 </span>
               </p>
@@ -461,7 +518,7 @@ export default function Tracker() {
                     type="button"
                     onClick={() => setShowHidden((value) => !value)}
                   >
-                    {showHidden ? "Hide them again" : `${hiddenCount} hidden`}
+                    {showHidden ? "Hide Them Again" : `${hiddenCount} Hidden`}
                   </button>
                 ) : null}
               </span>
@@ -480,6 +537,14 @@ export default function Tracker() {
           </>
         )}
       </div>
+
+      {resetOpen ? (
+        <ResetModal
+          busy={resetting}
+          onCancel={() => setResetOpen(false)}
+          onConfirm={() => void resetAll()}
+        />
+      ) : null}
 
       {settingsOpen && settingsState ? (
         <SettingsModal

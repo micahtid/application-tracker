@@ -152,9 +152,14 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   padding-inline: 1px;
 }
 
-/* Refresh and Settings sit together at the far right of the row. */
-.masthead__row > .icon-btn:first-of-type { margin-left: auto; }
-.masthead__row > .icon-btn + .icon-btn { margin-left: -12px; }
+/* The tools sit at the far right of the row in two groups: what acts on the
+   mail, then what changes settings. Buttons inside a group get room to breathe;
+   the grouping is carried by the hairline and by the wider gap around it, which
+   is more than three times the one inside a group. Four evenly spaced icons in
+   a row would be four separate decisions to make. */
+.masthead__tools { display: flex; align-items: center; gap: 14px; margin-left: auto; }
+.masthead__group { display: flex; align-items: center; gap: 4px; }
+.masthead__rule { width: 1px; height: 18px; background: var(--line); }
 
 .icon-btn {
   display: grid; place-items: center;
@@ -167,9 +172,13 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 }
 .icon-btn:hover { background: var(--hover); color: var(--text); }
 .icon-btn:active { background: var(--press); }
-.icon-btn:disabled { cursor: default; }
+.icon-btn:disabled { opacity: 0.42; cursor: default; }
 .icon-btn--sm { width: 30px; height: 30px; font-size: 16px; }
 .icon-btn.is-spinning svg { animation: spin 0.9s linear infinite; }
+
+/* Reddens under the pointer, so the one button here that deletes something
+   says so before it is clicked rather than only in the dialog after. */
+.icon-btn--danger:hover:not(:disabled) { color: var(--red); }
 
 /* ===============================================================
    2. Search, sort, filter
@@ -377,9 +386,7 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   background: none; border: 0;
   border-radius: var(--radius);
   cursor: pointer;
-  transition: background 0.14s;
 }
-.item__row:hover { background: var(--hover); }
 
 .item__chevron {
   display: grid; place-items: center;
@@ -387,13 +394,13 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   transition: transform 0.22s var(--ease), color 0.15s;
 }
 .item.open .item__chevron { transform: rotate(90deg); color: var(--text-2); }
-.item__row:hover .item__chevron { color: var(--text); }
 
 .item__label {
   min-width: 0;
   font-size: 15.5px;
   color: var(--text-2);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: color 0.15s;
 }
 .item__company {
   font-weight: 700;
@@ -404,7 +411,19 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   text-underline-offset: 3px;
   transition: text-decoration-color 0.15s;
 }
+/* Hover is carried by the text alone. A filled band was the loudest thing on a
+   page that is otherwise a list of words, and it landed on whichever row the
+   pointer was crossing on its way somewhere else. The company's underline comes
+   up out of the hairline it rests at, the role beside it darkens, and the
+   chevron darkens with it, which says which row is under the pointer without
+   redrawing a stripe across the page. The same rule holds inside the drawer.
+
+   The underline stops short of the text colour on purpose: matched to the word
+   above it, it reads as a rule drawn under the row rather than as the word
+   answering the pointer. */
 .item__row:hover .item__company { text-decoration-color: var(--text-3); }
+.item__row:hover .item__label { color: var(--text); }
+.item__row:hover .item__chevron { color: var(--text); }
 
 .tags { display: flex; align-items: center; gap: 6px; padding-left: 16px; }
 .tag {
@@ -428,32 +447,46 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .item.open .item__drawer { grid-template-rows: 1fr; }
 .item__drawer > div { overflow: hidden; }
 
+/* The 32px on the right is the menu button (30px) plus the gap beside it, so
+   the list ends exactly where the row above it ends. Each line then adds the
+   same 10px the row gives its tags, which puts the dates on the tag edge. */
 .emails {
   margin: 0 0 16px 16px;
-  padding: 4px 0 4px 22px;
+  padding: 4px 32px 4px 22px;
   list-style: none;
   border-left: 1.5px solid var(--line);
 }
+/* The row runs the full width of the drawer so every date lands in one column
+   at the right edge, instead of trailing whatever length the title happens to
+   be. The title takes up the slack and truncates, because the date is the part
+   that has to stay put for the column to mean anything. */
 .email a {
-  display: inline-flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; gap: 10px;
   margin-left: -8px;
   padding: 6px 10px 6px 8px;
   font-size: 14.5px;
   color: var(--text-2);
   text-decoration: none;
   border-radius: 5px;
-  transition: background 0.14s, color 0.14s;
+  transition: color 0.14s;
 }
-.email a:hover { background: var(--hover); color: var(--text); }
+.email a:hover { color: var(--text); }
 .email a > svg { font-size: 15px; color: var(--text-3); }
-.email a:hover > svg { color: var(--blue); }
+.email a:hover > svg { color: var(--text-2); }
 .email__title {
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   text-decoration: underline;
   text-decoration-color: var(--line);
   text-underline-offset: 3px;
 }
 .email a:hover .email__title { text-decoration-color: currentColor; }
-.email__date { font-size: 13px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.email__date {
+  margin-left: auto;
+  flex: none;
+  font-size: 13px; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
 .email__none { padding: 4px 0 6px; font-size: 14px; color: var(--text-3); font-style: italic; }
 
 /* A line shown under an earlier one: a report on a step already on the board,
@@ -463,19 +496,7 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   padding: 2px 0 2px 18px;
   border-left-style: dashed;
 }
-.email--child a { font-size: 13.5px; color: var(--text-3); }
-.email--child a > svg { font-size: 13px; }
-.email__relation {
-  flex: none;
-  padding: 1px 6px;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--text-3);
-  background: var(--hover);
-  border-radius: 4px;
-}
+.email--child a { color: var(--text-3); }
 
 /* ===============================================================
    No results, footer
@@ -577,10 +598,14 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 }
 .modal[hidden] { display: none; }
 
+/* Just enough blur to settle the page behind the dialog. Any more and the
+   board reads as broken rather than as set aside. */
 .modal__scrim {
   position: absolute;
   inset: 0;
   background: rgba(28, 27, 25, 0.32);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   animation: fadeIn 0.18s var(--ease) both;
 }
 [data-theme="dark"] .modal__scrim { background: rgba(0, 0, 0, 0.58); }
@@ -695,11 +720,22 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 
 /* API key */
 .key-row { display: flex; gap: 8px; }
-.field--key { flex: 1; padding-right: 4px; }
+/* The eye sits in a 30px button around a 16px glyph, so it carries 7px of
+   centring inside itself. The padding makes up the rest of the 14px the key
+   icon gets on the left, so both glyphs sit the same distance from the edge. */
+.field--key { flex: 1; padding-right: 7px; }
 .field--key input {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 13.5px;
   letter-spacing: 0.01em;
+}
+/* Edge and Chrome add their own eye to a password box. The field already has
+   one, and two eyes side by side is a puzzle, so the built in one goes. */
+.field--key input::-ms-reveal,
+.field--key input::-ms-clear {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 /* The field itself reports the verdict through its icon and border. */
@@ -725,20 +761,35 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 }
 .status[data-state="invalid"] { display: block; color: var(--red); }
 
-/* Spend belongs to the key, so it stays in this group, but it is a running
-   total rather than another thing to fill in. The gap above it says so. */
-.usage {
+/* Provider, model and spend are all answers the key gave back, so they sit on
+   one line at one size rather than as three stacked rows. The separator hangs
+   off the end of each part, so a wrap on a narrow screen leaves the dot at the
+   end of the line where it reads as a continuation. */
+.key-meta {
   display: flex;
-  justify-content: space-between;
-  margin: 16px 0 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  margin: 12px 0 0;
   font-size: 13px;
   color: var(--text-3);
 }
-.usage span {
-  color: var(--text-2);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+.key-meta > *:not(:last-child)::after {
+  content: "·";
+  margin: 0 7px;
+  color: var(--line);
 }
+.key-meta__provider,
+.key-meta__model {
+  animation: fade 0.25s var(--ease) both;
+}
+/* The model is an identifier rather than a word, and mono says so at a glance.
+   The half pixel off the size is an optical match: mono runs wider, so 13px
+   would sit heavier than the plain text either side of it. */
+.key-meta__model {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12.5px;
+}
+.key-meta__usage { font-variant-numeric: tabular-nums; }
 
 /* Reads as one line: Starting [date] to Today */
 .date-row { display: flex; align-items: center; gap: 12px; }
@@ -782,7 +833,9 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .btn--primary:hover:not(:disabled) { opacity: 0.86; }
 
 /* A shorter button for use inside a row of content rather than a footer. */
-.btn--compact { height: 34px; padding: 0 12px; font-size: 13.5px; }
+/* The second tier: 36px tall with 14px text, shared with .date-input and the
+   account row. 42px stays for the controls a row is actually built around. */
+.btn--compact { height: 36px; padding: 0 12px; font-size: 14px; }
 .btn[aria-disabled="true"] { opacity: 0.42; cursor: not-allowed; }
 
 .btn--ghost {
@@ -793,6 +846,27 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 }
 .btn--ghost:hover { background: var(--hover); color: var(--text); }
 
+/* Reserved for the one action that deletes something. */
+.btn--danger {
+  color: #fff;
+  background: var(--red);
+  border-color: var(--red);
+}
+[data-theme="dark"] .btn--danger { color: #241615; }
+.btn--danger:hover:not(:disabled) { opacity: 0.86; background: var(--red); }
+
+/* ===============================================================
+   Short dialogs
+   =============================================================== */
+/* Narrower than Settings. These hold a paragraph, not a form, and a wide box
+   would stretch the text past a comfortable reading measure. */
+.modal__panel--sm { width: clamp(320px, 92vw, 440px); }
+
+/* The whole of a confirming dialog: one sentence, at the size of body text
+   rather than of a note, because it is the thing being read and not a remark
+   beside something else. */
+.confirm__lead { margin: 0; font-size: 14.5px; line-height: 1.5; color: var(--text-2); }
+
 /* ===============================================================
    Small screens
    =============================================================== */
@@ -802,6 +876,9 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   .item__row { grid-template-columns: 20px minmax(0, 1fr); row-gap: 4px; }
   .tags { grid-column: 2; justify-content: flex-start; padding-left: 0; }
   .item__label { white-space: normal; }
+  /* The tags drop to their own line and go left here, so there is no tag edge
+     left to line the dates up with, and the inset is only lost width. */
+  .emails { padding-right: 0; }
 }
 
 /* On a phone the dialog becomes the whole screen, which is the usual answer
@@ -915,22 +992,6 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 /* --- The provider the key belongs to (5.5) ----------------------
    There is no provider selector. Once a key passes its check, the line
    below names which service answered and which model it will use. */
-.provider {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 12px 0 0;
-  font-size: 13.5px; font-weight: 600;
-  color: var(--text-2);
-  animation: fade 0.25s var(--ease) both;
-}
-.provider__model {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 12px; font-weight: 500;
-  color: var(--text-3);
-}
-
 /* --- Footer additions (5.3.1) ---------------------------------- */
 .footer__left { display: flex; align-items: center; gap: 14px; }
 .footer__hidden {
