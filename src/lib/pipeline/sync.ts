@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { SYNC_COOLDOWN_MS } from "@/lib/constants";
+import { SYNC_COOLDOWN_MS, type Provider } from "@/lib/constants";
 import { GmailAuthError } from "@/lib/gmail/client";
 import { clampStartDate, connectionState, getApiKey } from "@/lib/settings";
 import { sweepAndStore } from "./fetch";
@@ -10,11 +10,11 @@ import { rebuildIfStale } from "./rebuild";
 import { findSplitSuspects } from "./duplicates";
 
 /**
- * The whole pipeline, in order, with one sync at a time (D23).
+ * The whole pipeline, in order, with one sync at a time.
  *
  * The lock is two things at once: a module flag, which stops two browser tabs
  * in the same server process racing, and a RUNNING row, which is what the
- * progress readout reads and what survives a page reload (D24).
+ * progress readout reads and what survives a page reload.
  */
 
 let running: Promise<void> | null = null;
@@ -76,7 +76,7 @@ export async function startSync(options: { force: boolean }): Promise<SyncDecisi
   const provider = connection.provider;
   const startDate = clampStartDate(connection.settings.readFromDate);
 
-  // Deliberately not awaited: syncing never blocks the first view (Part 7).
+  // Deliberately not awaited: syncing never blocks the first view.
   running = execute(run.id, account.id, provider, startDate).finally(() => {
     running = null;
   });
@@ -87,7 +87,7 @@ export async function startSync(options: { force: boolean }): Promise<SyncDecisi
 async function execute(
   syncRunId: number,
   accountId: number,
-  provider: "OPENROUTER" | "ANTHROPIC" | "GEMINI",
+  provider: Provider,
   startDate: Date,
 ): Promise<void> {
   const failures: string[] = [];
@@ -98,7 +98,7 @@ async function execute(
     const account = await prisma.gmailAccount.findUniqueOrThrow({ where: { id: accountId } });
 
     // Every run walks the same four stages, so the readout is the same one
-    // whether this is the first backfill or a refresh (4).
+    // whether this is the first backfill or a refresh.
     const swept = await sweepAndStore(account, startDate, async (progress) => {
       await prisma.syncRun.update({
         where: { id: syncRunId },

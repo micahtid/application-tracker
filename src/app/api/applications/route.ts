@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * The whole board in one request. Search, sort and filter then run in the
- * browser over this set, which beats a round trip on every keystroke (D26).
+ * browser over this set, which beats a round trip on every keystroke.
  */
 export async function GET() {
   const [applications, account, corrections] = await Promise.all([
@@ -51,7 +51,7 @@ export async function GET() {
         role: application.roleTitle,
         season: application.season,
         year: application.year,
-        // The override, when set, beats the calculated status (3.6).
+        // The override, when set, beats the calculated status.
         status: correction.statusOverride ?? application.status,
         statusOverride: correction.statusOverride,
         stageDetail: application.stageDetail,
@@ -63,7 +63,7 @@ export async function GET() {
           id: node.message.id,
           title: drawerTitle(node.message),
           date: node.message.receivedAt,
-          // Addresses the exact stored message, never a Gmail text search (D31).
+          // Addresses the exact stored message, never a Gmail text search.
           href: gmailLink(account?.emailAddress ?? null, node.message.gmailMessageId),
           relation: node.relation,
           children: node.children.map((child) => ({

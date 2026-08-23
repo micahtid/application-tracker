@@ -2,14 +2,13 @@ import type { Db } from "@/lib/db";
 import type { Status } from "@/lib/constants";
 
 /**
- * The two corrections made by hand: hide a row, or override its status
- * (5.3.1). They are the only values in the whole application table that are
- * not worked out from the emails, which is why a rebuild deletes everything
- * except these (LOOP Invariant 1).
+ * The two corrections made by hand: hide a row, or override its status. They
+ * are the only values in the application table not worked out from the emails,
+ * which is why a rebuild deletes everything except these (LOOP Invariant 1).
  *
- * A correction is keyed by its anchor message, the oldest message in the
- * application at the moment it was made, so it finds its way back to whichever
- * rebuilt row now holds that message. A correction follows its anchor.
+ * A correction is keyed by its anchor, the oldest message in the application
+ * when it was made, so it follows that message into whichever rebuilt row now
+ * holds it.
  */
 
 export type ResolvedCorrection = {

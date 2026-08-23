@@ -17,7 +17,7 @@ import { classificationOf, headState } from "./recompute";
 import type { Classification } from "@/lib/llm";
 
 /**
- * Stage 4 (3.5). A separate serial pass, oldest first.
+ * Stage 4. A separate serial pass, oldest first.
  *
  * Classification runs about ten messages at once and finishes in unpredictable
  * order, so matching cannot live inside it: two emails from the same company
@@ -28,14 +28,11 @@ import type { Classification } from "@/lib/llm";
 export type MatchOutcome = { attached: number; created: number; touched: number[] };
 
 /**
- * The alias table remembers company names already matched together (3.5), and
- * a second pass catches the ones nothing has matched yet.
- *
- * Both passes stay on the `company_normalized` index. The first is an equality
- * lookup over every leading prefix of the incoming name, which catches the
- * case where the stored name is the shorter one. The second is a prefix
- * pattern on the first token, which the same index serves, and catches the
- * case where the incoming name is the shorter one.
+ * Candidate rows for a company name, from the alias table and from the name
+ * itself. Both passes stay on the `company_normalized` index: an equality
+ * lookup over every leading prefix of the incoming name catches a shorter
+ * stored name, and a prefix match on the first token catches a shorter
+ * incoming one.
  */
 async function candidatesFor(db: Db, normalized: string): Promise<Application[]> {
   const names = new Set([normalized, ...namePrefixes(normalized)]);
@@ -124,18 +121,11 @@ async function requisitionContradicts(
  * Whether this email came from a third party running one step for an employer
  * (LOOP3 Invariant 5).
  *
- * The model reads the email and says so, because it is plain in the email
- * itself: a company sending you to take its test on somebody else's behalf
- * says as much in its first sentence. The vendor list is consulted too, and it
- * can only add certainty: a sender the list knows is treated as one whatever
- * the model answered, and a sender the list has never heard of is treated
- * exactly as well as one it has.
- *
- * That is the whole difference from LOOP2, where this question was answered by
- * a lookup alone. Thirty names were written down, three of the five vendors in
- * one mailbox had to be added by hand when they turned up, and in anybody
- * else's mailbox the defect that list was written to fix came straight back
- * without a word.
+ * The model answers it, because the email says so plainly. The vendor list is
+ * consulted too and can only add certainty: a sender the list knows counts
+ * whatever the model said, and an unknown sender is no worse off. A lookup
+ * alone was the LOOP2 rule, and it silently failed in any mailbox whose
+ * vendors were not on the list.
  */
 function runsAStepForAnEmployer(message: EmailMessage, classification: Classification): boolean {
   return classification.senderRole === "ASSESSMENT_VENDOR" || isAssessmentVendor(message.senderDomain);
@@ -143,23 +133,17 @@ function runsAStepForAnEmployer(message: EmailMessage, classification: Classific
 
 /**
  * LOOP2 Invariant 1. A company that runs exams never receives an application,
- * so an email from one can only ever continue an application that already
- * exists.
+ * so its email can only continue one that already exists.
  *
- * The rules this sits behind compare two job titles to decide whether two
- * applications are the same. That is the right question about two
- * applications, and the wrong question about an exam: the vendor names the
- * paper after the programme it belongs to rather than after the posting, and a
- * hiring process does not begin with an exam anyway.
+ * The title comparison this sits behind is the wrong question for an exam: the
+ * vendor names the paper after the programme rather than the posting. So it is
+ * tried last, leaving a row that matches on its title to win on its title, and
+ * it acts only when exactly one application at the employer is waiting on a
+ * step. Two postings through one vendor give no way to tell the papers apart,
+ * and guessing would merge two real applications.
  *
- * It is the last thing tried, so a row that matches on its title still wins on
- * its title. And it acts only when exactly one application at the employer is
- * waiting on an assessment, because an employer running two postings through
- * one vendor gives no way to tell which paper belongs to which, and guessing
- * there would merge two real applications.
- *
- * "Waiting on an assessment" is read from the emails already attached rather
- * than from the row's `status` column, which stage 5 has not written yet.
+ * What a row is waiting on is read from its attached emails, not from the
+ * `status` column, which stage 5 has not written yet.
  */
 async function assessmentHandOff(
   db: Db,
@@ -176,11 +160,10 @@ async function assessmentHandOff(
       orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
     });
     const state = headState(attached);
-    // Any step the applicant has been sent away to do, not the assessment
-    // stage alone. The stage vocabulary grew in LOOP3 and a row waiting on a
-    // recorded interview or a background check is waiting on a third party
-    // exactly as a row waiting on a test is. Reading one value out of four
-    // would have quietly narrowed this rule as the list grew.
+    // Any step the applicant was sent away to do, not the assessment stage
+    // alone: a row waiting on a recorded interview or a background check is
+    // waiting on a third party just as much. Naming one value of four would
+    // narrow this rule silently as the vocabulary grows.
     if (state.status === "IN_PROGRESS" && state.stageDetail) waiting.push(candidate);
   }
 
@@ -191,7 +174,7 @@ function scoreCandidate(candidate: Application, classification: Classification):
   const bothRolesKnown = Boolean(candidate.roleTitle && classification.roleTitle);
   let score = bothRolesKnown ? roleSimilarity(candidate.roleTitle, classification.roleTitle) : 0.5;
 
-  // Season and year break ties only when both sides actually have them (3.5).
+  // Season and year break ties only when both sides actually have them.
   if (candidate.season && classification.season) {
     score += candidate.season === classification.season ? 0.1 : -0.25;
   }
@@ -216,11 +199,9 @@ async function createApplication(db: Db, classification: Classification, message
   const existing = await db.application.findUnique({ where: { dedupeKey: key } });
   if (existing) return existing;
 
-  // An employer that writes itself as two words here may write itself as one
-  // word in the next email, and a prefix lookup cannot see across a space that
-  // is not there. Recording the run together form as an alias when the row is
-  // made means the later email finds it on the alias index, which is what the
-  // alias table has always been for.
+  // An employer written as two words here may be one word in the next email,
+  // and a prefix lookup cannot see across a space that is not there. Recording
+  // the run together form as an alias lets the later email find this row.
   const joined = companyNormalized.replace(/ /g, "");
   if (joined !== companyNormalized) await rememberAlias(db, joined, companyName);
 
@@ -255,7 +236,7 @@ async function attach(
 
   // Only significant emails write status history. Without this rule a
   // "sounds good, see you Thursday" reply would drag an offer out of
-  // Accepted (3.6).
+  // Accepted.
   if (classification.isSignificant) {
     await db.applicationStatusHistory.upsert({
       where: {
@@ -308,14 +289,12 @@ export async function attachClassified(db: Db): Promise<MatchOutcome> {
 
     const incomingRequisitions = requisitionNumbers(message.subject, message.bodyText);
 
-    // 1. Thread already linked to an application. Present only sometimes,
-    //    never depended on, but it is what links a bare "Re: your application"
-    //    that names no company at all.
-    //
-    //    A thread is evidence, not proof. Mail clients thread by subject, so
-    //    two applications acknowledged in the same words arrive in one thread,
-    //    and an email that names a different job than the thread already
-    //    points at is a different application however it was delivered.
+    // 1. Thread already linked to an application. Often absent, never relied
+    //    on, but it is what links a bare "Re: your application" naming no
+    //    company. Evidence, not proof: mail clients thread by subject, so two
+    //    applications acknowledged in the same words share a thread, and an
+    //    email naming a different job is a different application however it
+    //    was delivered.
     if (message.threadId) {
       const sibling = await db.emailMessage.findFirst({
         where: { threadId: message.threadId, applicationId: { not: null } },
@@ -348,7 +327,7 @@ export async function attachClassified(db: Db): Promise<MatchOutcome> {
     }
 
     // A message with no company creates no application: company is the anchor
-    // for matching, so a nameless row could never be matched to anything (3.5).
+    // for matching, so a nameless row could never be matched to anything.
     if (!classification.companyName) continue;
 
     const normalized = normalizeCompany(classification.companyName);

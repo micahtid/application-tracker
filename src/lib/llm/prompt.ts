@@ -1,7 +1,7 @@
 import { BODY_CHAR_LIMIT } from "@/lib/constants";
 
 /**
- * One email per request, no thread context (D17). A bare "Re: your application"
+ * One email per request, no thread context. A bare "Re: your application"
  * is linked by thread in stage 4 without ever needing to name its company.
  */
 export const SYSTEM_PROMPT = `You read one email at a time and decide whether it belongs to a job or internship application the recipient submitted.

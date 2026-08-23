@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { ArrowUpDown, Check, RotateCcw, Search, SlidersHorizontal } from "lucide-react";
 import { SORTS, type SortKey } from "@/lib/view";
 import { SEASONS } from "@/lib/constants";
+import { useDismissOnOutsideClick } from "@/lib/hooks";
 
 type ToolbarProps = {
   query: string;
@@ -24,12 +25,7 @@ export default function Toolbar(props: ToolbarProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
 
   // Clicking anywhere else closes whichever menu is open.
-  useEffect(() => {
-    if (!props.openMenu) return;
-    const close = () => props.onOpenMenu(null);
-    document.addEventListener("click", close);
-    return () => document.removeEventListener("click", close);
-  }, [props]);
+  useDismissOnOutsideClick(Boolean(props.openMenu), () => props.onOpenMenu(null));
 
   return (
     <div className="toolbar reveal" style={{ "--i": 1 } as React.CSSProperties} ref={wrapRef}>

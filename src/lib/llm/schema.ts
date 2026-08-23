@@ -1,7 +1,7 @@
 import { SEASONS, SENDER_ROLES, STATUSES, STAGE_DETAILS, EMAIL_EVENTS } from "@/lib/constants";
 
 /**
- * The one output shape, written once (3.3). Each provider wants the schema in a
+ * The one output shape, written once. Each provider wants the schema in a
  * slightly different dialect, so both dialects are generated from this list
  * rather than written out twice and allowed to drift.
  */

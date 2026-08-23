@@ -1,4 +1,50 @@
-@import "tailwindcss";
+/* ===============================================================
+   Reset
+
+   Tailwind was imported here for its preflight alone: not one utility
+   class is used anywhere in the app. These are the preflight rules this
+   stylesheet actually leans on, written out so the dependency can go.
+   =============================================================== */
+*,
+::before,
+::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0 solid;
+}
+
+html {
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+  tab-size: 4;
+}
+
+/* Headings are sized by the classes on them, never by the tag. */
+h1, h2, h3, h4, h5, h6 { font-size: inherit; font-weight: inherit; }
+
+a { color: inherit; text-decoration: inherit; }
+
+ol, ul, menu { list-style: none; }
+
+/* Lucide renders svgs; block keeps them off the text baseline. */
+img, svg, video, canvas { display: block; vertical-align: middle; }
+img, video { max-width: 100%; height: auto; }
+
+button, input, select, textarea {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  border-radius: 0;
+  background-color: transparent;
+}
+
+button,
+input:where([type="button"], [type="reset"], [type="submit"]) {
+  appearance: button;
+}
+
+::placeholder { opacity: 1; }
 
 /* Internship Applications Tracker.
    The design system below is the prototype stylesheet, which stays the visual
@@ -651,7 +697,7 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .modal__foot {
   display: flex; align-items: center; justify-content: flex-end; gap: 8px;
   flex: none;
-  padding: 16px 24px;
+  padding: 16px 24px 20px;
   border-top: 1px solid var(--line-soft);
 }
 /* Says why Save is not available yet, rather than leaving a dead button. */
@@ -664,7 +710,7 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 @media (min-width: 600px) {
   .modal__head { padding: 22px 32px 16px; }
   .modal__body { padding: 24px 32px; }
-  .modal__foot { padding: 16px 32px 18px; }
+  .modal__foot { padding: 16px 32px 22px; }
 }
 
 /* One rhythm for every group: the label, an optional line explaining it, then
@@ -895,7 +941,7 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   }
   .modal__head { padding: 16px 20px 14px; }
   .modal__body { padding: 20px; }
-  .modal__foot { padding: 14px 20px; flex-wrap: wrap; }
+  .modal__foot { padding: 14px 20px 16px; flex-wrap: wrap; }
   .modal__reason { width: 100%; margin: 0 0 4px; }
   .modal__foot .btn { flex: 1; }
   .key-row { flex-wrap: wrap; }
@@ -906,7 +952,7 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
    Additions the prototype did not have
    =============================================================== */
 
-/* --- Row menu (5.3.1) ------------------------------------------
+/* --- Row menu ------------------------------------------
    The row itself is a button, so the menu cannot sit inside it. The two
    share a flex line instead. */
 .item__head { display: flex; align-items: center; gap: 2px; }
@@ -931,7 +977,7 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 /* Row menus open under the button, at the right edge of the row. */
 .item__menu-wrap .menu { min-width: 194px; }
 
-/* --- Stage badge and override mark (5.3) ----------------------- */
+/* --- Stage badge and override mark ----------------------- */
 .tag--stage {
   color: var(--amber);
   background: color-mix(in srgb, var(--amber) 13%, transparent);
@@ -945,7 +991,7 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 }
 .tag--override > svg { font-size: 12px; }
 
-/* --- Sync problem banner (5.6) ---------------------------------
+/* --- Sync problem banner ---------------------------------
    A banner, not a screen: a failed sync does not invalidate anything
    already saved, so the board stays visible and usable. */
 .banner {
@@ -966,7 +1012,7 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .banner__title { font-weight: 700; letter-spacing: -0.01em; }
 .banner__text { margin: 3px 0 0; font-size: 13.5px; color: var(--text-2); }
 
-/* --- Sync progress (4) -----------------------------------------
+/* --- Sync progress -----------------------------------------
    The same readout for every sync. The first backfill fills it over several
    minutes; a refresh crosses it in seconds. The button spins alongside it. */
 .progress { margin-top: 28px; }
@@ -989,10 +1035,10 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   transition: width 0.4s var(--ease);
 }
 
-/* --- The provider the key belongs to (5.5) ----------------------
+/* --- The provider the key belongs to ----------------------
    There is no provider selector. Once a key passes its check, the line
    below names which service answered and which model it will use. */
-/* --- Footer additions (5.3.1) ---------------------------------- */
+/* --- Footer additions ---------------------------------- */
 .footer__left { display: flex; align-items: center; gap: 14px; }
 .footer__hidden {
   padding: 2px 0;

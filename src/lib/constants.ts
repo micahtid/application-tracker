@@ -1,30 +1,32 @@
 export const STATUSES = ["ACCEPTED", "IN_PROGRESS", "APPLIED", "REJECTED"] as const;
 export type Status = (typeof STATUSES)[number];
 
+/** What a status is called on screen, in every place one is named. */
+export const STATUS_LABELS: Record<Status, string> = {
+  ACCEPTED: "Accepted",
+  IN_PROGRESS: "In Progress",
+  APPLIED: "Applied",
+  REJECTED: "Rejected",
+};
+
 /**
  * What a step asks the applicant to go and do (LOOP3 Decision 1).
  *
- * Employers invent stages constantly and no list of their names could keep up,
- * so these four are a partition of what the applicant actually has to do
- * rather than a list of what anybody calls it. A work trial nobody has thought
- * of yet is still one of these four.
+ * A partition of what the applicant has to do, not a list of what employers
+ * call it: they invent names constantly and no list would keep up. A work
+ * trial nobody has thought of yet is still one of these four.
  *
  *   ASSESSMENT          something marked, with right answers
  *   RECORDED_INTERVIEW  something completed alone, reviewed later by a person
  *   INTERVIEW           something scheduled, live, with a person
  *   VERIFICATION        something supplied or consented to, checked not judged
- *
- * INTERVIEW keeps its name now that it means specifically a live one.
- * `LIVE_INTERVIEW` would say so and would cost a migration and a second pass
- * to say it, and no reader ever sees the stored word.
  */
 export const STAGE_DETAILS = ["ASSESSMENT", "RECORDED_INTERVIEW", "INTERVIEW", "VERIFICATION"] as const;
 export type StageDetail = (typeof STAGE_DETAILS)[number];
 
 /**
- * What the row's badge says for each of them. A lookup rather than a choice
- * between two, so the next value added to the list above cannot leave the
- * badge saying something the drawer disagrees with.
+ * What the row's badge says for each of them. A lookup, so a value added above
+ * cannot leave the badge disagreeing with the drawer.
  */
 export const STAGE_LABELS: Record<StageDetail, string> = {
   ASSESSMENT: "Assessment",
@@ -36,10 +38,9 @@ export const STAGE_LABELS: Record<StageDetail, string> = {
 /**
  * What kind of report an email is (LOOP3 Decision 1).
  *
- * Asked of the model rather than read back out of its prose, because the model
- * read the whole email in whatever language and wording it arrived in, and a
- * rule that searches its answer for the word "reminder" is guessing in English
- * at something already known.
+ * Asked of the model rather than read back out of its prose: searching its
+ * answer for the word "reminder" would be guessing in English at something the
+ * model already knows, in whatever language the email arrived in.
  */
 export const EMAIL_EVENTS = [
   "CONFIRMATION",
@@ -66,10 +67,9 @@ export const EMAIL_EVENT_FALLBACK: EmailEvent = "UPDATE";
  *   PLATFORM           a service delivering the employer's own mail
  *   ASSESSMENT_VENDOR  a third party running a step on the employer's behalf
  *
- * Asked for because the alternative is a list of real vendors, and a rule that
- * fails when a name is missing from a list is silently wrong in every mailbox
- * whose vendors nobody has heard of. The list stays and still helps; it stops
- * being the thing a grouping rule cannot work without.
+ * Asked of the model because the alternative, a list of known vendors, is
+ * silently wrong in any mailbox whose vendors are not on it. The list stays
+ * and still helps; it is no longer what a grouping rule depends on.
  */
 export const SENDER_ROLES = ["EMPLOYER", "PLATFORM", "ASSESSMENT_VENDOR"] as const;
 export type SenderRole = (typeof SENDER_ROLES)[number];
@@ -83,10 +83,10 @@ export type Season = (typeof SEASONS)[number];
 export const PROVIDERS = ["OPENROUTER", "ANTHROPIC", "GEMINI"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
-/** The window can never reach back further than this (PRD 3.1, 5.5). */
+/** The window can never reach back further than this. */
 export const MAX_MONTHS_BACK = 12;
 
-/** Skip the sync on open when the last one finished less recently than this (D23). */
+/** Skip the sync on open when the last one finished less recently than this. */
 export const SYNC_COOLDOWN_MS = 5 * 60 * 1000;
 
 /**
@@ -105,10 +105,10 @@ export const CLASSIFIER_VERSION = 2;
  */
 export const GROUPING_VERSION = 4;
 
-/** A message that has failed this many times is left alone (Part 9). */
+/** A message that has failed this many times is left alone. */
 export const MAX_CLASSIFICATION_ATTEMPTS = 3;
 
-/** Cleaned body characters sent to the model (D29). */
+/** Cleaned body characters sent to the model. */
 export const BODY_CHAR_LIMIT = 1500;
 
 export const GMAIL_CONCURRENCY = 10;

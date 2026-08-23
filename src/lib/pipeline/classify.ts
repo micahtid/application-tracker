@@ -11,7 +11,7 @@ import { prefilter } from "@/lib/prefilter";
 import { mapWithConcurrency } from "@/lib/retry";
 
 /**
- * Stage 3 (3.3, 3.4). Wide and unordered: about ten emails in flight at once.
+ * Stage 3. Wide and unordered: about ten emails in flight at once.
  * Nothing is ever sent to the model twice, which is what makes every sync after
  * the first cost almost nothing.
  */
@@ -23,7 +23,7 @@ export type ClassifyOutcome = {
   fatal: string | null;
 };
 
-/** A saved result counts only when it is OK and made by the current pipeline (3.4). */
+/** A saved result counts only when it is OK and made by the current pipeline. */
 function needsClassifying() {
   return {
     OR: [
@@ -43,7 +43,7 @@ export async function pendingCount(db: Db): Promise<number> {
 
 /**
  * The prefilter rules are part of `classifier_version` too, so a version bump
- * has to reconsider everything the old rules threw away (3.4).
+ * has to reconsider everything the old rules threw away.
  */
 export async function revisitSkipped(db: Db): Promise<void> {
   const stale = await db.emailMessage.findMany({
@@ -84,7 +84,7 @@ export async function classifyPending(
   });
 
   // The total is sent first so the readout has a denominator before the first
-  // email comes back (4).
+  // email comes back.
   await onProgress({ done: 0, total: messages.length });
 
   let classified = 0;
@@ -127,7 +127,7 @@ export async function classifyPending(
           },
         }),
         // Cost is worked out when the row is written, so a later price change
-        // never rewrites what was actually spent (Q8).
+        // never rewrites what was actually spent.
         db.llmUsage.create({
           data: {
             syncRunId,

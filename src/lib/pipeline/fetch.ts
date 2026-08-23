@@ -9,16 +9,16 @@ import { CLASSIFIER_VERSION, GMAIL_CONCURRENCY } from "@/lib/constants";
 import { RetryableError, mapWithConcurrency, withRetry } from "@/lib/retry";
 
 /**
- * Stages 1 and 2 (3.1, 3.2). Sweep wide, download only what has never been seen,
- * then throw out obvious noise before anything costs money.
+ * Stages 1 and 2. Sweep wide, download only what has never been seen, then
+ * throw out obvious noise before anything costs money.
  *
- * There is no pageToken checkpoint: listing every matching id again costs about
- * 15 quota units, and the message cache already skips everything downloaded, so
- * an interrupted sweep resumes by simply running again (D7).
+ * No pageToken checkpoint: listing every matching id again costs about 15
+ * quota units and the message cache already skips what was downloaded, so an
+ * interrupted sweep resumes by running again.
  */
 
 /**
- * What the sweep is doing right now, for the progress readout (4). Searching
+ * What the sweep is doing right now, for the progress readout. Searching
  * counts the searches it has run; downloading counts the emails it has saved.
  */
 export type FetchProgress = {
@@ -49,7 +49,7 @@ async function listIds(gmail: gmail_v1.Gmail, query: string): Promise<string[]> 
           q: query,
           maxResults: 500,
           // Trash is included on purpose: people delete rejections, and those are
-          // real results. Spam is excluded by the query itself (D6).
+          // real results. Spam is excluded by the query itself.
           includeSpamTrash: true,
           pageToken,
         })
@@ -69,7 +69,7 @@ export async function sweepAndStore(
   account: GmailAccount,
   startDate: Date,
   onProgress: (progress: FetchProgress) => Promise<void> | void,
-): Promise<{ discovered: number; fetched: number; toFetch: number }> {
+): Promise<{ discovered: number; fetched: number }> {
   const auth = await authorizedClient(account);
   const gmail = gmailFor(auth);
 
@@ -77,7 +77,7 @@ export async function sweepAndStore(
   const queries = buildQueries(startDate);
 
   // The number of searches is known before the first one runs, so the readout
-  // has a denominator from the start (4).
+  // has a denominator from the start.
   await onProgress({
     stage: "DISCOVERING",
     done: 0,
@@ -150,7 +150,7 @@ export async function sweepAndStore(
         bodyText,
         labels: JSON.stringify(message.labelIds ?? []),
         receivedAt: new Date(Number(message.internalDate ?? Date.now())),
-        // Skipped rather than deleted, so the decision stays auditable (3.2).
+        // Skipped rather than deleted, so the decision stays auditable.
         classificationStatus: verdict.keep ? "PENDING" : "SKIPPED_PREFILTER",
         classifierVersion: verdict.keep ? null : CLASSIFIER_VERSION,
         classificationError: verdict.keep ? null : verdict.reason,
@@ -162,5 +162,5 @@ export async function sweepAndStore(
   });
 
   await report();
-  return { discovered: discovered.size, fetched, toFetch: fresh.length };
+  return { discovered: discovered.size, fetched };
 }

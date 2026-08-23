@@ -6,7 +6,7 @@ import { saveCorrection } from "@/lib/pipeline/corrections";
 export const dynamic = "force-dynamic";
 
 /**
- * The only writes in the app (5.3.1). Both are corrections, both reversible:
+ * The only writes in the app. Both are corrections, both reversible:
  * hide a row, or override its status. Everything else on a row is worked out
  * from its emails and rewritten on every sync.
  *

@@ -1,23 +1,16 @@
 /**
  * Applicant tracking systems. Three jobs:
- *   1. The sender domain sweep (D5), which is not narrowed by keywords.
- *   2. The blocklist that stops a vendor being returned as the employer (3.3).
+ *   1. The sender domain sweep, which is not narrowed by keywords.
+ *   2. The blocklist that stops a vendor being returned as the employer.
  *   3. Which of two kinds of go between sent an email (LOOP2 Invariant 1).
  *
- * `kind` carries real weight, and getting one backwards is expensive in both
- * directions:
+ * `kind` is wrong in both directions if mislabelled. PLATFORM sends the
+ * employer's own mail and can begin an application; call one ASSESSMENT and
+ * those rows stop being created. ASSESSMENT runs exams and has never received
+ * an application, so it can only continue one; call one PLATFORM and its exams
+ * split applications in two.
  *
- *   PLATFORM sends the employer's own mail. It can therefore begin an
- *   application, and several rows on this board exist only because a platform
- *   sent their confirmation. Label one of these ASSESSMENT and those rows stop
- *   being created at all.
- *
- *   ASSESSMENT runs exams for an employer. A company that runs exams has never
- *   received anybody's application, so an email from one can only ever
- *   continue an application that already exists, never start one. Label one of
- *   these PLATFORM and its exams go on splitting applications in two.
- *
- * This is a fact about what those businesses are, not a fact about any one
+ * This is a fact about what those businesses are rather than about any one
  * mailbox, which is why it can live in a list at all.
  */
 export const ATS_VENDORS = [
@@ -57,7 +50,7 @@ export type VendorKind = "PLATFORM" | "ASSESSMENT";
 
 export const ATS_DOMAINS: string[] = ATS_VENDORS.flatMap((entry) => [...entry.domains]);
 
-/** Names that may never be returned as the employer (3.3). */
+/** Names that may never be returned as the employer. */
 export const ATS_BLOCKLIST: string[] = [
   ...ATS_VENDORS.map((entry) => entry.vendor.toLowerCase()),
   "greenhouse software",

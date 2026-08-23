@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * Check works out the provider from the key, then calls that provider's model
- * list endpoint (Q7). That endpoint is free, needs a working key, and confirms
+ * list endpoint. That endpoint is free, needs a working key, and confirms
  * our chosen model still exists, so a retired model id shows a clear error here
  * instead of failing on every email halfway through a sync. A pattern match
  * alone would pass a well formed but revoked key.

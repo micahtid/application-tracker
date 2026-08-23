@@ -1,4 +1,4 @@
-import type { StageDetail, Status } from "@/lib/constants";
+import { STATUS_LABELS, type StageDetail, type Status } from "@/lib/constants";
 
 /** The board's shape, as the browser sees it. */
 export type EmailView = {
@@ -28,11 +28,12 @@ export type ApplicationView = {
   emails: EmailView[];
 };
 
-export const SECTIONS: { key: Status; label: string; icon: string; modifier: string }[] = [
-  { key: "ACCEPTED", label: "Accepted", icon: "circle-check", modifier: "accepted" },
-  { key: "IN_PROGRESS", label: "In Progress", icon: "clock", modifier: "progress" },
-  { key: "APPLIED", label: "Applied", icon: "list", modifier: "applied" },
-  { key: "REJECTED", label: "Rejected", icon: "ban", modifier: "rejected" },
+/** Board order, written out rather than derived, so it cannot move by accident. */
+export const SECTIONS: { key: Status; label: string; modifier: string }[] = [
+  { key: "ACCEPTED", label: STATUS_LABELS.ACCEPTED, modifier: "accepted" },
+  { key: "IN_PROGRESS", label: STATUS_LABELS.IN_PROGRESS, modifier: "progress" },
+  { key: "APPLIED", label: STATUS_LABELS.APPLIED, modifier: "applied" },
+  { key: "REJECTED", label: STATUS_LABELS.REJECTED, modifier: "rejected" },
 ];
 
 export const SORTS = [
@@ -44,7 +45,14 @@ export const SORTS = [
 
 export type SortKey = (typeof SORTS)[number]["key"];
 
-/** Dates are stored in UTC and shown in whatever zone the browser reports (D22b). */
+/** A set with the value removed if it was there, added if it was not. */
+export function toggled<T>(set: Set<T>, value: T): Set<T> {
+  const next = new Set(set);
+  if (!next.delete(value)) next.add(value);
+  return next;
+}
+
+/** Dates are stored in UTC and shown in whatever zone the browser reports. */
 export function formatDate(value: string | null): string {
   if (!value) return "";
   return new Intl.DateTimeFormat(undefined, {
@@ -71,7 +79,7 @@ export function matchQuery(application: ApplicationView, query: string) {
     .some((email) => email.title.toLowerCase().includes(needle));
 
   // When the only match is inside an email title, that row opens itself so the
-  // hit is visible (5.4).
+  // hit is visible.
   return { hit: inHeader || inEmails, viaEmail: inEmails && !inHeader };
 }
 
@@ -98,7 +106,7 @@ export function sortApplications(
         return byCompany(b, a);
       case "emails":
         // Top level lines only, so a long exchange about one step cannot
-        // outrank a row that really reached more of them (5.4).
+        // outrank a row that really reached more of them.
         return b.emails.length - a.emails.length || byCompany(a, b);
       default:
         return (b.latestEmailAt ?? "").localeCompare(a.latestEmailAt ?? "") || byCompany(a, b);

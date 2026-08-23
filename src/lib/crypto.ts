@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 
 // The LLM API key is the one secret here that costs money if it leaks, so it is
-// encrypted at rest. The master secret lives in .env.local (D3).
+// encrypted at rest. The master secret lives in .env.local.
 const ALGORITHM = "aes-256-gcm";
 
 function masterKey(): Buffer {

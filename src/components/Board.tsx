@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import Highlight from "./Highlight";
 import { SECTIONS, formatDate, type ApplicationView, type EmailView } from "@/lib/view";
-import { STAGE_LABELS, STATUSES, type Status } from "@/lib/constants";
+import { STAGE_LABELS, STATUSES, STATUS_LABELS, type Status } from "@/lib/constants";
 
 /**
  * One line of a drawer, and the lines shown under it. The tree is one level
@@ -64,12 +64,6 @@ const SECTION_ICONS: Record<Status, React.ElementType> = {
   REJECTED: Ban,
 };
 
-const STATUS_LABELS: Record<Status, string> = {
-  ACCEPTED: "Accepted",
-  IN_PROGRESS: "In Progress",
-  APPLIED: "Applied",
-  REJECTED: "Rejected",
-};
 
 export type Row = { app: ApplicationView; viaEmail: boolean };
 

@@ -41,7 +41,7 @@ export async function GET(request: Request) {
     const existing = await prisma.gmailAccount.findUnique({ where: { emailAddress } });
 
     // Reconnecting runs consent again into the same row rather than creating a
-    // second account (D1).
+    // second account.
     const data = {
       displayName: profile.data.name ?? null,
       accessToken: tokens.access_token ?? null,

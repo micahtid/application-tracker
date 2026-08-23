@@ -21,7 +21,7 @@ export function earliestStartDate(now = new Date()): Date {
   return floor;
 }
 
-/** Keeps a date inside the allowed window, whether typed, picked, or stored (5.5). */
+/** Keeps a date inside the allowed window, whether typed, picked, or stored. */
 export function clampStartDate(value: Date | null | undefined, now = new Date()): Date {
   const floor = earliestStartDate(now);
   const ceiling = new Date(now);
@@ -49,7 +49,7 @@ export async function connectionState() {
   ]);
 
   // Signing out empties the refresh token but keeps the row, so the saved
-  // emails and their classifications survive (5.5). A row with no token is a
+  // emails and their classifications survive. A row with no token is a
   // signed out mailbox, not a lapsed one.
   const linked = account && account.refreshToken ? account : null;
 

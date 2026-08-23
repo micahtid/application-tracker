@@ -5,17 +5,15 @@ import { recomputeAll } from "./recompute";
 import { correctionNotes } from "./corrections";
 
 /**
- * The application table is a projection of the messages (LOOP Invariant 1).
- * Clearing everything derived and grouping the whole message set again, oldest
- * first, therefore gives the same board back.
+ * The application table is a projection of the messages (LOOP Invariant 1), so
+ * clearing everything derived and grouping the set again, oldest first, gives
+ * the same board back.
  *
- * This is how a change to a stage 4 or 5 rule reaches a board that is already
- * grouped wrong. Without it a better matching rule would only help mail that
- * has not arrived yet, because stage 4 groups as it goes and never revisits a
- * decision it has made.
+ * This is how a changed stage 4 or 5 rule reaches mail that is already grouped
+ * wrong: stage 4 groups as it goes and never revisits a decision.
  *
- * No Gmail, no model, no cost. The emails and the cached model answers beside
- * them are exactly what is *not* wiped.
+ * No Gmail, no model, no cost. The emails and their cached model answers are
+ * exactly what is not wiped.
  */
 
 export type RebuildOutcome = {
@@ -25,17 +23,24 @@ export type RebuildOutcome = {
   notes: string[];
 };
 
-export async function rebuildGrouping(db: Db): Promise<RebuildOutcome> {
-  // Detach first, so deleting the applications cannot take a message with it.
+/**
+ * Everything grouping produced, removed. The messages and their saved model
+ * answers stay. Messages are detached first, so deleting an application cannot
+ * take one with it. The alias table goes too: it only records pairs an earlier
+ * run matched, so keeping it would carry a grouping decision across the wipe.
+ */
+export async function clearGrouping(db: Db): Promise<void> {
   await db.emailMessage.updateMany({
     where: { applicationId: { not: null } },
     data: { applicationId: null },
   });
   await db.applicationStatusHistory.deleteMany({});
   await db.application.deleteMany({});
-  // The alias table is derived too: it only ever records pairs an earlier run
-  // matched, so keeping it would carry a grouping decision across the rebuild.
   await db.companyAlias.deleteMany({});
+}
+
+export async function rebuildGrouping(db: Db): Promise<RebuildOutcome> {
+  await clearGrouping(db);
 
   const matched = await attachClassified(db);
 
@@ -53,9 +58,9 @@ export async function rebuildGrouping(db: Db): Promise<RebuildOutcome> {
 }
 
 /**
- * Rebuilds once when the grouping rules have moved on, and does nothing at all
- * when they have not. The same idiom `classifier_version` already uses for the
- * classification cache (Part 9), so there is one concept here rather than two.
+ * Rebuilds once when the grouping rules have moved on, and does nothing when
+ * they have not. The same idiom `classifier_version` uses for the
+ * classification cache, so there is one concept here rather than two.
  */
 export async function rebuildIfStale(db: Db): Promise<RebuildOutcome | null> {
   const settings = await db.userSettings.findFirst({ where: { id: 1 } });

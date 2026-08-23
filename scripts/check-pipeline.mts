@@ -2,7 +2,7 @@
  * A hand run check of stages 4 and 5 against made up emails.
  *
  * It exists for the one quality that cannot be seen by looking at the board:
- * running everything again must produce the same applications (PRD 7). It uses
+ * running everything again must produce the same applications. It uses
  * a throwaway database, so your real one is never touched, and it never calls
  * Gmail or a model.
  *
@@ -260,44 +260,45 @@ async function seed() {
     data: { emailAddress: "check@example.com", refreshToken: "none", displayName: "Check" },
   });
 
-  await Promise.all(
-    FIXTURES.map((fixture, index) =>
-      prisma.emailMessage.create({
-        data: {
-          gmailAccountId: account.id,
-          gmailMessageId: `m${index}`,
-          threadId: fixture.thread,
-          senderEmail: fixture.sender,
-          senderDomain: fixture.sender.split("@")[1],
-          subject: fixture.subject,
-          bodyText: fixture.subject,
-          receivedAt: new Date(`${fixture.day}T12:00:00Z`),
-          classificationStatus: "OK",
-          classifierVersion: CLASSIFIER_VERSION,
-          llmModel: "fixture",
-          isApplicationRelated: true,
-          isSignificant: fixture.significant,
-          emailTitle: fixture.title,
-          llmClassificationRaw: JSON.stringify({
-            is_application_related: true,
-            company_name: fixture.company,
-            company_domain: null,
-            role_title: fixture.role,
-            season: fixture.season ?? null,
-            year: fixture.year ?? null,
-            status: fixture.status,
-            stage_detail: fixture.stage ?? null,
-            email_event: fixture.event ?? null,
-            sender_role: fixture.sender_role ?? "EMPLOYER",
-            is_significant: fixture.significant,
-            email_title: fixture.title,
-            confidence_score: 0.9,
-            summary: fixture.subject,
-          }),
-        },
-      }),
-    ),
-  );
+  // Serial, not Promise.all: concurrent inserts take their row ids in whatever
+  // order they land, and two fixtures sharing a day are then separated by a
+  // random number. The snapshot below is only a baseline if the ids are fixed.
+  for (const [index, fixture] of FIXTURES.entries()) {
+    await prisma.emailMessage.create({
+      data: {
+        gmailAccountId: account.id,
+        gmailMessageId: `m${index}`,
+        threadId: fixture.thread,
+        senderEmail: fixture.sender,
+        senderDomain: fixture.sender.split("@")[1],
+        subject: fixture.subject,
+        bodyText: fixture.subject,
+        receivedAt: new Date(`${fixture.day}T12:00:00Z`),
+        classificationStatus: "OK",
+        classifierVersion: CLASSIFIER_VERSION,
+        llmModel: "fixture",
+        isApplicationRelated: true,
+        isSignificant: fixture.significant,
+        emailTitle: fixture.title,
+        llmClassificationRaw: JSON.stringify({
+          is_application_related: true,
+          company_name: fixture.company,
+          company_domain: null,
+          role_title: fixture.role,
+          season: fixture.season ?? null,
+          year: fixture.year ?? null,
+          status: fixture.status,
+          stage_detail: fixture.stage ?? null,
+          email_event: fixture.event ?? null,
+          sender_role: fixture.sender_role ?? "EMPLOYER",
+          is_significant: fixture.significant,
+          email_title: fixture.title,
+          confidence_score: 0.9,
+          summary: fixture.subject,
+        }),
+      },
+    });
+  }
 }
 
 async function snapshot() {

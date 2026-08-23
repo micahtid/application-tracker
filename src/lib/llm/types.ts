@@ -9,6 +9,7 @@ import {
   STAGE_DETAILS,
 } from "@/lib/constants";
 import { isBlockedCompany } from "@/lib/ats";
+import { RetryableError, isRetryableStatus, withRetry } from "@/lib/retry";
 
 export type Classification = {
   isApplicationRelated: boolean;
@@ -55,7 +56,7 @@ export type ClassifyResult = {
 export type ProviderAdapter = {
   provider: Provider;
   model: string;
-  /** Calls the provider's free model list endpoint. Proves the key works and the model exists (Q7). */
+  /** Calls the provider's free model list endpoint. Proves the key works and the model exists. */
   checkKey(apiKey: string): Promise<{ ok: true } | { ok: false; message: string }>;
   classify(apiKey: string, system: string, user: string): Promise<ClassifyResult>;
 };
@@ -63,12 +64,10 @@ export type ProviderAdapter = {
 /**
  * A structured answer that does not parse (LOOP Invariant 7).
  *
- * This is its own failure, not a transport failure. A 500 or a rate limit is
- * worth sending the identical request again; an answer cut off part way
- * through a string is not, because the identical request produces the identical
- * cut. The output cap is the likely cause, so it is tried once more with a
- * larger one, and the text that would not parse is carried on the error so it
- * can be stored and looked at rather than thrown away.
+ * Its own kind of failure, not a transport one. Repeating the identical
+ * request reproduces the identical cut, so the fix is a larger output cap
+ * rather than a retry. The text that would not parse rides on the error so it
+ * can be stored and read rather than thrown away.
  */
 export class MalformedOutputError extends Error {
   constructor(readonly raw: string, readonly detail: string) {
@@ -88,33 +87,83 @@ export function parseRaw(raw: string): Classification {
 
 /**
  * One attempt, then one more with a larger cap if the answer was truncated.
- * Every adapter shares it, so the policy is written once.
+ * Transport errors are retried inside each attempt.
  */
-export async function withLargerCapOnce<T>(attempt: (maxTokens: number) => Promise<T>, cap: number) {
+export async function attemptClassify(
+  cap: number,
+  attempt: (maxTokens: number) => Promise<ClassifyResult>,
+): Promise<ClassifyResult> {
+  const once = (maxTokens: number) => withRetry(() => attempt(maxTokens));
   try {
-    return await attempt(cap);
+    return await once(cap);
   } catch (error) {
     if (!(error instanceof MalformedOutputError)) throw error;
-    return attempt(cap * 4);
+    return once(cap * 4);
   }
+}
+
+/** What a provider charges, per million tokens. */
+export type Rates = { inputPerMTok: number; outputPerMTok: number };
+
+/**
+ * One answer, parsed and priced. A provider that reports its own cost is
+ * believed over our sum; the others are priced from the rates beside the model.
+ */
+export function classifyResult(args: {
+  model: string;
+  rates: Rates;
+  raw: string;
+  inputTokens: number;
+  outputTokens: number;
+  reportedCostUsd?: number | null;
+}): ClassifyResult {
+  const { model, rates, raw, inputTokens, outputTokens } = args;
+  const summed =
+    (inputTokens / 1_000_000) * rates.inputPerMTok +
+    (outputTokens / 1_000_000) * rates.outputPerMTok;
+
+  return {
+    classification: parseRaw(raw),
+    raw,
+    usage: {
+      model,
+      inputTokens,
+      outputTokens,
+      costUsd: typeof args.reportedCostUsd === "number" ? args.reportedCostUsd : summed,
+    },
+  };
+}
+
+/** A failed response, raised as the kind of error the retry rule expects. */
+export async function throwForStatus(label: string, response: Response): Promise<never> {
+  const detail = await response.text();
+  const message = `${label} ${response.status}: ${detail}`;
+  if (isRetryableStatus(response.status)) throw new RetryableError(message, response.status);
+  throw new Error(message);
 }
 
 /**
  * The event the model answered, degraded rather than dropped.
  *
- * A value outside the list is somewhere between an answer and no answer, and
- * the honest reading is the fallback: something happened and this code cannot
- * say what kind of thing it was. A field that is not there at all is a
- * different matter and stays null, because crediting it with a guess it never
- * made would put a standard phrase on a line nothing was read for.
+ * A value outside the list falls back: something happened and this code cannot
+ * say what. A field that is absent stays null instead, because crediting it
+ * with a guess it never made would put a standard phrase on a line nothing was
+ * read for.
  */
 function parseEvent(value: unknown): EmailEvent | null {
   if (value === undefined || value === null) return null;
   const upper = String(value).trim().toUpperCase();
   if (!upper) return null;
-  return (EMAIL_EVENTS as readonly string[]).includes(upper)
-    ? (upper as EmailEvent)
-    : EMAIL_EVENT_FALLBACK;
+  return oneOf(EMAIL_EVENTS, upper, EMAIL_EVENT_FALLBACK);
+}
+
+/** The value when the list holds it, otherwise the fallback. */
+function oneOf<T extends string, F>(
+  list: readonly T[],
+  value: string | null | undefined,
+  fallback: F,
+): T | F {
+  return (list as readonly string[]).includes(value ?? "") ? (value as T) : fallback;
 }
 
 function text(value: unknown): string | null {
@@ -137,20 +186,16 @@ export function parseClassification(raw: unknown): Classification {
 
   return {
     isApplicationRelated: value.is_application_related === true,
-    // The last line of defence against an invented company (3.3).
+    // The last line of defence against an invented company.
     companyName: company && !isBlockedCompany(company) ? company : null,
     companyDomain: text(value.company_domain)?.toLowerCase().replace(/^www\./, "") ?? null,
     roleTitle: text(value.role_title),
-    season: (SEASONS as readonly string[]).includes(season ?? "") ? (season as Season) : null,
+    season: oneOf(SEASONS, season, null),
     year: Number.isInteger(year) && year > 2000 && year < 2100 ? year : null,
-    status: (STATUSES as readonly string[]).includes(status) ? (status as Status) : "APPLIED",
-    stageDetail: (STAGE_DETAILS as readonly string[]).includes(stageDetail)
-      ? (stageDetail as StageDetail)
-      : null,
+    status: oneOf(STATUSES, status, "APPLIED"),
+    stageDetail: oneOf(STAGE_DETAILS, stageDetail, null),
     emailEvent: parseEvent(value.email_event),
-    senderRole: (SENDER_ROLES as readonly string[]).includes(senderRole)
-      ? (senderRole as SenderRole)
-      : SENDER_ROLE_FALLBACK,
+    senderRole: oneOf(SENDER_ROLES, senderRole, SENDER_ROLE_FALLBACK),
     isSignificant: value.is_significant === true,
     emailTitle: text(value.email_title) ?? "Application Email",
     confidenceScore: Number.isFinite(Number(value.confidence_score))

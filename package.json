@@ -10,7 +10,10 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run check:pipeline && npm run check:adapters",
     "check:pipeline": "tsx scripts/check-pipeline.mts",
+    "check:adapters": "tsx scripts/check-adapters.ts",
     "check:nouns": "tsx scripts/loop/check-nouns.mts",
     "loop:snapshot": "tsx scripts/loop/snapshot.mts",
     "loop:review": "tsx scripts/loop/review.mts",
@@ -30,13 +33,10 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.2.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
-    "postcss": "^8.5.26",
     "prisma": "^6.19.3",
-    "tailwindcss": "^4.3.3",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2"
   }

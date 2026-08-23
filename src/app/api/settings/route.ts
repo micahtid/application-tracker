@@ -20,9 +20,9 @@ export async function GET() {
 /**
  * Save. The date cap is checked here as well as in the browser, and the key is
  * checked against its provider one more time before it is stored, so a key that
- * only passed a browser side check can never be saved (5.5, Q7).
+ * only passed a browser side check can never be saved.
  *
- * The provider is never sent by the browser: it is read out of the key (D10).
+ * The provider is never sent by the browser: it is read out of the key.
  */
 export async function PUT(request: Request) {
   const body = (await request.json()) as { apiKey?: unknown; readFromDate?: unknown };

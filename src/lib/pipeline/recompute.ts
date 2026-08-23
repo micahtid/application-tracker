@@ -12,7 +12,7 @@ import { vendorForDomain } from "@/lib/ats";
 import type { StageDetail, Status } from "@/lib/constants";
 
 /**
- * Stage 5 (3.6). Every field on a row is worked out from its emails and
+ * Stage 5. Every field on a row is worked out from its emails and
  * rewritten whenever that set changes. Nothing is written once and frozen.
  *
  *   Identity comes from the oldest email. State comes from the newest
@@ -32,19 +32,17 @@ export function classificationOf(message: { llmClassificationRaw: string | null 
 /**
  * Only used when two status rows carry the exact same timestamp. It never
  * decides between stages, because a rejection arriving after an interview has
- * to win on date alone (3.6).
+ * to win on date alone.
  */
 const TIE_ORDER: Status[] = ["ACCEPTED", "REJECTED", "IN_PROGRESS", "APPLIED"];
 
 /**
  * The name the employer used most often across this application's emails.
  *
- * One employer writes itself several ways over one hiring process, and the
- * headers genuinely support all of them, so the oldest email is no more
- * authoritative about the name than any other. Counting is: the wording the
- * employer reached for most is the wording to show. Ties go to the earliest,
- * so the answer depends only on the set of emails and never on the order they
- * were processed in.
+ * One employer writes itself several ways, so the oldest email is no more
+ * authoritative than any other and the commonest wording wins. Ties go to the
+ * earliest, so the answer depends only on the set of emails and never on the
+ * order they were processed in.
  */
 function commonestCompanyName(messages: EmailMessage[]): string | null {
   const counts = new Map<string, { count: number; first: number }>();
@@ -76,11 +74,9 @@ function commonestCompanyName(messages: EmailMessage[]): string | null {
  * The value from the oldest email that states this field, rather than the
  * value on the oldest email full stop (LOOP Invariant 4).
  *
- * "The oldest email wins" is the right rule for a conflict. It is the wrong
- * rule for an absence: an email that says nothing about the role is not
- * disagreeing with one that does. Working per field rather than per email
- * keeps the property that matters, which is that the answer still depends only
- * on the set of emails and never on the order they arrived in.
+ * "Oldest wins" is right for a conflict and wrong for an absence: an email
+ * saying nothing about the role does not disagree with one that does. Working
+ * per field keeps the answer dependent only on the set of emails.
  */
 function firstStated<T>(
   messages: EmailMessage[],
@@ -100,25 +96,20 @@ export type TreeNode = { parent: number | null; relation: string | null };
 /**
  * Where every email of an application sits in its drawer (LOOP2 Invariant 3).
  *
- * A drawer shows one line for each state the application reached, which is the
- * earliest email that stated that state. Every other email is shown under the
- * line for its own state.
+ * One line for each state the application reached, which is the earliest email
+ * stating that state. Every other email sits under the line for its own state.
+ * No wording is compared, no threshold and nothing to tune: the model already
+ * answered `status` and `stage_detail` for each email.
  *
- * That is the whole rule. It compares no wording to decide the nesting, has no
- * threshold, no keyword list and nothing to tune, because the pipeline already
- * knows which stage of which application every email is about: the model
- * answers `status` and `stage_detail` on each one, and that answer is trusted
- * enough to drive the whole board's state already.
+ * Four properties follow rather than needing enforcing. The order emails
+ * arrived in does not matter, so a rebuild reproduces the tree exactly. A
+ * parent is always strictly earlier, so a loop is impossible. A parent is the
+ * first of its state and so has no parent itself, making the tree one level
+ * deep. And nothing is left homeless, because every email has a state and
+ * every state has an earliest email.
  *
- * Four things follow from it rather than having to be enforced. It does not
- * depend on the order emails arrived in, so a rebuild reproduces it exactly. A
- * parent is always strictly earlier, so a loop is impossible. A parent is
- * always the first of its state and therefore has no parent of its own, so the
- * tree is one level deep. And nothing is ever left without a home, because
- * every email has a state and every state has an earliest email.
- *
- * The relation is then read off the wording, for display only. A wrong one is a
- * cosmetic bug and never a structural one.
+ * The relation is read off the wording, for display only, so a wrong one is
+ * cosmetic and never structural.
  */
 export function treeIn(messages: EmailMessage[]): Map<number, TreeNode> {
   const firstOfState = new Map<string, EmailMessage>();
@@ -155,13 +146,11 @@ export function treeIn(messages: EmailMessage[]): Map<number, TreeNode> {
  * The emails that record a change of state: significant, and not a repeat of
  * one already seen in this application.
  *
- * The two questions stay apart, which is what they always were. Where an email
- * sits in the drawer is the tree above. Whether it records a change of state is
- * this, and it is unchanged: the model sees one email at a time and no thread
- * context (D17), which is what stops company names bleeding between emails, but
- * it also means a resend looks exactly like the original to it. It answers
- * "significant" both times, and it is right both times, because read on its own
- * the email really is significant. Only the whole set can tell.
+ * Two separate questions. Where an email sits in the drawer is the tree above.
+ * Whether it records a change of state is this. The model sees one email at a
+ * time with no thread context, which is what stops company names bleeding
+ * between emails, but it also means a resend looks like the original and is
+ * called significant both times. Only the whole set can tell.
  */
 export function milestonesIn(messages: EmailMessage[]): { message: EmailMessage; status: Status }[] {
   const tree = treeIn(messages);
@@ -181,26 +170,19 @@ export type HeadState = { status: Status; stageDetail: StageDetail | null };
 /**
  * What state an application is in, worked out from its emails alone.
  *
- * Pure, and called from both stages on purpose. Stage 5 asks it what the row
- * should say. Stage 4 asks it what a candidate row is waiting on, and it
- * cannot read the `status` column to find out: that column is written when a
- * row is created and not touched again until stage 5, which runs after the
- * whole matching pass has finished. Half way through a pass the column is
- * therefore hours out of date, and an email arriving now would be measured
- * against the state the row was in when it was made.
- *
- * One definition, used by the stage that decides where an email goes and by
- * the stage that decides what the row says.
+ * Pure, and called from both stages on purpose. Stage 5 asks what the row
+ * should say. Stage 4 asks what a candidate row is waiting on, and cannot read
+ * the `status` column for it: that column is written when a row is created and
+ * not rewritten until stage 5, which runs after the whole matching pass. Mid
+ * pass it is out of date.
  */
 export function headState(messages: EmailMessage[]): HeadState {
   const milestones = milestonesIn(messages);
 
-  // An acknowledgement of receipt is a floor, not a stage. Systems send
-  // "we have your application" at any point, often after an assessment has
-  // already been set, and it says nothing about how far along the application
-  // is. So once an application has moved past being merely submitted, a later
-  // bare acknowledgement does not move it back. Anything that is an actual
-  // outcome still wins on date alone.
+  // An acknowledgement of receipt is a floor, not a stage: systems send "we
+  // have your application" at any point, often after an assessment is already
+  // set. So once an application has moved past being submitted, a later bare
+  // acknowledgement does not move it back. Real outcomes still win on date.
   const movedOn = milestones.findIndex((row) => row.status !== "APPLIED");
   const meaningful =
     movedOn === -1
@@ -249,7 +231,7 @@ export async function recomputeApplication(db: Db, applicationId: number): Promi
   const companyNormalized = normalizeCompany(companyName);
 
   // The tree is rewritten from the whole set on every recalculation and never
-  // authored, exactly like every other field on a row (PRD 3.6).
+  // authored, exactly like every other field on a row.
   const tree = treeIn(messages);
 
   for (const message of messages) {
@@ -314,7 +296,7 @@ export async function recomputeApplication(db: Db, applicationId: number): Promi
     await db.application.update({ where: { id: applicationId }, data: { ...data, dedupeKey: key } });
   } catch {
     // The unique rule on dedupe_key is an alarm, not the thing that prevents
-    // duplicates (3.5). Keeping the row distinct lets the sync finish; the
+    // duplicates. Keeping the row distinct lets the sync finish; the
     // collision is what the alarm was for.
     await db.application.update({
       where: { id: applicationId },

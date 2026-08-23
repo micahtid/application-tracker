@@ -1,5 +1,5 @@
 /**
- * Company name cleaning and loose role comparison (D14, D15).
+ * Company name cleaning and loose role comparison.
  * Both are deliberately plain: predictable beats clever when a wrong match
  * silently splits or merges applications.
  */
@@ -37,15 +37,11 @@ const CONNECTORS = ["and", "of", "the", "for"];
 /**
  * Whether two normalised names mean the same employer (LOOP Invariant 2).
  *
- * An employer writes its own name three or four ways across one hiring
- * process, and the mail headers genuinely support all of them. No prompt stops
- * that varying, so the variation is absorbed here, where it is cheap and
- * testable, rather than demanded of the model.
- *
- * Two names mean the same employer when one is a token subset of the other, or
- * when they are the same once the spaces are taken out. Sharing a first word is
- * not enough on its own: the role comparison still has to agree before
- * anything is merged.
+ * True when one name's words are all present in the other, or when the two are
+ * equal once spaces are removed. One employer writes itself several ways over
+ * one hiring process, so the variation is absorbed here rather than asked of
+ * the model. Sharing a first word is not enough on its own: the role
+ * comparison still has to agree before anything is merged.
  */
 export function sameEmployer(left: string, right: string): boolean {
   if (!left || !right) return false;
@@ -77,16 +73,12 @@ const ROLE_NOISE = new Set([
 ]);
 
 /**
- * A year in a job title, matched as the kind of word it is (LOOP3 Invariant 1).
+ * A year in a job title, matched as a shape rather than listed (LOOP3
+ * Invariant 1). A list of named years expires: once past the last one, two
+ * emails about one posting stop matching and one application becomes two, on a
+ * date rather than in a mailbox.
  *
- * The five years this list used to name would have expired: in 2029 a title
- * carrying that year stops being normalised away, two emails about one posting
- * stop matching, and one application quietly becomes two. Nothing announces
- * it, because the bug arrives on a date rather than in a mailbox.
- *
- * Every bare four digit number in a job title is a year. A posting number is
- * longer than that and is read separately, by `requisitionNumbers`, which is
- * the one place a number in an email is allowed to mean something.
+ * Posting numbers are longer, and are read separately by `requisitionNumbers`.
  */
 const YEAR = /^\d{4}$/;
 
@@ -101,15 +93,13 @@ function roleTokens(role: string): Set<string> {
 }
 
 /**
- * 0 to 1, by shared words. Runs only inside a candidate set of one or two rows,
- * never across the table, so a plain set overlap is enough.
+ * 0 to 1, by shared words: what the two titles share over every word either
+ * uses. Symmetric on purpose. Measuring against the shorter title would make a
+ * generic two word posting a subset of every detailed one at the employer, and
+ * the words only one side has are the evidence that these are different jobs.
  *
- * The comparison is symmetric: the words the two titles share, over every word
- * either of them uses. Measuring against the shorter title instead would make
- * a short generic title a subset of every long one, so a two word posting
- * would swallow every detailed posting at the same employer. Words only one
- * side has are exactly the evidence that these are two different jobs, and
- * they have to count.
+ * Runs only inside a candidate set of one or two rows, so a plain overlap is
+ * enough.
  */
 export function roleSimilarity(a: string | null, b: string | null): number {
   if (!a || !b) return 0;
@@ -123,24 +113,17 @@ export function roleSimilarity(a: string | null, b: string | null): number {
 }
 
 /**
- * A subject line reduced to what it actually says, so a resend of a notice can
- * be recognised as the same notice.
- *
- * The reply and forward markers go, along with the reminder markers an
- * applicant tracking system puts in front of a message it is sending a second
- * time. Then punctuation and spacing collapse, and a reference number trailing
- * off the end goes too, since a system that renumbers each send is still
- * sending the same notice.
+ * A subject reduced to what it says, so a resend reads as the same notice.
+ * Reply, forward and reminder markers go, punctuation and spacing collapse,
+ * and a reference number trailing off the end goes too, since a system that
+ * renumbers each send is still sending the same notice.
  */
 const SUBJECT_PREFIX = /^\s*(?:re|fw|fwd|reminder|resending|resend|second notice|action required)\s*[:\-]\s*/i;
 
 /**
- * The markers a system puts in front of a message it is sending as a nudge,
- * read off the subject before anything is normalised away.
- *
- * Narrower than SUBJECT_PREFIX on purpose. "Action required" is how plenty of
- * systems word a first invitation, so it collapses into the same notice for
- * the purpose of spotting a resend, but it is not a reminder about anything.
+ * The markers that mark a nudge, read before anything is normalised away.
+ * Narrower than SUBJECT_PREFIX: "action required" is how many systems word a
+ * first invitation, so it collapses a resend without being a reminder.
  */
 const REMINDER_MARKER = /\b(?:reminder|resending|resend|second notice)\b\s*[:\-]/i;
 
@@ -170,14 +153,11 @@ export function normalizeSubject(subject: string | null | undefined): string {
 export const ROLE_MATCH_THRESHOLD = 0.5;
 
 /**
- * Whether two stated role titles are about the same posting (LOOP Invariant 9).
- *
- * One title's words all appear in the other's. Employers advertise a family of
- * postings under one wording with one word changed for the place or the track,
- * and every email about a single posting quotes its title either exactly or
- * with extra decoration around it. So a word that only one side has is not
- * noise to be outvoted by the words they share, it is the whole difference
- * between the two postings.
+ * Whether two stated titles are about the same posting (LOOP Invariant 9).
+ * True when one title's words all appear in the other's. Employers advertise a
+ * family of postings under one wording with a word changed for the place or
+ * track, so a word only one side has is the difference between them rather
+ * than noise.
  *
  * Silence is not disagreement: an email stating no role matches anything.
  */
@@ -195,20 +175,18 @@ export function rolesMatch(left: string | null, right: string | null): boolean {
 }
 
 /**
- * Applicant tracking systems stamp every posting with a number and quote it
- * back in the mail they send. It is the only thing in an application email
- * that is guaranteed to differ between two postings at one employer, and it
+ * The posting number an applicant tracking system quotes back. It is the one
+ * thing guaranteed to differ between two postings at one employer, and it
  * survives every rewording of the title.
  *
  * Two shapes are read, and no others:
  *
- *   - anywhere, a number introduced by a word that says what it is, such as
+ *   - anywhere, a number introduced by a word saying what it is, such as
  *     "Job number: 200046156" or "(ID: 10501526)",
- *   - in the subject only, a long number fenced off by dashes or brackets,
- *     which is how a subject line carries one without naming it.
+ *   - in the subject only, a long number fenced off by dashes or brackets.
  *
- * The subject rule is not applied to the body, because a body is full of
- * tracking links and long digit strings that mean nothing.
+ * The fenced shape is not read from the body, which is full of tracking links
+ * and long digit strings that mean nothing.
  */
 const LABELLED_NUMBER =
   /\b(?:job|requisition|req|posting|position|vacancy|reference|ref|id)\s*(?:number|no\.?|id|code)?\s*[:#.\-]?\s*(\d{5,12})\b/gi;
@@ -241,13 +219,12 @@ export function requisitionsDisagree(left: Set<string>, right: Set<string>): boo
 }
 
 /**
- * Joins the identity parts, with empty strings for the missing ones (3.5).
+ * Joins the identity parts, with empty strings for the missing ones.
  *
- * The posting number is part of the key when the emails state one, because two
- * postings at one employer are routinely advertised under exactly the same
- * title. Without it the key would say two separate applications are the same
- * row, and the safety net that reuses a row on a matching key would then undo
- * a split that the matching rules got right.
+ * The posting number is part of the key whenever the emails state one, because
+ * two postings at one employer are routinely advertised under the same title.
+ * Without it the key would call two applications one row, undoing a split the
+ * matching rules got right.
  */
 export function dedupeKey(parts: {
   companyNormalized: string;

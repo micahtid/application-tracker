@@ -1,17 +1,17 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { jsonSchema } from "./schema";
 import {
-  parseRaw,
-  withLargerCapOnce,
+  attemptClassify,
+  classifyResult,
   type ClassifyResult,
   type ProviderAdapter,
+  type Rates,
 } from "./types";
-import { RetryableError, withRetry } from "@/lib/retry";
+import { RetryableError } from "@/lib/retry";
 
 /** Confirmed against the Claude API docs: $1 per million in, $5 per million out. */
 const MODEL = "claude-haiku-4-5";
-const INPUT_PER_MTOK = 1.0;
-const OUTPUT_PER_MTOK = 5.0;
+const RATES: Rates = { inputPerMTok: 1.0, outputPerMTok: 5.0 };
 const MAX_TOKENS = 1024;
 
 function client(apiKey: string): Anthropic {
@@ -24,7 +24,7 @@ export const anthropicAdapter: ProviderAdapter = {
 
   async checkKey(apiKey) {
     try {
-      // Free, needs a working key, and proves our chosen model still exists (Q7).
+      // Free, needs a working key, and proves our chosen model still exists.
       await client(apiKey).models.retrieve(MODEL);
       return { ok: true };
     } catch (error) {
@@ -42,7 +42,7 @@ export const anthropicAdapter: ProviderAdapter = {
   },
 
   async classify(apiKey, system, user): Promise<ClassifyResult> {
-    return withLargerCapOnce((maxTokens) => withRetry(async () => {
+    return attemptClassify(MAX_TOKENS, async (maxTokens) => {
       let response;
       try {
         response = await client(apiKey).messages.create({
@@ -63,21 +63,13 @@ export const anthropicAdapter: ProviderAdapter = {
       const raw = block && block.type === "text" ? block.text : "";
       if (!raw) throw new Error("Anthropic returned no text");
 
-      const inputTokens = response.usage.input_tokens;
-      const outputTokens = response.usage.output_tokens;
-
-      return {
-        classification: parseRaw(raw),
+      return classifyResult({
+        model: MODEL,
+        rates: RATES,
         raw,
-        usage: {
-          model: MODEL,
-          inputTokens,
-          outputTokens,
-          costUsd:
-            (inputTokens / 1_000_000) * INPUT_PER_MTOK +
-            (outputTokens / 1_000_000) * OUTPUT_PER_MTOK,
-        },
-      };
-    }), MAX_TOKENS);
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      });
+    });
   },
 };

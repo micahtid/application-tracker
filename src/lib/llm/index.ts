@@ -14,7 +14,7 @@ export function adapterFor(provider: Provider): ProviderAdapter {
   return ADAPTERS[provider];
 }
 
-/** What Settings shows next to each provider: the model we chose for it (D11). */
+/** What Settings shows next to each provider: the model we chose for it. */
 export const PROVIDER_LABELS: Record<Provider, { label: string; model: string }> = {
   OPENROUTER: { label: "OpenRouter", model: openrouterAdapter.model },
   ANTHROPIC: { label: "Anthropic", model: anthropicAdapter.model },

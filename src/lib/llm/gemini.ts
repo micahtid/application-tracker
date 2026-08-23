@@ -1,11 +1,12 @@
 import { geminiSchema } from "./schema";
 import {
-  parseRaw,
-  withLargerCapOnce,
+  attemptClassify,
+  classifyResult,
+  throwForStatus,
   type ClassifyResult,
   type ProviderAdapter,
+  type Rates,
 } from "./types";
-import { RetryableError, isRetryableStatus, withRetry } from "@/lib/retry";
 
 /**
  * Confirmed against the Gemini API docs: structured output through
@@ -14,8 +15,7 @@ import { RetryableError, isRetryableStatus, withRetry } from "@/lib/retry";
  */
 const MODEL = "gemini-3.7-flash";
 const MAX_TOKENS = 2048;
-const INPUT_PER_MTOK = 0.75;
-const OUTPUT_PER_MTOK = 3.75;
+const RATES: Rates = { inputPerMTok: 0.75, outputPerMTok: 3.75 };
 const BASE = "https://generativelanguage.googleapis.com/v1beta";
 
 export const geminiAdapter: ProviderAdapter = {
@@ -44,7 +44,7 @@ export const geminiAdapter: ProviderAdapter = {
   },
 
   async classify(apiKey, system, user): Promise<ClassifyResult> {
-    return withLargerCapOnce((maxTokens) => withRetry(async () => {
+    return attemptClassify(MAX_TOKENS, async (maxTokens) => {
       const response = await fetch(`${BASE}/models/${MODEL}:generateContent`, {
         method: "POST",
         headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
@@ -59,13 +59,7 @@ export const geminiAdapter: ProviderAdapter = {
         }),
       });
 
-      if (!response.ok) {
-        const detail = await response.text();
-        if (isRetryableStatus(response.status)) {
-          throw new RetryableError(`Gemini ${response.status}: ${detail}`, response.status);
-        }
-        throw new Error(`Gemini ${response.status}: ${detail}`);
-      }
+      if (!response.ok) await throwForStatus("Gemini", response);
 
       const body = (await response.json()) as {
         candidates?: { content?: { parts?: { text?: string }[] } }[];
@@ -78,21 +72,13 @@ export const geminiAdapter: ProviderAdapter = {
         .trim();
       if (!raw) throw new Error("Gemini returned no content");
 
-      const inputTokens = body.usageMetadata?.promptTokenCount ?? 0;
-      const outputTokens = body.usageMetadata?.candidatesTokenCount ?? 0;
-
-      return {
-        classification: parseRaw(raw),
+      return classifyResult({
+        model: MODEL,
+        rates: RATES,
         raw,
-        usage: {
-          model: MODEL,
-          inputTokens,
-          outputTokens,
-          costUsd:
-            (inputTokens / 1_000_000) * INPUT_PER_MTOK +
-            (outputTokens / 1_000_000) * OUTPUT_PER_MTOK,
-        },
-      };
-    }), MAX_TOKENS);
+        inputTokens: body.usageMetadata?.promptTokenCount ?? 0,
+        outputTokens: body.usageMetadata?.candidatesTokenCount ?? 0,
+      });
+    });
   },
 };

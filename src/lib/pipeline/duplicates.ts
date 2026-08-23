@@ -12,16 +12,13 @@ import {
 /**
  * The duplicate alarm that can actually fire (LOOP Invariant 6).
  *
- * `dedupe_key` is unique, and that rule is described as an alarm for
- * duplicates. But two rows that should be one have *different* keys by
- * construction, so the alarm stays silent on the exact failure it was meant to
- * notice, and catches only identical repeats, which the serial pass already
- * prevents.
+ * The unique `dedupe_key` cannot notice the failure it was meant to: two rows
+ * that should be one have different keys by construction, so it catches only
+ * identical repeats, which the serial pass already prevents.
  *
- * So the alarm is a report rather than a constraint. It looks for pairs of
- * applications that are at the same employer and whose titles all but agree:
- * the pairs one rule change away from being merged, and therefore the pairs
- * worth a person's eye. It is advisory. Nothing acts on it.
+ * This is a report instead. It finds pairs at the same employer whose titles
+ * all but agree, which are the pairs one rule change away from merging and so
+ * the ones worth a person's eye. Advisory only. Nothing acts on it.
  */
 
 export type SplitSuspect = {

@@ -8,9 +8,8 @@ const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
- * The panel every short dialog is built out of, so the small ones do not each
- * carry their own copy of the keyboard rules. Settings keeps its own shell:
- * it is a form with its own focus order and is left where it is.
+ * The panel every dialog is built out of, so none of them carries its own copy
+ * of the keyboard rules.
  *
  * A dialog owns the keyboard while it is open: focus starts inside it, Tab
  * cycles within it, Escape closes it, and focus goes back to whatever opened
@@ -21,19 +20,26 @@ export default function Dialog({
   onClose,
   children,
   footer,
+  wide = false,
+  closeLabel = "Close",
+  initialFocus,
 }: {
   title: string;
   onClose: () => void;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  /** Settings is a form and needs the full width. The short dialogs do not. */
+  wide?: boolean;
+  closeLabel?: string;
+  /** Focused on open in place of the first thing in the panel. */
+  initialFocus?: React.RefObject<HTMLElement | null>;
 }) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // The page re renders about once a second while a sync runs, and each render
-  // hands this a fresh onClose. Read through a ref so the setup below happens
-  // once, on open: without it every render would take focus back to the close
-  // button while you were reading the dialog.
+  // The page re renders about once a second while a sync runs, each time with
+  // a fresh onClose. Read through a ref so the setup below runs once, on open.
+  // Depending on onClose directly would drag focus back every second.
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
 
@@ -42,9 +48,9 @@ export default function Dialog({
 
     // The last stop is the confirming button, and starting there would make
     // Enter agree to something before it had been read, so focus starts at the
-    // first thing in the panel instead.
+    // first thing in the panel instead, which is the close button.
     const stops = panelRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE);
-    stops?.[0]?.focus();
+    (initialFocus?.current ?? stops?.[0])?.focus();
 
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -84,15 +90,15 @@ export default function Dialog({
     };
   }, []);
 
-  // Hung off the body for the same reason Settings is: the page carries a
-  // transform for its entry animation, and a fixed box inside one is measured
-  // against that rather than against the screen.
+  // Hung off the body because the page carries a transform for its entry
+  // animation, and a fixed box inside one is measured against that transform
+  // rather than against the screen.
   return createPortal(
     <div className="modal">
       <div className="modal__scrim" onClick={onClose} />
 
       <div
-        className="modal__panel modal__panel--sm"
+        className={`modal__panel${wide ? "" : " modal__panel--sm"}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -105,7 +111,7 @@ export default function Dialog({
           <button
             className="icon-btn modal__close"
             type="button"
-            aria-label="Close"
+            aria-label={closeLabel}
             onClick={onClose}
           >
             <X className="lucide" />

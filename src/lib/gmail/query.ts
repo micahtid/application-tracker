@@ -1,7 +1,7 @@
 import { ATS_DOMAINS } from "@/lib/ats";
 
 /**
- * Stage 1 sweeps (D5). Two of them, combined by message id:
+ * Stage 1 sweeps. Two of them, combined by message id:
  *   1. Keyword phrases.
  *   2. Every message from a known ATS domain, not narrowed by keywords.
  *
@@ -69,7 +69,7 @@ function chunk<T>(items: T[], size: number): T[][] {
 
 /**
  * Inbox, archive and Trash. Spam is skipped, which `in:anywhere -in:spam` does
- * in one step (D6).
+ * in one step.
  */
 export function buildQueries(startDate: Date): string[] {
   const scope = `in:anywhere -in:spam after:${gmailDate(startDate)}`;

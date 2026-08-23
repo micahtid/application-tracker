@@ -1,21 +1,21 @@
 import { jsonSchema } from "./schema";
 import {
-  parseRaw,
-  withLargerCapOnce,
+  attemptClassify,
+  classifyResult,
+  throwForStatus,
   type ClassifyResult,
   type ProviderAdapter,
+  type Rates,
 } from "./types";
-import { RetryableError, isRetryableStatus, withRetry } from "@/lib/retry";
 
 /**
  * Confirmed against OpenRouter's live model list: supports structured outputs,
  * $0.375 per million in and $1.875 per million out. OpenRouter also reports the
- * real cost on the response, which is preferred over our own sum (Q8).
+ * real cost on the response, which is preferred over our own sum.
  */
 const MODEL = "google/gemini-3.7-flash";
 const MAX_TOKENS = 1024;
-const INPUT_PER_MTOK = 0.375;
-const OUTPUT_PER_MTOK = 1.875;
+const RATES: Rates = { inputPerMTok: 0.375, outputPerMTok: 1.875 };
 const BASE = "https://openrouter.ai/api/v1";
 
 const HEADERS = {
@@ -52,7 +52,7 @@ export const openrouterAdapter: ProviderAdapter = {
   },
 
   async classify(apiKey, system, user): Promise<ClassifyResult> {
-    return withLargerCapOnce((maxTokens) => withRetry(async () => {
+    return attemptClassify(MAX_TOKENS, async (maxTokens) => {
       const response = await fetch(`${BASE}/chat/completions`, {
         method: "POST",
         headers: {
@@ -75,13 +75,7 @@ export const openrouterAdapter: ProviderAdapter = {
         }),
       });
 
-      if (!response.ok) {
-        const detail = await response.text();
-        if (isRetryableStatus(response.status)) {
-          throw new RetryableError(`OpenRouter ${response.status}: ${detail}`, response.status);
-        }
-        throw new Error(`OpenRouter ${response.status}: ${detail}`);
-      }
+      if (!response.ok) await throwForStatus("OpenRouter", response);
 
       const body = (await response.json()) as {
         choices?: { message?: { content?: string } }[];
@@ -91,24 +85,15 @@ export const openrouterAdapter: ProviderAdapter = {
       const raw = body.choices?.[0]?.message?.content ?? "";
       if (!raw) throw new Error("OpenRouter returned no content");
 
-      const inputTokens = body.usage?.prompt_tokens ?? 0;
-      const outputTokens = body.usage?.completion_tokens ?? 0;
-      const reported = body.usage?.cost;
-
-      return {
-        classification: parseRaw(raw),
+      return classifyResult({
+        model: MODEL,
+        rates: RATES,
         raw,
-        usage: {
-          model: MODEL,
-          inputTokens,
-          outputTokens,
-          costUsd:
-            typeof reported === "number"
-              ? reported
-              : (inputTokens / 1_000_000) * INPUT_PER_MTOK +
-                (outputTokens / 1_000_000) * OUTPUT_PER_MTOK,
-        },
-      };
-    }), MAX_TOKENS);
+        inputTokens: body.usage?.prompt_tokens ?? 0,
+        outputTokens: body.usage?.completion_tokens ?? 0,
+        // OpenRouter reports what the call really cost, which beats our sum.
+        reportedCostUsd: body.usage?.cost,
+      });
+    });
   },
 };

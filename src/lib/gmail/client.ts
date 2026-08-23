@@ -42,7 +42,7 @@ export function consentUrl(state: string): string {
 /**
  * An authorised client for an account, refreshing the access token when it has
  * expired. A rejected refresh token flips is_active and raises GmailAuthError,
- * which is what puts the Reconnect Gmail screen on screen (D1, D32).
+ * which is what puts the Reconnect Gmail screen on screen.
  */
 export async function authorizedClient(account: GmailAccount): Promise<OAuth2Client> {
   const client = oauthClient();
@@ -84,7 +84,3 @@ function describe(error: unknown): string {
   return String(error);
 }
 
-/** The one connected mailbox. Multiple accounts are a schema feature, not a UI one (D20). */
-export function activeAccount() {
-  return prisma.gmailAccount.findFirst({ orderBy: { id: "asc" } });
-}

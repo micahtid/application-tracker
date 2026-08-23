@@ -10,10 +10,12 @@ import {
   matchQuery,
   passesFilters,
   sortApplications,
+  toggled,
   type ApplicationView,
   type SortKey,
 } from "@/lib/view";
 import { STATUSES, type Provider, type Status } from "@/lib/constants";
+import { useDismissOnOutsideClick } from "@/lib/hooks";
 
 type SyncRun = {
   id: number;
@@ -30,10 +32,9 @@ type SyncRun = {
 };
 
 /**
- * One readout for every sync, the first backfill and a refresh alike (4).
- * Each of the three stages owns a third of the bar and fills its own third as
- * far as it has got, so the bar always moves the same way: a refresh spends
- * most of its time searching, a first run most of its time reading.
+ * One readout for every sync, the first backfill and a refresh alike. Each of
+ * the three stages owns a third of the bar and fills it as far as it has got,
+ * so the bar always moves the same way.
  */
 function syncProgress(run: SyncRun): { text: string; count: string; percent: number } {
   const emails = (done: number, total: number) =>
@@ -86,6 +87,10 @@ type StateResponse = {
   sync: SyncRun | null;
 };
 
+/** How the sync is going, asked of our own server and never of Google. */
+const fetchSyncRun = () =>
+  fetch("/api/sync").then((response) => response.json() as Promise<{ sync: SyncRun | null }>);
+
 const isoDay = (date: Date) =>
   [
     date.getFullYear(),
@@ -131,7 +136,7 @@ export default function Tracker() {
   useEffect(() => {
     load().then((state) => {
       // React's development mode runs effects twice, so the sync is guarded by
-      // a ref as well as by the server side lock (Part 4).
+      // a ref as well as by the server side lock.
       if (syncedOnOpen.current) return;
       syncedOnOpen.current = true;
       if (state.state === "CONNECTED") void startSync(false);
@@ -147,10 +152,8 @@ export default function Tracker() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ force }),
       });
-      const response = await fetch("/api/sync").then(
-        (result) => result.json() as Promise<{ sync: SyncRun | null }>,
-      );
-      setData((current) => (current ? { ...current, sync: response.sync } : current));
+      const { sync } = await fetchSyncRun();
+      setData((current) => (current ? { ...current, sync } : current));
     },
     [],
   );
@@ -164,32 +167,28 @@ export default function Tracker() {
     setResetting(true);
     await fetch("/api/reset", { method: "POST" });
     await load();
-    const response = await fetch("/api/sync").then(
-      (result) => result.json() as Promise<{ sync: SyncRun | null }>,
-    );
-    setData((current) => (current ? { ...current, sync: response.sync } : current));
+    const { sync } = await fetchSyncRun();
+    setData((current) => (current ? { ...current, sync } : current));
     setResetting(false);
     setResetOpen(false);
   }, [load]);
 
   // While a sync runs, ask our own server how it is going about once a second.
-  // This never contacts Google (D24).
+  // This never contacts Google.
   const running = data?.sync?.status === "RUNNING";
   useEffect(() => {
     if (!running) return;
 
     const timer = setInterval(async () => {
-      const response = await fetch("/api/sync").then(
-        (result) => result.json() as Promise<{ sync: SyncRun | null }>,
-      );
-      setData((current) => (current ? { ...current, sync: response.sync } : current));
-      if (response.sync?.status !== "RUNNING") void load();
+      const { sync } = await fetchSyncRun();
+      setData((current) => (current ? { ...current, sync } : current));
+      if (sync?.status !== "RUNNING") void load();
     }, 1000);
 
     return () => clearInterval(timer);
   }, [running, load]);
 
-  // Keyboard: slash jumps to search, Escape clears it and closes menus (5.4).
+  // Keyboard: slash jumps to search, Escape clears it and closes menus.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -209,12 +208,7 @@ export default function Tracker() {
   }, [settingsOpen, resetOpen]);
 
   // Any click outside a row menu closes it.
-  useEffect(() => {
-    if (rowMenu === null) return;
-    const close = () => setRowMenu(null);
-    document.addEventListener("click", close);
-    return () => document.removeEventListener("click", close);
-  }, [rowMenu]);
+  useDismissOnOutsideClick(rowMenu !== null, () => setRowMenu(null));
 
   const hiddenCount = applications.filter((application) => application.isHidden).length;
 
@@ -301,15 +295,12 @@ export default function Tracker() {
               Welcome back, <span>{data?.account?.firstName ?? "there"}</span>
             </h1>
             {/*
-              Two groups, split by a hairline: what acts on the mail, then what
-              changes settings. Inside each group the safe, often used button
-              comes first and the rare one follows, and the gear stays at the
-              end of the row, which is where a gear is looked for.
+              Two groups split by a hairline: what acts on the mail, then what
+              changes settings. The safe, often used button comes first in each
+              group, and the gear stays at the end where a gear is looked for.
 
-              Rescan All sits beside Refresh because they are the same kind of
-              thing, and is drawn as an eraser rather than another circular
-              arrow so the dangerous one of the pair is never the one you meant
-              to click. It reddens under the pointer, and asks before it runs.
+              Rescan All sits beside Refresh but is drawn as an eraser, so the
+              dangerous one of the pair is never the one you meant to click.
             */}
             <div className="masthead__tools">
               <div className="masthead__group">
@@ -374,7 +365,7 @@ export default function Tracker() {
             </p>
             {/* Not Connected offers one button, into Settings, because that is
                 where both missing pieces are filled in. Reconnect is different:
-                the only thing to do there is run consent again (5.6). */}
+                the only thing to do there is run consent again. */}
             <div className="blank__actions">
               {data?.state === "RECONNECT" ? (
                 <a className="btn" href="/api/auth/google/start">
@@ -446,14 +437,7 @@ export default function Tracker() {
               onQuery={setQuery}
               onSort={(value) => setSort(value)}
               onToggleFilter={(group, value) =>
-                setFilters((current) => {
-                  const next = {
-                    season: new Set(current.season),
-                    year: new Set(current.year),
-                  };
-                  if (!next[group].delete(value)) next[group].add(value);
-                  return next;
-                })
+                setFilters((current) => ({ ...current, [group]: toggled(current[group], value) }))
               }
               onClearFilters={() => setFilters({ season: new Set(), year: new Set() })}
               onOpenMenu={setToolbarMenu}
@@ -467,20 +451,8 @@ export default function Tracker() {
               open={open}
               collapsed={collapsed}
               menuFor={rowMenu}
-              onToggleRow={(id) =>
-                setOpen((current) => {
-                  const next = new Set(current);
-                  if (!next.delete(id)) next.add(id);
-                  return next;
-                })
-              }
-              onToggleSection={(key) =>
-                setCollapsed((current) => {
-                  const next = new Set(current);
-                  if (!next.delete(key)) next.add(key);
-                  return next;
-                })
-              }
+              onToggleRow={(id) => setOpen((current) => toggled(current, id))}
+              onToggleSection={(key) => setCollapsed((current) => toggled(current, key))}
               onToggleMenu={setRowMenu}
               onHide={(application, hidden) =>
                 void patchApplication(application.id, { isHidden: hidden })

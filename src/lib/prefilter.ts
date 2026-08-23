@@ -1,10 +1,9 @@
 /**
- * Stage 2. Local junk filter, no model involved (Part 10).
+ * Stage 2. Local junk filter, no model involved.
  *
- * It leans toward keeping things. A wrong keep costs a fraction of a cent and
- * the model rejects it. A wrong discard is invisible, because an application
- * that was never ingested never appears. So only remove what is certainly not
- * an application.
+ * Leans toward keeping. A wrong keep costs a fraction of a cent and the model
+ * rejects it; a wrong discard is invisible, because an application never
+ * ingested never appears. So only remove what is certainly not an application.
  */
 
 /** Senders that only ever send digests and adverts. */

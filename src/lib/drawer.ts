@@ -1,13 +1,12 @@
-import type { EmailEvent, StageDetail, Status } from "@/lib/constants";
+import { STAGE_LABELS, type EmailEvent, type StageDetail, type Status } from "@/lib/constants";
 import { classificationOf } from "@/lib/pipeline/recompute";
 
 /**
- * What a row's drawer shows, worked out in one place (PRD 5.3).
+ * What a row's drawer shows, worked out in one place.
  *
- * The board and the loop harness both have to answer "which emails does this
- * row show, and under what". If they answered it separately the harness would
- * be scoring its own copy of the rule rather than the one the board uses, so a
- * display change could improve the score and change nothing a person sees.
+ * The board and the loop harness both need this answer. Answered separately,
+ * the harness would score its own copy of the rule, so a display change could
+ * improve the score and change nothing a person sees.
  */
 
 /** The fields the shape of a drawer is worked out from. Nothing else is read. */
@@ -38,14 +37,11 @@ export function byReceived<T extends DrawerMessage>(a: T, b: T): number {
 /**
  * Every email an application owns appears in its drawer (LOOP2 Invariant 4).
  *
- * The old rule was a yes or no: significant, or hidden. That forced every email
- * to be either a milestone or nothing, and a reminder is neither, and a
- * completion notice is neither. They are reports on an event already on the
- * board, and the honest shape for that is not a flag but a parent.
- *
- * So nothing is filtered here. The nesting is read off `parent_message_id`,
- * which stage 5 worked out from the whole set, and this function only arranges
- * what it is given.
+ * Nothing is filtered here. A reminder and a completion notice are neither
+ * milestones nor noise: they are reports on an event already on the board, and
+ * the shape for that is a parent rather than a flag. The nesting is read off
+ * `parent_message_id`, which stage 5 worked out from the whole set, so this
+ * only arranges what it is given.
  */
 export function drawerTree<T extends DrawerMessage>(messages: T[]): DrawerNode<T>[] {
   const related = [...messages].filter((message) => message.isApplicationRelated).sort(byReceived);
@@ -74,11 +70,10 @@ export function drawerTree<T extends DrawerMessage>(messages: T[]): DrawerNode<T
  * Every branch of the display that decides something by searching the model's
  * freeform title for a word (LOOP3 P1).
  *
- * Empty, and kept empty. It held five branches until iteration 2 of LOOP3, and
- * every one of them was a guess in English at a fact the model had already
- * worked out. `title.keyword_rules` counts this list on every scored run, so a
- * branch that came back would have to join it and would be visible on the
- * scorecard the same day.
+ * Empty, and kept empty: each of the five it once held was a guess in English
+ * at a fact the model had already answered. `title.keyword_rules` counts this
+ * list on every scored run, so a branch that came back would show up the same
+ * day.
  */
 export const TITLE_KEYWORD_RULES: { name: string; pattern: RegExp }[] = [];
 
@@ -87,16 +82,16 @@ export const TITLE_KEYWORD_RULES: { name: string; pattern: RegExp }[] = [];
  *
  * A line is two halves: what the email is about, and what kind of report it
  * is. Both are answers the model gave, so no wording is read here, in any
- * language. That is the whole of LOOP3 P1: the display used to search the
- * model's freeform title for English words like "reminder" and "complet",
- * which was a guess at a fact already known, made in one language, tuned
- * against the titles one mailbox happened to hold.
+ * language.
+ */
+/**
+ * The badge wording, except that a drawer line says "Technical Assessment"
+ * where the badge has room only for "Assessment". Everything else matches, and
+ * a stage added to the list is worded here without a second edit.
  */
 const STAGE_WORDS: Record<StageDetail, string> = {
+  ...STAGE_LABELS,
   ASSESSMENT: "Technical Assessment",
-  RECORDED_INTERVIEW: "Recorded Interview",
-  INTERVIEW: "Interview",
-  VERIFICATION: "Verification",
 };
 
 const EVENT_WORDS: Record<EmailEvent, string> = {
@@ -143,13 +138,12 @@ const CLOSED = "Application Closed";
 
 /**
  * One standard title, composed from what the model answered about the email
- * rather than read out of what it called it (LOOP3 Decision 1 and 7).
+ * rather than from what it called it (LOOP3 Decision 1 and 7).
  *
- * The model reads one email at a time and titles it in whatever words that one
- * email used, which is how a single mailbox comes to hold "Application
- * Received", "Application Complete" and "Application Confirmation" for the
- * same event. Read on its own every one of those titles is right. Only the
- * whole board can see they are one thing.
+ * The model titles each email in that email's own words, which is how one
+ * mailbox ends up with "Application Received", "Application Complete" and
+ * "Application Confirmation" for the same event. Each is right on its own.
+ * Only the whole board can see they are one thing.
  *
  * The ladder never guesses:
  *
@@ -158,10 +152,8 @@ const CLOSED = "Application Closed";
  *   3. neither known                the model's own title, shown as written
  *
  * Rung 3 is the only place a freeform string reaches the screen, and it
- * decides nothing: it is reached only when both enums are empty, which is an
- * answer given before either field existed. For an email nothing recognises,
- * the alternative is a standard phrase that is confidently wrong or a generic
- * one that says nothing, and the model did read the email.
+ * decides nothing. It is reached only for an answer given before either field
+ * existed.
  */
 export function drawerTitle(message: DrawerMessage): string {
   const said = classificationOf(message);
@@ -175,15 +167,10 @@ export function drawerTitle(message: DrawerMessage): string {
 
   /**
    * A resend says nothing new, and says which kind of nothing (LOOP3 Decision
-   * 4). Six of the nine on this board repeat a receipt for something already
-   * done, and there is nothing to be reminded of, so calling them reminders
-   * would invent an obligation.
-   *
-   * A resent invitation is not literally a reminder either: the employer sent
-   * the same notice twice and nobody wrote a nudge. It reads as one anyway,
-   * because the reader's question is "is there anything new here for me to
-   * do", and the honest answer is the same as a reminder's. No, but the thing
-   * above is still waiting.
+   * 4). A resent receipt reminds you of nothing, so calling it a reminder
+   * would invent an obligation. A resent invitation is not literally a
+   * reminder either, but it answers the reader's question the same way: no,
+   * nothing new, and the thing above is still waiting.
    */
   if (message.parentRelation === "REPEAT") {
     const asked = event === "INVITATION" || event === "REQUEST";
