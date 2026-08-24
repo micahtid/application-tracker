@@ -1,8 +1,10 @@
 import type { Db } from "@/lib/db";
 import { GROUPING_VERSION } from "@/lib/constants";
-import { attachClassified } from "./match";
+import { attachClassified, type Adjudicator } from "./match";
 import { recomputeAll } from "./recompute";
 import { correctionNotes } from "./corrections";
+import { counterNotes, mergeCounters, type PipelineCounters } from "./counters";
+import { repairGrouping, type RepairAction } from "./repair";
 
 /**
  * The application table is a projection of the messages (LOOP Invariant 1), so
@@ -21,31 +23,44 @@ export type RebuildOutcome = {
   attached: number;
   created: number;
   notes: string[];
+  /** Every decision the rules could not make honestly (LOOP4 Decision 8). */
+  counters: PipelineCounters;
+  /** What the repair pass joined or separated, for the scorer to judge. */
+  repairs: RepairAction[];
 };
 
 /**
  * Everything grouping produced, removed. The messages and their saved model
- * answers stay. Messages are detached first, so deleting an application cannot
- * take one with it. The alias table goes too: it only records pairs an earlier
- * run matched, so keeping it would carry a grouping decision across the wipe.
+ * answers stay. The memberships go first, so deleting an application cannot
+ * take a message with it down the cascade. The alias table goes too: it only
+ * records pairs an earlier run matched, so keeping it would carry a grouping
+ * decision across the wipe.
  */
 export async function clearGrouping(db: Db): Promise<void> {
-  await db.emailMessage.updateMany({
-    where: { applicationId: { not: null } },
-    data: { applicationId: null },
-  });
+  await db.applicationMembership.deleteMany({});
   await db.applicationStatusHistory.deleteMany({});
   await db.application.deleteMany({});
   await db.companyAlias.deleteMany({});
 }
 
-export async function rebuildGrouping(db: Db): Promise<RebuildOutcome> {
+export async function rebuildGrouping(
+  db: Db,
+  adjudicator?: Adjudicator,
+): Promise<RebuildOutcome> {
   await clearGrouping(db);
 
-  const matched = await attachClassified(db);
+  const matched = await attachClassified(db, adjudicator);
 
   const all = await db.application.findMany({ select: { id: true } });
-  await recomputeAll(db, all.map((row) => row.id));
+  const recomputed = await recomputeAll(db, all.map((row) => row.id));
+  const counters = mergeCounters(matched.counters, recomputed);
+
+  // Stage 4 groups as it goes and never looks again, so this is the one place
+  // a decision taken on partial evidence is revisited once, over a board that
+  // is already complete (LOOP4 Invariant 7). It runs after stage 5 because it
+  // reads what each row reached, and exactly once.
+  const repaired = await repairGrouping(db, counters);
+  if (repaired.touched.length) await recomputeAll(db, repaired.touched);
 
   const applications = await db.application.count();
 
@@ -53,7 +68,9 @@ export async function rebuildGrouping(db: Db): Promise<RebuildOutcome> {
     applications,
     attached: matched.attached,
     created: matched.created,
-    notes: await correctionNotes(db),
+    notes: [...(await correctionNotes(db)), ...counterNotes(counters)],
+    counters,
+    repairs: repaired.actions,
   };
 }
 

@@ -16,14 +16,11 @@ import { clearGrouping } from "./rebuild";
  * fresh row ids (LOOP Invariant 1).
  */
 export async function resetEverything(db: Db): Promise<void> {
+  // Nesting used to be a message pointing at another message and needed
+  // undoing by hand before the rows could go. It now lives on the membership,
+  // which `clearGrouping` deletes outright, so there is nothing left to undo.
   await clearGrouping(db);
 
-  // Nesting is a message pointing at another message, so it is undone before
-  // the rows themselves go.
-  await db.emailMessage.updateMany({
-    where: { parentMessageId: { not: null } },
-    data: { parentMessageId: null, parentRelation: null },
-  });
   await db.applicationCorrection.deleteMany({});
   await db.emailMessage.deleteMany({});
 

@@ -1,7 +1,8 @@
-import type { EmailEvent, Provider, Season, SenderRole, StageDetail, Status } from "@/lib/constants";
+import type { EmailEvent, Outcome, Provider, Season, SenderRole, StageDetail, Status } from "@/lib/constants";
 import {
   EMAIL_EVENTS,
   EMAIL_EVENT_FALLBACK,
+  OUTCOMES,
   SEASONS,
   SENDER_ROLES,
   SENDER_ROLE_FALLBACK,
@@ -28,6 +29,13 @@ export type Classification = {
    * this nor a stage (LOOP3 Decision 7).
    */
   emailEvent: EmailEvent | null;
+  /**
+   * Which ending this email announced, or null on the great majority that
+   * announce none (LOOP4 Decision 7). Null is also what an answer given before
+   * the field existed reads as, which is right: it says nothing rather than
+   * claiming an ending nobody stated.
+   */
+  outcome: Outcome | null;
   /**
    * Who sent it: the employer, a service delivering its mail, or a third
    * party running one step. Never null, because the fallback is the employer
@@ -59,6 +67,22 @@ export type ProviderAdapter = {
   /** Calls the provider's free model list endpoint. Proves the key works and the model exists. */
   checkKey(apiKey: string): Promise<{ ok: true } | { ok: false; message: string }>;
   classify(apiKey: string, system: string, user: string): Promise<ClassifyResult>;
+  /**
+   * One structured question that is not a classification (LOOP4 Decision 6).
+   *
+   * The classification schema is the shape of an answer about one email read
+   * alone. Matching is nothing but context, so the adjudicator asks a different
+   * question and needs a different shape. Optional, because a provider that
+   * cannot answer it must leave the caller exactly as it was rather than break
+   * it: a paid call may never be load bearing for correctness.
+   */
+  ask?(
+    apiKey: string,
+    system: string,
+    user: string,
+    schema: Record<string, unknown>,
+    name: string,
+  ): Promise<{ raw: string; usage: Usage }>;
 };
 
 /**
@@ -195,6 +219,10 @@ export function parseClassification(raw: unknown): Classification {
     status: oneOf(STATUSES, status, "APPLIED"),
     stageDetail: oneOf(STAGE_DETAILS, stageDetail, null),
     emailEvent: parseEvent(value.email_event),
+    // Unlike the event, an unrecognised ending falls to null rather than to a
+    // fallback. There is no ending that means "some ending", and inventing one
+    // would put a closing line on a row that never closed.
+    outcome: oneOf<Outcome, null>(OUTCOMES, String(value.outcome ?? "").toUpperCase(), null),
     senderRole: oneOf(SENDER_ROLES, senderRole, SENDER_ROLE_FALLBACK),
     isSignificant: value.is_significant === true,
     emailTitle: text(value.email_title) ?? "Application Email",

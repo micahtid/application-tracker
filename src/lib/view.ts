@@ -1,4 +1,4 @@
-import { STATUS_LABELS, type StageDetail, type Status } from "@/lib/constants";
+import { STATUS_LABELS, type Outcome, type StageDetail, type Status } from "@/lib/constants";
 
 /** The board's shape, as the browser sees it. */
 export type EmailView = {
@@ -21,6 +21,14 @@ export type ApplicationView = {
   status: Status;
   statusOverride: Status | null;
   stageDetail: StageDetail | null;
+  /** Which ending a finished application reached, or null when it has not ended. */
+  outcome: Outcome | null;
+  /**
+   * True when nothing has arrived for a season and the row has not ended
+   * (LOOP4 Decision 7). Worked out on every read from the date rather than
+   * stored, because it changes with the calendar rather than with the mail.
+   */
+  isStale: boolean;
   isHidden: boolean;
   latestEmailAt: string | null;
   firstEmailAt: string | null;

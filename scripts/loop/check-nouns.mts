@@ -16,8 +16,9 @@
  *   - Names of two words or more are matched in full, which is where the real
  *     risk lies anyway. Nobody hardcodes the first word of a trading firm's
  *     name on its own. They hardcode the whole thing.
- *   - LOOP.md, loop/ and the label files are excluded, since naming real
- *     employers is their whole job.
+ *   - The loop planning documents, loop/ and the label files are excluded,
+ *     since naming real employers is their whole job: a plan that could not
+ *     say which two rows a defect is about would not be a plan.
  *
  * This comment is itself subject to the gate, which is the point: the check
  * refuses to describe itself using the names it exists to keep out.
@@ -33,7 +34,7 @@ import path from "node:path";
 import { LIVE_DB, WORK_DB, openDb } from "./common.mts";
 import { ATS_DOMAINS, ATS_VENDORS } from "../../src/lib/ats.ts";
 
-const EXCLUDED = [/^LOOP\.md$/, /^loop\//, /^prisma\/.*\.db/, /^PRD\.md$/, /^PLANNING\.md$/, /^README\.md$/];
+const EXCLUDED = [/^LOOP\d*\.md$/, /^loop\//, /^prisma\/.*\.db/, /^PRD\.md$/, /^PLANNING\.md$/, /^README\.md$/];
 
 /**
  * The one standing exception. The vendor list names intermediaries rather than

@@ -28,9 +28,8 @@ export async function projectApplications(db: PrismaClient): Promise<ProjectedAp
   const [applications, corrections] = await Promise.all([
     db.application.findMany({
       include: {
-        messages: {
-          orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
-          select: { id: true, gmailMessageId: true },
+        memberships: {
+          select: { message: { select: { id: true, gmailMessageId: true, receivedAt: true } } },
         },
         statusHistory: {
           orderBy: [{ detectedAt: "asc" }, { id: "asc" }],
@@ -55,7 +54,10 @@ export async function projectApplications(db: PrismaClient): Promise<ProjectedAp
         statusOverride: correction?.statusOverride ?? null,
         isHidden: correction?.isHidden ?? false,
         atsVendor: application.atsVendor,
-        messages: application.messages.map((message) => message.gmailMessageId),
+        messages: application.memberships
+          .map((membership) => membership.message)
+          .sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime() || a.id - b.id)
+          .map((message) => message.gmailMessageId),
         milestones: application.statusHistory.map((row) => ({
           message: row.message.gmailMessageId,
           status: row.status,

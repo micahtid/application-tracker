@@ -7,6 +7,8 @@ import { classifyPending, revisitSkipped } from "./classify";
 import { attachClassified } from "./match";
 import { recomputeAll } from "./recompute";
 import { rebuildIfStale } from "./rebuild";
+import { counterNotes, mergeCounters } from "./counters";
+import { ADJUDICATE_CAP_USD, adjudicatorFor } from "./adjudicator";
 import { findSplitSuspects } from "./duplicates";
 
 /**
@@ -164,8 +166,14 @@ async function execute(
     const rebuilt = await rebuildIfStale(prisma);
     if (rebuilt) notes.push(`Regrouped ${rebuilt.applications} applications.`, ...rebuilt.notes);
 
-    const matched = await attachClassified(prisma);
-    await recomputeAll(prisma, matched.touched);
+    // LOOP4 Decision 6. Asked only where the code has run out of evidence, and
+    // capped, so a matching rule that has quietly broken shows up as a bill
+    // rather than as a silently better looking board.
+    const matched = await attachClassified(
+      prisma,
+      adjudicatorFor(prisma, provider, apiKey, ADJUDICATE_CAP_USD),
+    );
+    const recomputed = await recomputeAll(prisma, matched.touched);
 
     // Applications can also change because a message was attached to one of
     // them by an earlier run that never finished recalculating.
@@ -173,7 +181,12 @@ async function execute(
       where: { firstEmailAt: null },
       select: { id: true },
     });
-    await recomputeAll(prisma, orphaned.map((row) => row.id));
+    const tidied = await recomputeAll(prisma, orphaned.map((row) => row.id));
+
+    // Gate 9. Anything the rules could not settle honestly is said out loud
+    // here, on the same path as a merge collision, rather than left for
+    // nobody to notice (LOOP4 Decision 8).
+    notes.push(...counterNotes(mergeCounters(matched.counters, recomputed, tidied)));
 
     // Advisory only. Nothing acts on it, and nothing in the board changes
     // because of it (LOOP Invariant 6).

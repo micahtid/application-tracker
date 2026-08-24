@@ -18,6 +18,7 @@ import fs from "node:fs";
 import {
   FLOORS,
   HISTORY,
+  INTAKE_AUDIT,
   LAST_RESULT,
   SCORECARD,
   SNAPSHOT_STATE,
@@ -48,59 +49,132 @@ if (!applicationLabels.groups.length) {
   process.exit(1);
 }
 
+/**
+ * What the last replay recorded, including the counters Gate 9 requires.
+ *
+ * The counters describe things the pipeline did that no board can show
+ * afterwards: a dedupe key made unique to get past a collision, an alias
+ * written, a repair that fired. Every one of them is a decision the code could
+ * not make honestly, so it is counted where it happens and reported here
+ * (LOOP4 Decision 8). A counter nothing writes yet reads as a dash rather than
+ * as a zero, because those are different claims.
+ */
+type Counters = Partial<{
+  dedupeCollisions: number;
+  aliasesWritten: number;
+  aliasesGuessed: number;
+  linksByReason: Record<string, number>;
+  scoreTies: number;
+  fanoutEvents: number;
+  repairMerges: number;
+  repairSplits: number;
+  repairUnsettled: number;
+  repairRegressions: number;
+  adjudicateCalls: number;
+  adjudicateCostUsd: number;
+}>;
+
 const replay = readJson<{
   stable?: boolean;
   correctionsPreserved?: number;
   applications?: unknown[];
+  counters?: Counters;
+  repairs?: { kind: "MERGE" | "SPLIT"; left: string[]; right: string[] }[];
 }>(LAST_RESULT, {});
+
+const counters: Counters = replay.counters ?? {};
 
 // ---------------------------------------------------------------- the board
 
-const applications = await db.application.findMany({
-  include: {
-    messages: {
-      orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
-      select: {
-        id: true,
-        gmailMessageId: true,
-        emailTitle: true,
-        receivedAt: true,
-        senderDomain: true,
-        isSignificant: true,
-        isApplicationRelated: true,
-        llmClassificationRaw: true,
-        parentMessageId: true,
-        parentRelation: true,
+/**
+ * The board, with each application's emails carrying the pairing's own parent
+ * (LOOP4 Decision 1). One email held by two applications appears once in each,
+ * under whatever line it sits below there.
+ */
+const applications = (
+  await db.application.findMany({
+    include: {
+      memberships: {
+        select: {
+          parentMessageId: true,
+          parentRelation: true,
+          message: {
+            select: {
+              id: true,
+              gmailMessageId: true,
+              emailTitle: true,
+              receivedAt: true,
+              senderDomain: true,
+              isSignificant: true,
+              isApplicationRelated: true,
+              llmClassificationRaw: true,
+            },
+          },
+        },
       },
+      statusHistory: { include: { message: { select: { gmailMessageId: true } } } },
     },
-    statusHistory: { include: { message: { select: { gmailMessageId: true } } } },
-  },
-});
+  })
+).map((application) => ({
+  ...application,
+  messages: application.memberships
+    .map((membership) => ({
+      ...membership.message,
+      parentMessageId: membership.parentMessageId,
+      parentRelation: membership.parentRelation,
+    }))
+    .sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime() || a.id - b.id),
+}));
 
 const allMessages = await db.emailMessage.findMany({
   select: {
     gmailMessageId: true,
     isApplicationRelated: true,
     classificationStatus: true,
-    applicationId: true,
+    llmClassificationRaw: true,
+    memberships: { select: { applicationId: true } },
   },
 });
 
-const groupOfMessage = new Map<string, string>();
+/**
+ * Which labelled groups each message belongs to (LOOP4 5.1).
+ *
+ * A set rather than one value, because an email that covers two postings
+ * belongs to both and the whole of Decision 1 is about being able to say so. A
+ * message in one group, which is almost all of them, gives a set of one and
+ * every metric below reads exactly as it did.
+ */
+const groupsOfMessage = new Map<string, Set<string>>();
 const halfOfGroup = new Map<string, Half>();
 for (const group of applicationLabels.groups) {
   halfOfGroup.set(group.id, halfOf(group.id));
-  for (const id of group.messages) groupOfMessage.set(id, group.id);
+  for (const id of group.messages) {
+    if (!groupsOfMessage.has(id)) groupsOfMessage.set(id, new Set());
+    groupsOfMessage.get(id)!.add(group.id);
+  }
+}
+
+/**
+ * The one group a per message metric counts a multi group message under.
+ *
+ * Every metric that asks a question about the email rather than about the
+ * pairing needs one half to count it in, and counting it twice would weight it
+ * double. The smallest id wins, so the answer never depends on sheet order.
+ */
+function groupOfMessage(id: string): string | undefined {
+  const groups = groupsOfMessage.get(id);
+  if (!groups?.size) return undefined;
+  return [...groups].sort()[0];
 }
 
 const earliestOfGroup = new Map<string, number>();
 for (const application of applications) {
   for (const message of application.messages) {
-    const group = groupOfMessage.get(message.gmailMessageId);
-    if (!group) continue;
-    const at = message.receivedAt.getTime();
-    if (!earliestOfGroup.has(group) || at < earliestOfGroup.get(group)!) {
-      earliestOfGroup.set(group, at);
+    for (const group of groupsOfMessage.get(message.gmailMessageId) ?? []) {
+      const at = message.receivedAt.getTime();
+      if (!earliestOfGroup.has(group) || at < earliestOfGroup.get(group)!) {
+        earliestOfGroup.set(group, at);
+      }
     }
   }
 }
@@ -129,10 +203,26 @@ const groupsInApplication = new Map<number, Set<string>>();
 const applicationsInGroup = new Map<string, Set<number>>();
 const pairs: { group: string; application: (typeof applications)[number]; overlap: number }[] = [];
 
+/**
+ * A message labelled as belonging to more than one application is left out of
+ * the alignment and out of `group.split` and `group.merge` (LOOP4 5.1).
+ *
+ * Those three ask which single row a message belongs in, which is the one
+ * question a multi group message has no answer to. Counting it would make an
+ * email that is filed correctly in both places read as a split, and an email
+ * filed correctly in one read as a merge. It is measured instead by
+ * `group.multi_message` and `group.message_accuracy`, which are set
+ * comparisons and can say what actually happened.
+ */
+function belongsToOneGroup(id: string): boolean {
+  return (groupsOfMessage.get(id)?.size ?? 0) === 1;
+}
+
 for (const application of applications) {
   const counts = new Map<string, number>();
   for (const message of application.messages) {
-    const group = groupOfMessage.get(message.gmailMessageId);
+    if (!belongsToOneGroup(message.gmailMessageId)) continue;
+    const group = groupOfMessage(message.gmailMessageId);
     if (!group) continue;
     counts.set(group, (counts.get(group) ?? 0) + 1);
     if (!applicationsInGroup.has(group)) applicationsInGroup.set(group, new Set());
@@ -180,6 +270,9 @@ const metrics: Record<string, Record<Half, Tally>> = {
   "group.merge": empty(),
   "group.exact": empty(),
   "group.message_accuracy": empty(),
+  "group.multi_message": empty(),
+  "fanout.precision": empty(),
+  "outcome.accuracy": empty(),
   "identity.company": empty(),
   "identity.role_filled": empty(),
   "state.head": empty(),
@@ -246,17 +339,95 @@ for (const group of applicationLabels.groups) {
   }
 }
 
-// group.message_accuracy, one row per labelled message. A whole group counts
-// as wrong the moment one of its emails lands elsewhere, so `group.exact`
-// cannot tell a row that is one email out from a row that is entirely wrong.
-// This one can, which is what makes a partial improvement visible.
-for (const group of applicationLabels.groups) {
-  const half = halfOfGroup.get(group.id)!;
-  const home = groupToApplication.get(group.id)?.application.id ?? null;
-  for (const id of group.messages) {
-    const state = messageState.get(id);
-    count("group.message_accuracy", half, home !== null && state?.applicationId === home);
+/**
+ * Which applications actually hold each message.
+ *
+ * Read off the board rather than off `application_id`, because from Iteration
+ * 5 belonging is a row of its own and a message may be held by two rows. Today
+ * it is always a set of nought or one, and every metric below reads exactly as
+ * it did.
+ */
+const applicationsHolding = new Map<string, Set<number>>();
+for (const application of applications) {
+  for (const message of application.messages) {
+    const held = applicationsHolding.get(message.gmailMessageId) ?? new Set<number>();
+    held.add(application.id);
+    applicationsHolding.set(message.gmailMessageId, held);
   }
+}
+
+function sameSet(left: Set<number>, right: Set<number>): boolean {
+  return left.size === right.size && [...left].every((value) => right.has(value));
+}
+
+/** The rows a message ought to be in: the aligned row of each group it is labelled in. */
+function expectedApplications(id: string): Set<number> | null {
+  const expected = new Set<number>();
+  for (const group of groupsOfMessage.get(id) ?? []) {
+    const aligned = groupToApplication.get(group)?.application.id;
+    if (aligned === undefined) return null;              // no row stands for that group at all
+    expected.add(aligned);
+  }
+  return expected.size ? expected : null;
+}
+
+/**
+ * group.message_accuracy, one row per labelled message, as a set comparison
+ * (LOOP4 5.1).
+ *
+ * A whole group counts as wrong the moment one of its emails lands elsewhere,
+ * so `group.exact` cannot tell a row that is one email out from a row that is
+ * entirely wrong. This one can, which is what makes a partial improvement
+ * visible. It compares sets rather than values so that an email belonging to
+ * two applications is right only when it is filed against both, and an email
+ * belonging to one is still wrong the moment it is filed against two.
+ */
+const messagesInGroups = [...new Set(applicationLabels.groups.flatMap((group) => group.messages))];
+
+for (const id of messagesInGroups) {
+  const half = halfOfGroup.get(groupOfMessage(id)!)!;
+  const expected = expectedApplications(id);
+  const held = applicationsHolding.get(id) ?? new Set<number>();
+  count("group.message_accuracy", half, expected !== null && sameSet(held, expected));
+}
+
+/**
+ * group.multi_message, over the messages a label says cover more than one
+ * application (LOOP4 5.2).
+ *
+ * The share of them filed against every one of their applications. Nothing but
+ * the schema can move this: with one nullable column on the message there is
+ * no way to file an email against two rows, so it reads 0 until Iteration 5
+ * makes the answer expressible and Iteration 6 makes it happen.
+ */
+for (const id of messagesInGroups) {
+  if (belongsToOneGroup(id)) continue;
+  const half = halfOfGroup.get(groupOfMessage(id)!)!;
+  const expected = expectedApplications(id);
+  const held = applicationsHolding.get(id) ?? new Set<number>();
+  count("group.multi_message", half, expected !== null && sameSet(held, expected));
+}
+
+/**
+ * fanout.precision and fanout.events, the other direction of the same question
+ * (LOOP4 5.2).
+ *
+ * `group.multi_message` reads the labels and asks whether every email that
+ * covers two applications reached both. These read the board and ask whether
+ * every email the board put in two places belonged in both. One is recall and
+ * the other is precision, and a rule that fanned out everything would score
+ * perfectly on the first alone.
+ *
+ * Both are read off the board rather than off a counter, because what matters
+ * is where the emails ended up rather than how many times a branch was taken.
+ */
+const fannedOut = [...applicationsHolding.entries()].filter(([, held]) => held.size > 1);
+
+for (const [id, held] of fannedOut) {
+  const group = groupOfMessage(id);
+  if (!group) continue;                                  // unlabelled: counted, not judged
+  const expected = expectedApplications(id);
+  count("fanout.precision", halfOfGroup.get(group)!, expected !== null && sameSet(held, expected));
 }
 
 // group.merge, one row per application that holds any labelled message.
@@ -271,7 +442,7 @@ for (const application of applications) {
 for (const application of applications) {
   for (const row of application.statusHistory) {
     const label = messageLabels[row.message.gmailMessageId];
-    const group = groupOfMessage.get(row.message.gmailMessageId);
+    const group = groupOfMessage(row.message.gmailMessageId);
     if (!label || !group) continue;
     count("state.milestone_precision", halfOfGroup.get(group)!, label.significant);
   }
@@ -308,10 +479,10 @@ for (const group of applicationLabels.groups) {
 
 for (const [id, label] of Object.entries(messageLabels)) {
   if (!label.related) continue;
-  const group = groupOfMessage.get(id);
+  const group = groupOfMessage(id);
   const half = group ? halfOfGroup.get(group)! : "TUNE";
   const state = messageState.get(id);
-  count("recall.related", half, Boolean(state?.isApplicationRelated && state.applicationId));
+  count("recall.related", half, Boolean(state?.isApplicationRelated && state.memberships.length));
   if (state?.classificationStatus === "SKIPPED_PREFILTER") count("prefilter.false_drop", half, false);
 }
 for (const [id, label] of Object.entries(messageLabels)) {
@@ -344,13 +515,21 @@ for (const [id, label] of Object.entries(messageLabels)) {
  * board reads it through, so what is scored is what a person would see rather
  * than what the raw JSON happens to hold.
  */
-const storedMessages = new Map<string, (typeof applications)[number]["messages"][number]>();
-for (const application of applications) {
-  for (const message of application.messages) storedMessages.set(message.gmailMessageId, message);
-}
+/**
+ * Read from every message rather than from the ones that reached a row.
+ *
+ * These three ask what the model answered about an email, which is a question
+ * about the classifier alone. Reading them off the board conflated that with
+ * whether the email was grouped at all: an email the pipeline calls
+ * application mail and then attaches to nothing scored as a classification
+ * miss, when the classification was right and the grouping was what failed.
+ */
+const storedMessages = new Map(
+  allMessages.map((message) => [message.gmailMessageId, message] as const),
+);
 
 for (const [id, label] of Object.entries(messageLabels)) {
-  const group = groupOfMessage.get(id);
+  const group = groupOfMessage(id);
   if (!group) continue;
   const half = halfOfGroup.get(group)!;
   // Read back through the pipeline's own parser, so a missing answer scores as
@@ -360,6 +539,20 @@ for (const [id, label] of Object.entries(messageLabels)) {
 
   if (label.stage) count("stage.accuracy", half, said?.stageDetail === label.stage);
   if (label.event) count("event.accuracy", half, said?.emailEvent === label.event);
+
+  /**
+   * outcome.accuracy, over the emails that announced an ending (LOOP4 5.2).
+   *
+   * Read off the stored answer the same way, and typed as an addition the
+   * classification does not carry yet: until Iteration 8 there is no field to
+   * read, so every labelled ending scores as a miss. That is the defect being
+   * measured rather than a fault in the reading, and a metric that only
+   * starts existing once it passes would never have shown V2 at all.
+   */
+  if (label.outcome) {
+    const stored = (said as (typeof said & { outcome?: string | null }) | null)?.outcome ?? null;
+    count("outcome.accuracy", half, stored === label.outcome);
+  }
 }
 
 // The tree and the drawer. Two different questions, counted separately.
@@ -374,14 +567,55 @@ for (const application of applications) {
   for (const message of application.messages) gmailIdOfRow.set(message.id, message.gmailMessageId);
 }
 
+/**
+ * The parent worked out for each email, in each application that holds it.
+ *
+ * Keyed by the pairing rather than by the email, because the drawer parent is
+ * a fact about the pairing: an email in two applications sits under a
+ * different line in each (LOOP4 Decision 1). Today one column holds it, so
+ * both entries carry the same value and the reading is unchanged.
+ */
 const computedParent = new Map<string, string | null>();
+const pairKey = (applicationId: number, gmailMessageId: string) => `${applicationId}:${gmailMessageId}`;
 for (const application of applications) {
   for (const message of application.messages) {
     computedParent.set(
-      message.gmailMessageId,
+      pairKey(application.id, message.gmailMessageId),
       message.parentMessageId === null ? null : gmailIdOfRow.get(message.parentMessageId) ?? null,
     );
   }
+}
+
+/**
+ * Every (application, email) pairing a label states, with where the email sits
+ * in that application's drawer.
+ *
+ * A message in one group states one pairing and reads exactly as it did. A
+ * message in two states two, and each is scored against the row that stands
+ * for its own group, which is the only way an email in two drawers can be
+ * scored at all.
+ */
+type LabelledPair = { message: string; group: string; parent: string | null; relation: string | null };
+const labelledPairs: LabelledPair[] = [];
+for (const [id, label] of Object.entries(messageLabels)) {
+  if (!groupsOfMessage.has(id)) continue;
+  if (label.groups?.length) {
+    for (const membership of label.groups) {
+      labelledPairs.push({
+        message: id,
+        group: membership.id,
+        parent: membership.parent,
+        relation: membership.relation,
+      });
+    }
+    continue;
+  }
+  labelledPairs.push({
+    message: id,
+    group: groupOfMessage(id)!,
+    parent: label.parent ?? null,
+    relation: label.relation ?? null,
+  });
 }
 
 /** Broken down by relation, so nesting a reminder and nesting a completion
@@ -417,23 +651,30 @@ for (const application of applications) {
     }
   }
 
+  // Read against the pairing this drawer is: an email in two applications may
+  // rightly hold its own line in one and sit under a line in the other. Where
+  // the email belongs to one group, which is every email but a handful, the
+  // pairing is that group and the reading is unchanged.
+  const standsFor = applicationToGroup.get(application.id);
   for (const node of tree) {
     const id = node.message.gmailMessageId;
-    const group = groupOfMessage.get(id);
-    const label = messageLabels[id];
-    if (!group || !label) continue;
-    count("tree.top_level_precision", halfOfGroup.get(group)!, !label.parent);
+    if (!messageLabels[id]) continue;
+    const pair =
+      labelledPairs.find((row) => row.message === id && row.group === standsFor) ??
+      labelledPairs.find((row) => row.message === id && row.group === groupOfMessage(id));
+    if (!pair) continue;
+    count("tree.top_level_precision", halfOfGroup.get(pair.group)!, !pair.parent);
   }
 }
 
-for (const [id, label] of Object.entries(messageLabels)) {
-  if (!label.parent) continue;
-  const group = groupOfMessage.get(id);
-  if (!group) continue;
-  const hit = computedParent.get(id) === label.parent;
-  count("tree.parent_accuracy", halfOfGroup.get(group)!, hit);
+for (const pair of labelledPairs) {
+  if (!pair.parent) continue;
+  const aligned = groupToApplication.get(pair.group)?.application.id;
+  const hit =
+    aligned !== undefined && computedParent.get(pairKey(aligned, pair.message)) === pair.parent;
+  count("tree.parent_accuracy", halfOfGroup.get(pair.group)!, hit);
 
-  const relation = label.relation ?? "UPDATE";
+  const relation = pair.relation ?? "UPDATE";
   const tally = parentByRelation.get(relation) ?? { hit: 0, total: 0 };
   tally.total += 1;
   if (hit) tally.hit += 1;
@@ -462,7 +703,9 @@ function show(value: number | null, total: number): string {
 
 const relatedMessages = allMessages.filter((message) => message.isApplicationRelated).length;
 const labelledMessages = Object.keys(messageLabels).length;
-const groupedLabels = applicationLabels.groups.reduce((sum, group) => sum + group.messages.length, 0);
+// Distinct messages rather than memberships: one email may belong to two
+// groups, and counting it twice put labels.coverage above 100%.
+const groupedLabels = new Set(applicationLabels.groups.flatMap((group) => group.messages)).size;
 
 const failures = await db.emailMessage.count({ where: { classificationStatus: "FAILED" } });
 const suspects = await findSplitSuspects(db);
@@ -496,6 +739,43 @@ const falseDrops = Object.entries(messageLabels).filter(
   ([id, label]) => label.related && messageState.get(id)?.classificationStatus === "SKIPPED_PREFILTER",
 ).length;
 
+/**
+ * repair.regressions, judged against the labels rather than against a counter
+ * (LOOP4 5.2).
+ *
+ * A merge is a regression when it joined two emails the labels put in different
+ * applications. A split is one when it separated two the labels put together.
+ * Read off the actions the pass recorded rather than off the board, because the
+ * board afterwards cannot say which row a repair produced.
+ */
+const repairRegressions = (replay.repairs ?? []).filter((action) => {
+  const groupsOf = (ids: string[]) =>
+    new Set(ids.flatMap((id) => [...(groupsOfMessage.get(id) ?? [])]));
+  const left = groupsOf(action.left);
+  const right = groupsOf(action.right);
+  if (!left.size || !right.size) return false;          // unlabelled: counted, not judged
+  const shared = [...left].some((group) => right.has(group));
+  return action.kind === "MERGE" ? !shared : shared;
+}).length;
+
+/** A counter nothing writes yet reads as a dash. Nought is a different claim. */
+function countOf(name: keyof Counters): string {
+  const value = counters[name];
+  return typeof value === "number" ? String(value) : "—";
+}
+
+/**
+ * What the last intake audit found (LOOP4 Decision 9).
+ *
+ * The one number in this project measured against the mailbox rather than
+ * against the subset the sweep returned. Written by its own command, because
+ * it costs money and a scored run may not spend without being asked.
+ */
+const audit = readJson<{ recall: number; sampled: number; related: number; at: string } | null>(
+  INTAKE_AUDIT,
+  null,
+);
+
 type Row = { metric: string; tune: string; holdout: string; target: string };
 
 const rows: Row[] = [
@@ -505,6 +785,9 @@ const rows: Row[] = [
     [
       ["group.exact", "≥ 0.95"],
       ["group.message_accuracy", "≥ 0.99"],
+      ["group.multi_message", "1.000"],
+      ["fanout.precision", "1.000, may not fall"],
+      ["outcome.accuracy", "≥ 0.95"],
       ["identity.company", "≥ 0.95"],
       ["identity.role_filled", "1.0"],
       ["state.head", "≥ 0.95"],
@@ -547,6 +830,27 @@ const rows: Row[] = [
   },
   { metric: "group.split_suspects", tune: String(suspects.length), holdout: "—", target: "advisory" },
   { metric: "classify.failed", tune: String(failures), holdout: "—", target: "0" },
+  /**
+   * Gate 9's counters (LOOP4 Decision 8). Every one of these records a
+   * decision the code could not make honestly, and a dash means nothing has
+   * been written to count it yet rather than that it happened nought times.
+   */
+  { metric: "fanout.events", tune: String(fannedOut.length), holdout: "—", target: "1 here, and it is a ceiling" },
+  { metric: "repair.merges", tune: countOf("repairMerges"), holdout: "—", target: "advisory" },
+  { metric: "repair.splits", tune: countOf("repairSplits"), holdout: "—", target: "advisory" },
+  { metric: "repair.regressions", tune: replay.repairs ? String(repairRegressions) : "—", holdout: "—", target: "0" },
+  { metric: "repair.unsettled", tune: countOf("repairUnsettled"), holdout: "—", target: "advisory, watched" },
+  { metric: "dedupe.collisions", tune: countOf("dedupeCollisions"), holdout: "—", target: "0" },
+  { metric: "alias.guessed", tune: countOf("aliasesGuessed"), holdout: "—", target: "0" },
+  { metric: "alias.written", tune: countOf("aliasesWritten"), holdout: "—", target: "advisory, watched" },
+  { metric: "link.scored", tune: String(counters.linksByReason?.SCORE ?? "—"), holdout: "—", target: "advisory, watched" },
+  { metric: "adjudicate.calls", tune: countOf("adjudicateCalls"), holdout: "—", target: "under 5% of related mail" },
+  {
+    metric: "intake.audit_recall",
+    tune: audit ? audit.recall.toFixed(3) : "—",
+    holdout: "—",
+    target: "the prediction is that it will not be 0",
+  },
   { metric: "cost.pass_usd", tune: spentThisPass.toFixed(4), holdout: "—", target: "0 unless the prompt changed" },
   {
     metric: "tree.parent_accuracy",
@@ -630,6 +934,20 @@ const readings: Record<string, { TUNE: number | null; HOLDOUT: number | null }> 
   "drawer.hidden": { TUNE: hidden, HOLDOUT: null },
   "drawer.duplicate_lines": { TUNE: duplicateLines, HOLDOUT: null },
   "title.keyword_rules": { TUNE: TITLE_KEYWORD_RULES.length, HOLDOUT: null },
+  // Gate 9's counters. A counter nothing writes yet reads null and is skipped
+  // by the ratchet, which is what stops a floor being held against a number
+  // that does not exist.
+  "fanout.events": { TUNE: fannedOut.length, HOLDOUT: null },
+  "repair.merges": { TUNE: counters.repairMerges ?? null, HOLDOUT: null },
+  "repair.splits": { TUNE: counters.repairSplits ?? null, HOLDOUT: null },
+  "repair.regressions": { TUNE: replay.repairs ? repairRegressions : null, HOLDOUT: null },
+  "repair.unsettled": { TUNE: counters.repairUnsettled ?? null, HOLDOUT: null },
+  "dedupe.collisions": { TUNE: counters.dedupeCollisions ?? null, HOLDOUT: null },
+  "alias.guessed": { TUNE: counters.aliasesGuessed ?? null, HOLDOUT: null },
+  "alias.written": { TUNE: counters.aliasesWritten ?? null, HOLDOUT: null },
+  "link.scored": { TUNE: counters.linksByReason?.SCORE ?? null, HOLDOUT: null },
+  "adjudicate.calls": { TUNE: counters.adjudicateCalls ?? null, HOLDOUT: null },
+  "intake.audit_recall": { TUNE: audit?.recall ?? null, HOLDOUT: null },
 };
 
 const falls: string[] = [];
@@ -740,7 +1058,10 @@ const record = {
     titleKeywordRules: TITLE_KEYWORD_RULES.length,
     drawerTopLevel: Object.fromEntries(topLevelSpread),
     parentByRelation: Object.fromEntries(parentByRelation),
+    fanoutEvents: fannedOut.length,
+    ...counters,
   },
+  intakeAuditRecall: audit?.recall ?? null,
   stable: replay.stable ?? null,
   correctionsPreserved: replay.correctionsPreserved ?? null,
   costUsd: spentThisPass,

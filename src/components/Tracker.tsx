@@ -98,6 +98,23 @@ const isoDay = (date: Date) =>
     String(date.getDate()).padStart(2, "0"),
   ].join("-");
 
+/**
+ * A request that failed says what failed, rather than throwing where the body
+ * is parsed.
+ *
+ * A route that raises returns no body at all, so `response.json()` threw
+ * "Unexpected end of JSON input" from inside whichever callback happened to
+ * run first. That names the parser rather than the request, and points at a
+ * line of this file that had nothing to do with it.
+ */
+async function getJson<T>(url: string): Promise<T> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`${url} answered ${response.status}. The server log says why.`);
+  }
+  return (await response.json()) as T;
+}
+
 export default function Tracker() {
   const [data, setData] = useState<StateResponse | null>(null);
   const [applications, setApplications] = useState<ApplicationView[]>([]);
@@ -115,19 +132,20 @@ export default function Tracker() {
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [dismissedRun, setDismissedRun] = useState<number | null>(null);
+  /** The last request that failed, so a broken route says so on screen. */
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const searchRef = useRef<HTMLInputElement>(null);
   const syncedOnOpen = useRef(false);
 
   const load = useCallback(async () => {
     const [stateResponse, applicationsResponse] = await Promise.all([
-      fetch("/api/state").then((response) => response.json() as Promise<StateResponse>),
-      fetch("/api/applications").then(
-        (response) => response.json() as Promise<{ applications: ApplicationView[] }>,
-      ),
+      getJson<StateResponse>("/api/state"),
+      getJson<{ applications: ApplicationView[] }>("/api/applications"),
     ]);
     setData(stateResponse);
     setApplications(applicationsResponse.applications);
+    setLoadError(null);
     setLoaded(true);
     return stateResponse;
   }, []);
@@ -160,17 +178,34 @@ export default function Tracker() {
 
   /**
    * Throw away everything the syncs built and read the mailbox again from the
-   * start. The board is reloaded before the dialog closes, so it empties in
-   * front of you rather than sitting on rows that are already gone.
+   * start.
+   *
+   * The dialog closes the moment it is confirmed and the board drops back to
+   * the empty state it shows before its first load. The rows on screen are
+   * already gone by then, so holding the dialog open over them until the work
+   * finishes shows something that is no longer true, and the wait is the sync's
+   * rather than the dialog's.
    */
   const resetAll = useCallback(async () => {
-    setResetting(true);
-    await fetch("/api/reset", { method: "POST" });
-    await load();
-    const { sync } = await fetchSyncRun();
-    setData((current) => (current ? { ...current, sync } : current));
-    setResetting(false);
     setResetOpen(false);
+    setResetting(true);
+    setLoaded(false);
+    setApplications([]);
+
+    try {
+      const response = await fetch("/api/reset", { method: "POST" });
+      if (!response.ok) throw new Error(`The reset answered ${response.status}.`);
+      await load();
+      const { sync } = await fetchSyncRun();
+      setData((current) => (current ? { ...current, sync } : current));
+    } catch (error) {
+      // Nothing was reloaded, so the board would sit blank for ever with no
+      // word of why. Say what happened and let it be read.
+      setLoadError(error instanceof Error ? error.message : String(error));
+      setLoaded(true);
+    } finally {
+      setResetting(false);
+    }
   }, [load]);
 
   // While a sync runs, ask our own server how it is going about once a second.
@@ -387,6 +422,24 @@ export default function Tracker() {
           </div>
         ) : (
           <>
+            {loadError ? (
+              <div className="banner">
+                <TriangleAlert className="lucide banner__icon" />
+                <div className="banner__body">
+                  <p className="banner__title">The Board Could Not Be Read</p>
+                  <p className="banner__text">{loadError}</p>
+                </div>
+                <button
+                  className="icon-btn icon-btn--sm"
+                  type="button"
+                  aria-label="Dismiss"
+                  onClick={() => setLoadError(null)}
+                >
+                  <X className="lucide" />
+                </button>
+              </div>
+            ) : null}
+
             {banner ? (
               <div className="banner">
                 <TriangleAlert className="lucide banner__icon" />

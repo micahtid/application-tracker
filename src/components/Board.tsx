@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import Highlight from "./Highlight";
 import { SECTIONS, formatDate, type ApplicationView, type EmailView } from "@/lib/view";
-import { STAGE_LABELS, STATUSES, STATUS_LABELS, type Status } from "@/lib/constants";
+import { OUTCOME_LABELS, STAGE_LABELS, STATUSES, STATUS_LABELS, type Status } from "@/lib/constants";
 
 /**
  * One line of a drawer, and the lines shown under it. The tree is one level
@@ -190,6 +190,21 @@ function ApplicationRow({
             {application.status === "IN_PROGRESS" && application.stageDetail ? (
               <span className="tag tag--stage">
                 {STAGE_LABELS[application.stageDetail]}
+              </span>
+            ) : null}
+            {/* Which ending it was. The section already says the row is closed,
+                so this says the one thing the section cannot: whether the
+                employer turned it down, whether the applicant walked away, or
+                whether an offer was taken back (LOOP4 Decision 7). */}
+            {application.outcome ? (
+              <span className="tag tag--outcome">{OUTCOME_LABELS[application.outcome]}</span>
+            ) : null}
+            {/* Nothing has arrived for a season. No email said so, and none
+                ever will: it is a fact about the set rather than about any
+                message. */}
+            {application.isStale ? (
+              <span className="tag tag--stale" title="Nothing has arrived on this application for a while">
+                Quiet
               </span>
             ) : null}
             {application.season ? <span className="tag">{application.season}</span> : null}

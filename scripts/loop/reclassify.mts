@@ -15,7 +15,7 @@
  *   - The budget is enforced, not advertised. There is no default: a paid pass
  *     has to name its price.
  *
- *   npm run loop:reclassify -- --budget 0.20 [--sample 40] [--failed-only]
+ *   npm run loop:reclassify -- --budget 0.20 [--sample 40] [--failed-only] [--stale]
  */
 import {
   SNAPSHOT_STATE,
@@ -28,7 +28,8 @@ import {
   type SnapshotState,
 } from "./common.mts";
 import { decryptSecret } from "../../src/lib/crypto.ts";
-import { adapterFor, type Provider } from "../../src/lib/llm/index.ts";
+import { adapterFor } from "../../src/lib/llm/index.ts";
+import type { Provider } from "../../src/lib/constants.ts";
 import { SYSTEM_PROMPT, buildUserContent } from "../../src/lib/llm/prompt.ts";
 import { CLASSIFIER_VERSION } from "../../src/lib/constants.ts";
 import { rebuildGrouping } from "../../src/lib/pipeline/rebuild.ts";
@@ -65,14 +66,19 @@ const state = readJson<SnapshotState | null>(SNAPSHOT_STATE, null);
 
 // A retry of what failed belongs to the pass that failed it, so it leaves the
 // marker where that pass left it and its price lands on the same iteration.
-if (!flag("failed-only")) {
+if (!flag("failed-only") && !flag("stale")) {
   writeJson(SNAPSHOT_STATE, { at: state?.at ?? new Date().toISOString(), costUsdBefore: ledger });
   console.log(`The ledger holds $${ledger.toFixed(4)}. cost.pass_usd counts this pass from there.`);
 }
 
 const where = flag("failed-only")
   ? { classificationStatus: "FAILED" }
-  : { classificationStatus: { in: ["OK", "FAILED"] } };
+  : flag("stale")
+    ? {
+        classificationStatus: { in: ["OK", "FAILED"] },
+        OR: [{ classifierVersion: null }, { classifierVersion: { not: CLASSIFIER_VERSION } }],
+      }
+    : { classificationStatus: { in: ["OK", "FAILED"] } };
 
 const all = await db.emailMessage.findMany({
   where,

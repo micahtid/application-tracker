@@ -1,4 +1,11 @@
-import { STAGE_LABELS, type EmailEvent, type StageDetail, type Status } from "@/lib/constants";
+import {
+  OUTCOME_LABELS,
+  STAGE_LABELS,
+  type EmailEvent,
+  type Outcome,
+  type StageDetail,
+  type Status,
+} from "@/lib/constants";
 import { classificationOf } from "@/lib/pipeline/recompute";
 
 /**
@@ -100,6 +107,7 @@ const EVENT_WORDS: Record<EmailEvent, string> = {
   REMINDER: "Reminder",
   COMPLETION: "Completed",
   REQUEST: "Request",
+  CANCELLATION: "Cancelled",
   DECISION: "Decision",
   UPDATE: "Update",
 };
@@ -114,6 +122,7 @@ const WITHOUT_STAGE: Record<EmailEvent, string> = {
   REMINDER: "Application Reminder",
   COMPLETION: "Application Completed",
   REQUEST: "Information Request",
+  CANCELLATION: "Step Cancelled",
   DECISION: "Application Update",
   UPDATE: "Application Update",
 };
@@ -126,13 +135,18 @@ const OFFER: Partial<Record<EmailEvent, string>> = {
 };
 
 /**
- * An application that has ended, however it ended.
+ * An application that has ended, when nothing says which ending it was.
  *
  * A rejection, an application the person withdrew, and a posting the employer
- * cancelled are all stored REJECTED, because all three really did end. Only
- * the first is a rejection, and a line reading "rejection" on the other two
- * says something that did not happen. The section header already says the row
- * is closed, so nothing is lost by saying only what all three share.
+ * cancelled are all stored REJECTED, because all three really did end. Only the
+ * first is a rejection, and a line reading "rejection" on the other two says
+ * something that did not happen.
+ *
+ * LOOP3 made this the answer for all three, which was right for the display and
+ * left the stored value still saying one word for three things. LOOP4 gave the
+ * model an `outcome` to answer, so this stops being a compromise and becomes
+ * what it always should have been: the fallback, said when the ending is not
+ * known, and never instead of an ending that is.
  */
 const CLOSED = "Application Closed";
 
@@ -163,7 +177,7 @@ export function drawerTitle(message: DrawerMessage): string {
 
   if (!stage && !event) return message.emailTitle ?? "Application Email";
 
-  const title = compose(status, stage, event ?? "UPDATE");
+  const title = compose(status, stage, event ?? "UPDATE", said?.outcome ?? null);
 
   /**
    * A resend says nothing new, and says which kind of nothing (LOOP3 Decision
@@ -174,13 +188,27 @@ export function drawerTitle(message: DrawerMessage): string {
    */
   if (message.parentRelation === "REPEAT") {
     const asked = event === "INVITATION" || event === "REQUEST";
-    return asked ? compose(status, stage, "REMINDER") : `Duplicate ${title}`;
+    return asked ? compose(status, stage, "REMINDER", null) : `Duplicate ${title}`;
   }
 
   return title;
 }
 
-function compose(status: Status, stage: StageDetail | null, event: EmailEvent): string {
+function compose(
+  status: Status,
+  stage: StageDetail | null,
+  event: EmailEvent,
+  outcome: Outcome | null,
+): string {
+  // An ending said in the email's own terms beats every phrase composed below
+  // it, because those are all worked out from a status that says one word for
+  // several different endings (LOOP4 Decision 7).
+  if (outcome) return OUTCOME_LABELS[outcome];
+
+  // A step that has stopped is not a decision about the applicant, so it is
+  // said as what it is rather than folded into an outcome.
+  if (event === "CANCELLATION") return stage ? `${STAGE_WORDS[stage]} Cancelled` : "Step Cancelled";
+
   // An outcome is about the application, not about a stage of it, so a
   // decision at either end wins over whatever step was in flight.
   if (event === "DECISION" && status === "REJECTED") return CLOSED;

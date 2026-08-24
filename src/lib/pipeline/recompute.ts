@@ -9,7 +9,9 @@ import {
   requisitionNumbers,
 } from "@/lib/normalize";
 import { vendorForDomain } from "@/lib/ats";
-import type { StageDetail, Status } from "@/lib/constants";
+import { emptyCounters, type PipelineCounters } from "./counters";
+import { messagesOf } from "./membership";
+import { STALE_AFTER_DAYS, type Outcome, type StageDetail, type Status } from "@/lib/constants";
 
 /**
  * Stage 5. Every field on a row is worked out from its emails and
@@ -165,7 +167,17 @@ export function milestonesIn(messages: EmailMessage[]): { message: EmailMessage;
   return out;
 }
 
-export type HeadState = { status: Status; stageDetail: StageDetail | null };
+export type HeadState = {
+  status: Status;
+  stageDetail: StageDetail | null;
+  /**
+   * Which ending the application reached, read off the same newest significant
+   * email the status comes from (LOOP4 Decision 7). Present only on a status
+   * that is an ending, exactly as `stageDetail` is present only on one that is
+   * not, so the two can never both be claiming the row at once.
+   */
+  outcome: Outcome | null;
+};
 
 /**
  * What state an application is in, worked out from its emails alone.
@@ -193,7 +205,7 @@ export function headState(messages: EmailMessage[]): HeadState {
             row.message.receivedAt.getTime() < milestones[movedOn].message.receivedAt.getTime(),
         );
 
-  if (!meaningful.length) return { status: "APPLIED", stageDetail: null };
+  if (!meaningful.length) return { status: "APPLIED", stageDetail: null, outcome: null };
 
   const latest = Math.max(...meaningful.map((row) => row.message.receivedAt.getTime()));
   const newest = meaningful
@@ -201,21 +213,49 @@ export function headState(messages: EmailMessage[]): HeadState {
     .sort((a, b) => TIE_ORDER.indexOf(a.status) - TIE_ORDER.indexOf(b.status))[0];
 
   const status = newest.status;
+  const said = classificationOf(newest.message);
+  const ended = status === "ACCEPTED" || status === "REJECTED";
   return {
     status,
-    stageDetail:
-      status === "IN_PROGRESS" ? (classificationOf(newest.message)?.stageDetail as StageDetail | null) ?? null : null,
+    stageDetail: status === "IN_PROGRESS" ? (said?.stageDetail as StageDetail | null) ?? null : null,
+    outcome: ended ? said?.outcome ?? null : null,
   };
 }
 
-export async function recomputeApplication(db: Db, applicationId: number): Promise<void> {
+/**
+ * Whether a row has gone quiet (LOOP4 Decision 7 and V3).
+ *
+ * Every board of this kind fills with rows acknowledged once and never
+ * mentioned again. They read APPLIED for ever, sort into the middle of the
+ * list, and crowd out the handful that are live.
+ *
+ * **Silence is not something an email says**, so this is never asked of the
+ * model: no model reading one email can tell you that nothing followed it. It
+ * is a fact about the set, worked out here beside `headState`. It is also not
+ * stored, because it changes with the date rather than with the mail, and a
+ * stored value would be quietly wrong every day after it was written.
+ *
+ * An application that has ended is never stale. It is finished, which is a
+ * different thing from being ignored.
+ */
+export function isStale(
+  state: { status: string; latestEmailAt: Date | null },
+  now: Date,
+): boolean {
+  if (state.status === "ACCEPTED" || state.status === "REJECTED") return false;
+  if (!state.latestEmailAt) return false;
+  return (now.getTime() - state.latestEmailAt.getTime()) / 86_400_000 > STALE_AFTER_DAYS;
+}
+
+export async function recomputeApplication(
+  db: Db,
+  applicationId: number,
+  counters: PipelineCounters = emptyCounters(),
+): Promise<void> {
   const application = await db.application.findUnique({ where: { id: applicationId } });
   if (!application) return;
 
-  const messages = await db.emailMessage.findMany({
-    where: { applicationId },
-    orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
-  });
+  const messages = await messagesOf(db, applicationId);
 
   // An application is a view of its emails. With none left, there is nothing to
   // view, and the hand made corrections on it have nothing to correct.
@@ -234,11 +274,14 @@ export async function recomputeApplication(db: Db, applicationId: number): Promi
   // authored, exactly like every other field on a row.
   const tree = treeIn(messages);
 
+  // Written on the membership rather than on the message, because where an
+  // email sits in a drawer is a fact about the pairing: the same email in two
+  // applications sits under a different line in each (LOOP4 Decision 1).
   for (const message of messages) {
     const node = tree.get(message.id) ?? { parent: null, relation: null };
     if (message.parentMessageId !== node.parent || message.parentRelation !== node.relation) {
-      await db.emailMessage.update({
-        where: { id: message.id },
+      await db.applicationMembership.update({
+        where: { applicationId_messageId: { applicationId, messageId: message.id } },
         data: { parentMessageId: node.parent, parentRelation: node.relation },
       });
     }
@@ -259,7 +302,7 @@ export async function recomputeApplication(db: Db, applicationId: number): Promi
     });
   }
 
-  const { status, stageDetail } = headState(messages);
+  const { status, stageDetail, outcome } = headState(messages);
 
   const atsVendor =
     messages.map((message) => vendorForDomain(message.senderDomain)).find(Boolean) ?? null;
@@ -273,6 +316,7 @@ export async function recomputeApplication(db: Db, applicationId: number): Promi
     year: firstStated(messages, (said) => said.year),
     status,
     stageDetail,
+    outcome,
     firstEmailAt: oldest.receivedAt,
     latestEmailAt: messages[messages.length - 1].receivedAt,
     atsVendor,
@@ -298,6 +342,12 @@ export async function recomputeApplication(db: Db, applicationId: number): Promi
     // The unique rule on dedupe_key is an alarm, not the thing that prevents
     // duplicates. Keeping the row distinct lets the sync finish; the
     // collision is what the alarm was for.
+    //
+    // LOOP4 M5. Until this count existed, the alarm silenced itself: both rows
+    // stayed on the board, still distinct, each carrying a key quietly made
+    // unique by appending its own id, and nothing anywhere said so. An alarm
+    // nobody hears is a catch that hides a bug.
+    counters.dedupeCollisions += 1;
     await db.application.update({
       where: { id: applicationId },
       data: { ...data, dedupeKey: `${key}#${applicationId}` },
@@ -306,6 +356,11 @@ export async function recomputeApplication(db: Db, applicationId: number): Promi
 }
 
 /** Recalculates several applications, skipping ids that appear twice. */
-export async function recomputeAll(db: Db, ids: Iterable<number>): Promise<void> {
-  for (const id of new Set(ids)) await recomputeApplication(db, id);
+export async function recomputeAll(
+  db: Db,
+  ids: Iterable<number>,
+): Promise<PipelineCounters> {
+  const counters = emptyCounters();
+  for (const id of new Set(ids)) await recomputeApplication(db, id, counters);
+  return counters;
 }

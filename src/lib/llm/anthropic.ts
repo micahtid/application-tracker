@@ -41,6 +41,32 @@ export const anthropicAdapter: ProviderAdapter = {
     }
   },
 
+  async ask(apiKey, system, user, schema) {
+    const response = await client(apiKey).messages.create({
+      model: MODEL,
+      max_tokens: MAX_TOKENS,
+      system,
+      messages: [{ role: "user", content: user }],
+      output_config: { format: { type: "json_schema", schema } },
+    } as Anthropic.MessageCreateParamsNonStreaming);
+
+    const block = response.content.find((part) => part.type === "text");
+    const raw = block && block.type === "text" ? block.text : "";
+    if (!raw) throw new Error("Anthropic returned no text");
+
+    return {
+      raw,
+      usage: {
+        model: MODEL,
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+        costUsd:
+          (response.usage.input_tokens / 1_000_000) * RATES.inputPerMTok +
+          (response.usage.output_tokens / 1_000_000) * RATES.outputPerMTok,
+      },
+    };
+  },
+
   async classify(apiKey, system, user): Promise<ClassifyResult> {
     return attemptClassify(MAX_TOKENS, async (maxTokens) => {
       let response;

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { drawerTitle, drawerTree } from "@/lib/drawer";
 import { gmailLink } from "@/lib/links";
 import { NO_CORRECTION, resolveCorrections } from "@/lib/pipeline/corrections";
+import { isStale } from "@/lib/pipeline/recompute";
 
 export const dynamic = "force-dynamic";
 
@@ -11,26 +12,33 @@ export const dynamic = "force-dynamic";
  * browser over this set, which beats a round trip on every keystroke.
  */
 export async function GET() {
+  const now = new Date();
+
   const [applications, account, corrections] = await Promise.all([
     prisma.application.findMany({
       orderBy: { latestEmailAt: "desc" },
       include: {
-        // Every email the row owns. Which of them the drawer shows, and under
-        // what, is one rule and it lives in @/lib/drawer, so the board and the
-        // loop harness cannot drift apart on the answer.
-        messages: {
-          orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
+        // Every email the row owns, read through the membership, because
+        // where an email sits in a drawer belongs to the pairing rather than
+        // to the email (LOOP4 Decision 1). Which of them the drawer shows, and
+        // under what, is one rule and it lives in @/lib/drawer, so the board
+        // and the loop harness cannot drift apart on the answer.
+        memberships: {
           select: {
-            id: true,
-            emailTitle: true,
-            receivedAt: true,
-            gmailMessageId: true,
-            senderDomain: true,
-            isSignificant: true,
-            isApplicationRelated: true,
-            llmClassificationRaw: true,
             parentMessageId: true,
             parentRelation: true,
+            message: {
+              select: {
+                id: true,
+                emailTitle: true,
+                receivedAt: true,
+                gmailMessageId: true,
+                senderDomain: true,
+                isSignificant: true,
+                isApplicationRelated: true,
+                llmClassificationRaw: true,
+              },
+            },
           },
         },
       },
@@ -45,6 +53,16 @@ export async function GET() {
     applications: applications.map((application) => {
       const correction = corrections.get(application.id) ?? NO_CORRECTION;
 
+      // Flattened back into the shape the drawer reads: the email, plus where
+      // it sits in this application's drawer.
+      const messages = application.memberships
+        .map((membership) => ({
+          ...membership.message,
+          parentMessageId: membership.parentMessageId,
+          parentRelation: membership.parentRelation,
+        }))
+        .sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime() || a.id - b.id);
+
       return {
         id: application.id,
         company: application.companyName,
@@ -55,11 +73,16 @@ export async function GET() {
         status: correction.statusOverride ?? application.status,
         statusOverride: correction.statusOverride,
         stageDetail: application.stageDetail,
+        outcome: application.outcome,
+        // Read at request time rather than stored: an application does not
+        // become quiet because anything happened to it, but because nothing
+        // did, and a stored answer would be wrong the day after it was written.
+        isStale: isStale(application, now),
         isHidden: correction.isHidden,
         latestEmailAt: application.latestEmailAt,
         firstEmailAt: application.firstEmailAt,
         atsVendor: application.atsVendor,
-        emails: drawerTree(application.messages).map((node) => ({
+        emails: drawerTree(messages).map((node) => ({
           id: node.message.id,
           title: drawerTitle(node.message),
           date: node.message.receivedAt,

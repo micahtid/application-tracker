@@ -18,10 +18,12 @@
     "loop:snapshot": "tsx scripts/loop/snapshot.mts",
     "loop:review": "tsx scripts/loop/review.mts",
     "loop:label": "tsx scripts/loop/label.mts",
-    "loop:replay": "tsx scripts/loop/replay.mts",
+    "loop:replay": "tsx --env-file=.env.local scripts/loop/replay.mts",
     "loop:reclassify": "tsx --env-file=.env.local scripts/loop/reclassify.mts",
     "loop:score": "tsx scripts/loop/score.mts",
-    "loop:diff": "tsx scripts/loop/diff.mts"
+    "loop:diff": "tsx scripts/loop/diff.mts",
+    "loop:intake-audit": "tsx --env-file=.env.local scripts/loop/intake-audit.mts",
+    "loop:ratchet": "tsx scripts/loop/ratchet.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.118.0",

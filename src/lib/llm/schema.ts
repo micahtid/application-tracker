@@ -1,4 +1,4 @@
-import { SEASONS, SENDER_ROLES, STATUSES, STAGE_DETAILS, EMAIL_EVENTS } from "@/lib/constants";
+import { SEASONS, SENDER_ROLES, STATUSES, STAGE_DETAILS, EMAIL_EVENTS, OUTCOMES } from "@/lib/constants";
 
 /**
  * The one output shape, written once. Each provider wants the schema in a
@@ -77,7 +77,15 @@ export const FIELDS: Field[] = [
     nullable: false,
     enum: EMAIL_EVENTS,
     description:
-      "What kind of report this email is. CONFIRMATION when something the person submitted has been received and nothing is asked of them. INVITATION when they are asked to do something for the first time. REMINDER when they have already been asked and this repeats the ask. COMPLETION when a step they carried out is finished or has been received. REQUEST when something is needed from them before this can go further. DECISION when it is an outcome in either direction, including an offer, a rejection, or a posting that has closed. UPDATE for anything else: it is the fallback, so use it whenever none of the others really fits.",
+      "What kind of report this email is. CONFIRMATION when something the person submitted has been received and nothing is asked of them. INVITATION when they are asked to do something for the first time. REMINDER when they have already been asked and this repeats the ask. COMPLETION when a step they carried out is finished or has been received. REQUEST when something is needed from them before this can go further. CANCELLATION when something that was already arranged is now not happening, such as an interview called off or a posting put on hold: nothing has been decided about the person, the step has simply stopped. DECISION when it is an outcome in either direction, including an offer, a rejection, or a posting the person has been turned down for. UPDATE for anything else: it is the fallback, so use it whenever none of the others really fits.",
+  },
+  {
+    name: "outcome",
+    type: "string",
+    nullable: true,
+    enum: OUTCOMES,
+    description:
+      "Which ending the application reached, when this email announces one, and null on every email that announces none. Judged by what happened rather than by how gently it was worded. OFFER_EXTENDED when an offer has been made and the person has not answered it yet. OFFER_ACCEPTED when they have taken it. OFFER_DECLINED when they have turned it down. OFFER_RESCINDED when the employer has taken an offer back. REJECTED_BY_EMPLOYER when the employer is not going ahead with them. WITHDRAWN_BY_APPLICANT when the person pulled out or asked to be withdrawn. POSTING_CANCELLED when the role itself has gone away or been put on hold indefinitely and nobody was turned down. Null when the application has not ended, including for a cancelled interview, which stops a step rather than the application.",
   },
   {
     name: "sender_role",

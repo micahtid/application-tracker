@@ -24,14 +24,14 @@ const messages = await db.emailMessage.findMany({
     senderEmail: true,
     subject: true,
     bodyText: true,
-    applicationId: true,
+    memberships: { select: { applicationId: true } },
     llmClassificationRaw: true,
   },
 });
 
 for (const message of messages) {
   console.log("=".repeat(78));
-  console.log(`${message.gmailMessageId}  ${message.receivedAt.toISOString()}  app=${message.applicationId}`);
+  console.log(`${message.gmailMessageId}  ${message.receivedAt.toISOString()}  app=${message.memberships.map((m) => m.applicationId).join(",") || "none"}`);
   console.log(`${message.senderEmail}`);
   console.log(`${message.subject}`);
   const raw = message.llmClassificationRaw ? JSON.parse(message.llmClassificationRaw) : null;

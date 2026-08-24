@@ -20,6 +20,7 @@ import {
   openWorkDb,
   readLabels,
   LABEL_EVENTS,
+  LABEL_OUTCOMES,
   LABEL_STAGES,
   type GroupLabel,
 } from "./common.mts";
@@ -37,20 +38,30 @@ function field(value: string | number | null): string {
   return value === null || value === "" ? "-" : String(value);
 }
 
-const applications = await db.application.findMany({
-  include: {
-    messages: {
-      orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
-      select: {
-        gmailMessageId: true,
-        subject: true,
-        senderDomain: true,
-        receivedAt: true,
-        isSignificant: true,
+const applications = (
+  await db.application.findMany({
+    include: {
+      memberships: {
+        select: {
+          message: {
+            select: {
+              gmailMessageId: true,
+              subject: true,
+              senderDomain: true,
+              receivedAt: true,
+              isSignificant: true,
+            },
+          },
+        },
       },
     },
-  },
-});
+  })
+).map((application) => ({
+  ...application,
+  messages: application.memberships
+    .map((membership) => membership.message)
+    .sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime()),
+}));
 
 const messagesById = new Map(
   (
@@ -66,8 +77,7 @@ const messagesById = new Map(
         isApplicationRelated: true,
         classificationStatus: true,
         classificationError: true,
-        applicationId: true,
-        parentMessageId: true,
+        memberships: { select: { applicationId: true, parentMessageId: true } },
         llmClassificationRaw: true,
       },
     })
@@ -106,14 +116,17 @@ if (seeded) {
   // Grow the sheet from disagreements: the labels are the truth, and the only
   // thing worth reading is where the pipeline has since moved away from them.
   const labelled = new Set<string>();
+  const groupOfLabelled = new Map<string, string>();
 
   for (const group of labels.applications.groups) {
-    for (const id of group.messages) labelled.add(id);
+    for (const id of group.messages) {
+      labelled.add(id);
+      groupOfLabelled.set(id, group.id);
+    }
 
     const landed = new Set(
       group.messages
-        .map((id) => messagesById.get(id)?.applicationId ?? null)
-        .filter((value): value is number => value !== null),
+        .flatMap((id) => messagesById.get(id)?.memberships.map((m) => m.applicationId) ?? []),
     );
 
     blocks.push({
@@ -133,16 +146,26 @@ if (seeded) {
     const ids = application.messages
       .map((message) => message.gmailMessageId)
       .filter((id) => labels.messages[id]?.related !== false);
-    if (!ids.length || ids.every((id) => labelled.has(id))) continue;
+
+    // Only the ones nobody has answered yet. Listing the whole row would
+    // repeat lines that already sit in a labelled block, and a repeated line
+    // now says something: that the email covers two applications (LOOP4 5.1).
+    // The block it belongs beside is named instead, so it can be moved there.
+    const fresh = ids.filter((id) => !labelled.has(id));
+    if (!fresh.length) continue;
+
+    const beside = [...new Set(ids.filter((id) => labelled.has(id)).map((id) => groupOfLabelled.get(id)))];
     blocks.push({
-      id: groupIdFor(ids),
+      id: groupIdFor(fresh),
       company: application.companyName,
       role: application.roleTitle,
       season: application.season,
       year: application.year,
       status: application.status,
-      messages: ids,
-      note: "new since the labels were written",
+      messages: fresh,
+      note: beside.length
+        ? `new since the labels were written. The rest of this row is already labelled in ${beside.join(", ")}, so these lines probably belong there`
+        : "new since the labels were written",
     });
   }
 } else {
@@ -181,7 +204,10 @@ function treeOf(ids: string[]): [string, string | null][] {
       parentOf.set(id, known.parent && byGmailId.has(known.parent) ? known.parent : null);
       continue;
     }
-    const parent = byGmailId.get(id)?.parentMessageId ?? null;
+    // The first membership's parent. A message in two applications sits
+    // under a different line in each, and the sheet shows it once per block,
+    // so the block being written is the one whose parent belongs here.
+    const parent = byGmailId.get(id)?.memberships[0]?.parentMessageId ?? null;
     parentOf.set(id, parent === null ? null : rowIdToGmailId.get(parent) ?? null);
   }
 
@@ -206,6 +232,37 @@ function treeOf(ids: string[]): [string, string | null][] {
   // A child whose parent is not in this group at all still has to be shown.
   for (const id of ids) if (!out.some(([shown]) => shown === id)) out.push([id, null]);
   return out;
+}
+
+/**
+ * Application mail that reached no row at all.
+ *
+ * It appears in no application block, because there is no application, and in
+ * no recall section, because the model did call it application mail. So
+ * without this it appears nowhere and cannot be labelled, which makes the one
+ * failure it represents invisible to every metric: an email the pipeline
+ * agreed was about an application and then lost.
+ */
+const orphans = await db.emailMessage.findMany({
+  where: { isApplicationRelated: true, memberships: { none: {} }, classificationStatus: "OK" },
+  orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
+  select: { gmailMessageId: true },
+});
+
+for (const orphan of orphans) {
+  const id = orphan.gmailMessageId;
+  if (seeded && labels.messages[id]) continue;
+  const said = classificationOf(messagesById.get(id) ?? { llmClassificationRaw: null });
+  blocks.push({
+    id: groupIdFor([id]),
+    company: said?.companyName ?? null,
+    role: said?.roleTitle ?? null,
+    season: said?.season ?? null,
+    year: said?.year ?? null,
+    status: said?.status ?? null,
+    messages: [id],
+    note: "the pipeline calls this application mail and then attaches it to no row at all",
+  });
 }
 
 blocks.sort((a, b) => (a.company ?? "").localeCompare(b.company ?? "") || a.id.localeCompare(b.id));
@@ -239,6 +296,9 @@ lines.push("  answers, something recorded alone and reviewed later, something li
 lines.push("  or something supplied and checked rather than judged.");
 lines.push("- **`event:`** is what kind of report the email is, and `-` means none of them fit.");
 lines.push(`  One of ${LABEL_EVENTS.join(", ")}.`);
+lines.push("- **`outcome:`** is which ending the application reached, and `-` means it reached none,");
+lines.push("  which is the answer on almost every email. One of");
+lines.push(`  ${LABEL_OUTCOMES.join(", ")}.`);
 lines.push("- **`rel:`** rides on indented lines only, and says which kind of report it is:");
 lines.push("  `REPEAT` for the same notice sent again, `REMINDER` for a nudge about it, `UPDATE`");
 lines.push("  for anything else. It is a chip in the drawer and nothing else depends on it.");
@@ -246,7 +306,9 @@ lines.push("- **Recall**: in the last two sections, flip `related:no` to `relate
 lines.push("  that really was about an application you submitted. That is the only way recall is");
 lines.push("  ever measured (F7).");
 lines.push("");
-lines.push("A message id may appear in exactly one group. Two is an error, not a merge.");
+lines.push("A message that genuinely covers two applications is listed under both blocks, carrying the");
+lines.push("same chips on each line. That is the only reason to list one twice, and it is what gives");
+lines.push("`group.multi_message` a denominator (LOOP4 5.1).");
 lines.push("");
 lines.push(
   seeded
@@ -276,8 +338,9 @@ for (const block of blocks) {
     // hand once (LOOP3 5.1).
     const stage = known?.stage !== undefined ? known.stage : stageOf(id);
     const event = known?.event !== undefined ? known.event : null;
+    const outcome = known?.outcome !== undefined ? known.outcome : null;
     lines.push(
-      `${parent ? "  " : ""}- ${id} | sig:${significant ? "yes" : "no "} | stage:${field(stage ?? null)} | event:${field(event ?? null)} |${relation} ${message ? message.receivedAt.toISOString().slice(0, 10) : "?"} | ${clean(message?.senderDomain)} | ${clean(message?.subject)}`,
+      `${parent ? "  " : ""}- ${id} | sig:${significant ? "yes" : "no "} | stage:${field(stage ?? null)} | event:${field(event ?? null)} | outcome:${field(outcome ?? null)} |${relation} ${message ? message.receivedAt.toISOString().slice(0, 10) : "?"} | ${clean(message?.senderDomain)} | ${clean(message?.subject)}`,
     );
   }
   lines.push("");

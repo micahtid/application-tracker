@@ -1,5 +1,6 @@
 import type { Db } from "@/lib/db";
 import type { Status } from "@/lib/constants";
+import { messagesOf } from "./membership";
 
 /**
  * The two corrections made by hand: hide a row, or override its status. They
@@ -37,7 +38,7 @@ function sameText(left: string | null, right: string | null): boolean {
 export async function resolveCorrections(db: Db): Promise<Map<number, ResolvedCorrection>> {
   const corrections = await db.applicationCorrection.findMany({
     orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
-    include: { message: { select: { applicationId: true } } },
+    include: { message: { select: { memberships: { select: { applicationId: true } } } } },
   });
   if (!corrections.length) return new Map();
 
@@ -49,27 +50,31 @@ export async function resolveCorrections(db: Db): Promise<Map<number, ResolvedCo
   const resolved = new Map<number, ResolvedCorrection>();
 
   for (const correction of corrections) {
-    const applicationId = correction.message.applicationId;
-    if (applicationId === null) continue;               // the anchor is attached to nothing
+    // A correction follows its anchor into whichever row now holds it, and an
+    // anchor may in principle be held by more than one. In practice it never
+    // is: fan out only reaches a row already waiting on a step, so a fanned
+    // out email always has an earlier email above it and can never be the
+    // oldest message of anything.
+    for (const { applicationId } of correction.message.memberships) {
+      const application = byId.get(applicationId);
+      const adrift = Boolean(
+        application &&
+          (!sameText(correction.companySnapshot, application.companyNormalized) ||
+            !sameText(correction.roleSnapshot, application.roleTitle)),
+      );
 
-    const application = byId.get(applicationId);
-    const adrift = Boolean(
-      application &&
-        (!sameText(correction.companySnapshot, application.companyNormalized) ||
-          !sameText(correction.roleSnapshot, application.roleTitle)),
-    );
-
-    // Ordered oldest first, so a later write simply replaces the winner and
-    // counts the one it displaced.
-    const previous = resolved.get(applicationId);
-    resolved.set(applicationId, {
-      applicationId,
-      anchorMessageId: correction.anchorMessageId,
-      isHidden: correction.isHidden,
-      statusOverride: (correction.statusOverride as Status | null) ?? null,
-      adrift,
-      superseded: previous ? previous.superseded + 1 : 0,
-    });
+      // Ordered oldest first, so a later write simply replaces the winner and
+      // counts the one it displaced.
+      const previous = resolved.get(applicationId);
+      resolved.set(applicationId, {
+        applicationId,
+        anchorMessageId: correction.anchorMessageId,
+        isHidden: correction.isHidden,
+        statusOverride: (correction.statusOverride as Status | null) ?? null,
+        adrift,
+        superseded: previous ? previous.superseded + 1 : 0,
+      });
+    }
   }
 
   return resolved;
@@ -88,11 +93,7 @@ export async function saveCorrection(
   const application = await db.application.findUnique({ where: { id: applicationId } });
   if (!application) return null;
 
-  const anchor = await db.emailMessage.findFirst({
-    where: { applicationId },
-    orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
-    select: { id: true },
-  });
+  const anchor = (await messagesOf(db, applicationId))[0];
   if (!anchor) return null;
 
   const current = await resolveCorrections(db);

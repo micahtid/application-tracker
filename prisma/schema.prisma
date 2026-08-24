@@ -72,37 +72,84 @@ model EmailMessage {
   emailTitle           String?  @map("email_title")
   llmClassificationRaw String?  @map("llm_classification_raw")
 
-  applicationId Int? @map("application_id")
-
-  /// The email whose line in the drawer this one is shown under, or null when
-  /// this email holds a line of its own. A derived fact, worked out in stage 5,
-  /// which is the first place the other emails of an application are visible,
-  /// and rewritten on every recalculation. Never authored.
-  ///
-  /// `is_significant` is left saying what the model said about this email read
-  /// on its own, which is true, so the two facts stay apart: this column says
-  /// where the email is shown, that one says whether it records a change of
-  /// state (LOOP2 3.2 rule 6).
-  parentMessageId Int?    @map("parent_message_id")
-  /// REPEAT | REMINDER | UPDATE. A label for display only. The nesting is
-  /// decided by parent_message_id and does not depend on this. Null exactly
-  /// when parent_message_id is null, which a CHECK in the migration enforces.
-  parentRelation  String? @map("parent_relation")
-
   account     GmailAccount @relation(fields: [gmailAccountId], references: [id], onDelete: Cascade)
-  parent      EmailMessage?  @relation("MessageTree", fields: [parentMessageId], references: [id], onDelete: SetNull)
-  children    EmailMessage[] @relation("MessageTree")
-  application Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  memberships ApplicationMembership[] @relation("MembershipMessage")
+  /// The memberships that sit under this email in some application's drawer.
+  parentOf    ApplicationMembership[] @relation("MembershipParent")
   statusHistory ApplicationStatusHistory[]
   correction    ApplicationCorrection?
 
   @@unique([gmailAccountId, gmailMessageId])
   @@index([threadId])
   @@index([classificationStatus])
-  @@index([applicationId])
   @@index([receivedAt])
-  @@index([parentMessageId])
   @@map("email_messages")
+}
+
+/**
+ * Which application an email belongs to (LOOP4 Decision 1).
+ *
+ * > Belonging is a row of its own, and it is the only truth.
+ *
+ * This used to be one nullable column on the message, which made it impossible
+ * to say that one email is about two applications. An employer running two
+ * postings sends mail that covers both, and a single column has to pick one:
+ * the code picked by row id and never said it had guessed.
+ *
+ * Everything on this row is about the pairing rather than about the email,
+ * which is why none of it can live on the message:
+ *
+ *   reason             what made this link, from evidence down to a guess
+ *   parent_message_id  the line this email sits under in THIS drawer
+ *
+ * The parent is the clearest case. `treeIn` works out where an email sits
+ * inside one application, so an email in two applications sits under a
+ * different line in each, and one column can no more hold that than
+ * `application_id` could.
+ *
+ * `application_id`, `parent_message_id` and `parent_relation` were dropped from
+ * `email_messages` rather than kept as a convenience. Keeping them would have
+ * left every call site somebody forgot reading a half correct board in silence;
+ * dropping them turned each one into a compile error instead.
+ */
+model ApplicationMembership {
+  id            Int @id @default(autoincrement())
+  applicationId Int @map("application_id")
+  messageId     Int @map("message_id")
+
+  /// NEW | THREAD | REQUISITION | TITLE | HANDOFF | SCORE | FANOUT, and null
+  /// only on a row carried over from before this table existed. It is what
+  /// Decision 5 reads before writing an alias and what Decision 3 reads before
+  /// undoing a link: a link made because two emails quote the same posting
+  /// number is evidence, and one made because two rows both scored 0.5 is a
+  /// guess, and the two may not be stored as though they were the same thing.
+  reason String?
+
+  /// The email whose line in this application's drawer this one is shown
+  /// under, or null when it holds a line of its own. A derived fact, worked
+  /// out in stage 5, which is the first place the other emails of an
+  /// application are visible, and rewritten on every recalculation. Never
+  /// authored.
+  ///
+  /// `is_significant` still says what the model said about the email read on
+  /// its own, so the two facts stay apart: this says where the email is shown,
+  /// that says whether it records a change of state (LOOP2 3.2 rule 6).
+  parentMessageId Int?    @map("parent_message_id")
+  /// REPEAT | REMINDER | UPDATE. A label for display only. The nesting is
+  /// decided by parent_message_id and does not depend on this. Null exactly
+  /// when parent_message_id is null.
+  parentRelation  String? @map("parent_relation")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  application Application   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  message     EmailMessage  @relation("MembershipMessage", fields: [messageId], references: [id], onDelete: Cascade)
+  parent      EmailMessage? @relation("MembershipParent", fields: [parentMessageId], references: [id], onDelete: SetNull)
+
+  @@unique([applicationId, messageId])
+  @@index([messageId])
+  @@index([parentMessageId])
+  @@map("application_membership")
 }
 
 model Application {
@@ -117,8 +164,16 @@ model Application {
   year             Int?
   /// ACCEPTED | IN_PROGRESS | APPLIED | REJECTED
   status           String    @default("APPLIED")
-  /// ASSESSMENT | INTERVIEW
+  /// ASSESSMENT | RECORDED_INTERVIEW | INTERVIEW | VERIFICATION. Which step an
+  /// application in progress is at, and null when it is at none.
   stageDetail      String?   @map("stage_detail")
+  /// OFFER_EXTENDED | OFFER_ACCEPTED | OFFER_DECLINED | OFFER_RESCINDED |
+  /// REJECTED_BY_EMPLOYER | WITHDRAWN_BY_APPLICANT | POSTING_CANCELLED.
+  /// Symmetric with stage_detail: that says which step a live application is
+  /// at, this says which ending a finished one reached (LOOP4 Decision 7).
+  /// Null when the application has not ended, and null too when it has ended
+  /// and no email said how, which is what "Application Closed" is for.
+  outcome          String?
   firstEmailAt     DateTime? @map("first_email_at")
   latestEmailAt    DateTime? @map("latest_email_at")
   atsVendor        String?   @map("ats_vendor")
@@ -126,7 +181,7 @@ model Application {
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  messages      EmailMessage[]
+  memberships   ApplicationMembership[]
   statusHistory ApplicationStatusHistory[]
 
   @@index([companyNormalized])
@@ -185,6 +240,13 @@ model CompanyAlias {
   id                  Int      @id @default(autoincrement())
   aliasNormalized     String   @unique @map("alias_normalized")
   canonicalCompanyName String  @map("canonical_company_name")
+  /// Which link claimed these two names are one employer (LOOP4 Decision 5).
+  /// NEW | THREAD | REQUISITION | TITLE, and never SCORE, HANDOFF or FANOUT:
+  /// an alias is believed by every later message and nothing removes it, so it
+  /// may only come from a match somebody could point at. Null on a row written
+  /// before this column existed; a rebuild clears the table, so that is a
+  /// transient state rather than a permanent one.
+  reason              String?
   createdAt           DateTime @default(now()) @map("created_at")
 
   @@map("company_aliases")

@@ -51,6 +51,47 @@ export const openrouterAdapter: ProviderAdapter = {
     }
   },
 
+  async ask(apiKey, system, user, schema, name) {
+    const response = await fetch(`${BASE}/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", ...HEADERS },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: MAX_TOKENS,
+        usage: { include: true },
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        response_format: { type: "json_schema", json_schema: { name, strict: true, schema } },
+      }),
+    });
+
+    if (!response.ok) await throwForStatus("OpenRouter", response);
+
+    const body = (await response.json()) as {
+      choices?: { message?: { content?: string } }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number };
+    };
+    const raw = body.choices?.[0]?.message?.content ?? "";
+    if (!raw) throw new Error("OpenRouter returned no content");
+
+    const inputTokens = body.usage?.prompt_tokens ?? 0;
+    const outputTokens = body.usage?.completion_tokens ?? 0;
+    return {
+      raw,
+      usage: {
+        model: MODEL,
+        inputTokens,
+        outputTokens,
+        costUsd:
+          body.usage?.cost ??
+          (inputTokens / 1_000_000) * RATES.inputPerMTok +
+            (outputTokens / 1_000_000) * RATES.outputPerMTok,
+      },
+    };
+  },
+
   async classify(apiKey, system, user): Promise<ClassifyResult> {
     return attemptClassify(MAX_TOKENS, async (maxTokens) => {
       const response = await fetch(`${BASE}/chat/completions`, {

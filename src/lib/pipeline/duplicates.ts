@@ -32,12 +32,12 @@ export type SplitSuspect = {
 export async function findSplitSuspects(db: Db): Promise<SplitSuspect[]> {
   const applications = await db.application.findMany({
     orderBy: { id: "asc" },
-    include: { messages: { select: { subject: true, bodyText: true } } },
+    include: { memberships: { select: { message: { select: { subject: true, bodyText: true } } } } },
   });
 
   const requisitions = applications.map((application) => {
     const all = new Set<string>();
-    for (const message of application.messages) {
+    for (const { message } of application.memberships) {
       for (const value of requisitionNumbers(message.subject, message.bodyText)) all.add(value);
     }
     return all;

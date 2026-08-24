@@ -175,6 +175,25 @@ export function rolesMatch(left: string | null, right: string | null): boolean {
 }
 
 /**
+ * Whether two stated titles are word for word the same posting, once the
+ * noise words and the year are taken out (LOOP4 Decision 5).
+ *
+ * Stricter than `rolesMatch`, and deliberately so. `rolesMatch` is true when
+ * one title's words are all present in the other's, which is right for
+ * attaching an email and far too loose for writing an alias: an alias is a
+ * standing claim about two employer names that every later message believes
+ * and nothing ever removes. Silence is not agreement here either: a title
+ * nobody stated is identical to nothing.
+ */
+export function rolesIdentical(left: string | null, right: string | null): boolean {
+  if (!left || !right) return false;
+  const a = roleTokens(left);
+  const b = roleTokens(right);
+  if (!a.size || !b.size) return false;
+  return a.size === b.size && [...a].every((token) => b.has(token));
+}
+
+/**
  * The posting number an applicant tracking system quotes back. It is the one
  * thing guaranteed to differ between two postings at one employer, and it
  * survives every rewording of the title.

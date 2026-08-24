@@ -12,6 +12,7 @@ import {
   LABELS_APPLICATIONS,
   LABELS_MESSAGES,
   LABEL_EVENTS,
+  LABEL_OUTCOMES,
   LABEL_STAGES,
   REVIEW_SHEET,
   labelRevision,
@@ -31,7 +32,18 @@ const lines = text.split(/\r?\n/);
 const problems: string[] = [];
 const groups: GroupLabel[] = [];
 const messages: MessageLabels = {};
-const seenIn = new Map<string, string>();
+/**
+ * Which blocks each message id has been seen in, in sheet order (LOOP4 5.1).
+ *
+ * A second sighting used to be an error. It is now the one way to say that an
+ * email covers two applications, so it is recorded rather than rejected, and
+ * what is checked instead is that the two lines make the same claim about the
+ * email itself. Where they sit in their two drawers is allowed to differ,
+ * because that is a fact about the pairing rather than about the email.
+ */
+const seenIn = new Map<string, string[]>();
+type Membership = { id: string; parent: string | null; relation: string | null };
+const membershipsOf = new Map<string, Membership[]>();
 
 type Section = "none" | "applications" | "notRelated" | "prefilter" | "failed";
 let section: Section = "none";
@@ -52,7 +64,7 @@ const SAMPLED = /^-\s*([0-9a-f]{6,32})\s*\|\s*related\s*:\s*(yes|no)\b\s*\|(.*)$
  * combination has to be rewritten each time, and the failure when it is not is
  * a line silently read as unparseable prose.
  */
-const CHIP = /^\s*(sig|stage|event|rel)\s*:\s*([A-Za-z_-]*)\s*$/;
+const CHIP = /^\s*(sig|stage|event|outcome|rel)\s*:\s*([A-Za-z_-]*)\s*$/;
 
 function chipsOf(tail: string): { chips: Map<string, string>; unknown: string | null } {
   const chips = new Map<string, string>();
@@ -167,11 +179,33 @@ lines.forEach((line, index) => {
       problems.push(`line ${at}: event: "${chips.get("event")}" is not one of ${LABEL_EVENTS.join(", ")}`);
       return;
     }
+    const outcome = oneOf(chips.get("outcome"), LABEL_OUTCOMES);
+    if (outcome === undefined && chips.has("outcome")) {
+      problems.push(`line ${at}: outcome: "${chips.get("outcome")}" is not one of ${LABEL_OUTCOMES.join(", ")}`);
+      return;
+    }
 
+    // A message listed under a second block says it covers two applications.
+    // What it says about the email itself has to be the same in both places,
+    // because there is only one email and only one answer to those questions.
     const already = seenIn.get(id);
     if (already) {
-      problems.push(`line ${at}: message ${id} is in both ${already} and ${current.id}`);
-      return;
+      if (already.includes(current.id)) {
+        problems.push(`line ${at}: message ${id} is listed twice in ${current.id}`);
+        return;
+      }
+      const first = messages[id];
+      const same =
+        first.significant === (sig.toLowerCase() === "yes") &&
+        (first.stage ?? null) === (stage ?? null) &&
+        (first.event ?? null) === (event ?? null) &&
+        (first.outcome ?? null) === (outcome ?? null);
+      if (!same) {
+        problems.push(
+          `line ${at}: message ${id} is in ${already.join(" and ")} as well as ${current.id}, but the two lines disagree about the email itself. Where it sits in each drawer may differ; sig, stage, event and outcome may not`,
+        );
+        return;
+      }
     }
 
     const depth = line.length - line.trimStart().length;
@@ -193,17 +227,29 @@ lines.forEach((line, index) => {
       return;
     }
 
-    seenIn.set(id, current.id);
+    seenIn.set(id, [...(already ?? []), current.id]);
     current.messages.push(id);
     if (!parent) lastTopLevel = id;
-    messages[id] = {
-      related: true,
-      significant: sig.toLowerCase() === "yes",
-      parent,
-      relation: parent ? (rel ? rel.toUpperCase() : "UPDATE") : null,
-      stage: stage ?? null,
-      event: event ?? null,
-    };
+
+    const relation = parent ? (rel ? rel.toUpperCase() : "UPDATE") : null;
+    const memberships = membershipsOf.get(id) ?? [];
+    memberships.push({ id: current.id, parent, relation });
+    membershipsOf.set(id, memberships);
+
+    // The first sighting writes the email's own answers. A later one adds a
+    // membership and changes nothing else, having already been checked to
+    // agree.
+    if (!already) {
+      messages[id] = {
+        related: true,
+        significant: sig.toLowerCase() === "yes",
+        parent,
+        relation,
+        stage: stage ?? null,
+        event: event ?? null,
+        outcome: outcome ?? null,
+      };
+    }
     return;
   }
 
@@ -223,11 +269,18 @@ lines.forEach((line, index) => {
     relation: null,
     stage: null,
     event: null,
+    outcome: null,
     why: section === "prefilter" ? "dropped by the prefilter" : "judged not related",
   };
 });
 
 closeGroup();
+
+// Written only where there is more than one, so the field means what it says
+// and almost every message carries nothing at all (LOOP4 5.1).
+for (const [id, memberships] of membershipsOf) {
+  if (memberships.length > 1 && messages[id]) messages[id].groups = memberships;
+}
 
 const ids = new Set(groups.map((group) => group.id));
 if (ids.size !== groups.length) problems.push("two groups share an id");
@@ -247,14 +300,19 @@ writeJson(LABELS_APPLICATIONS, { revision: labelRevision(), groups });
 
 const grouped = groups.reduce((total, group) => total + group.messages.length, 0);
 const children = Object.values(messages).filter((label) => label.parent).length;
-const relatedSampled = Object.values(messages).filter((label) => label.related).length - grouped;
+// Distinct messages, not memberships: one email may now be listed under two
+// groups, and counting it twice made this read as a negative number.
+const distinctGrouped = new Set(groups.flatMap((group) => group.messages)).size;
+const relatedSampled = Object.values(messages).filter((label) => label.related).length - distinctGrouped;
 
 console.log(`Wrote ${LABELS_APPLICATIONS}`);
 console.log(`      ${LABELS_MESSAGES}`);
 console.log(`  ${groups.length} groups over ${grouped} messages`);
 console.log(`  ${children} of them are shown under an earlier email, ${grouped - children} hold a line of their own`);
 console.log(`  ${Object.keys(messages).length} messages labelled in total`);
+const multi = Object.values(messages).filter((label) => label.groups && label.groups.length > 1).length;
 console.log(
-  `  ${Object.values(messages).filter((label) => label.stage).length} carry a stage, ${Object.values(messages).filter((label) => label.event).length} carry an event`,
+  `  ${Object.values(messages).filter((label) => label.stage).length} carry a stage, ${Object.values(messages).filter((label) => label.event).length} carry an event, ${Object.values(messages).filter((label) => label.outcome).length} carry an outcome`,
 );
+console.log(`  ${multi} belong to more than one application`);
 console.log(`  ${relatedSampled} of the sampled not related messages were marked related after all`);

@@ -990,6 +990,21 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   font-weight: 600;
 }
 .tag--override > svg { font-size: 12px; }
+/* Which ending a closed row reached. The section header says it is closed;
+   this says which of the several endings that word covers. */
+.tag--outcome {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 11%, transparent);
+  font-weight: 600;
+}
+/* Nothing has arrived for a season. Quiet on purpose: it is the absence of
+   news rather than news, and it must not shout over a row that is live. */
+.tag--stale {
+  color: var(--muted);
+  background: transparent;
+  border: 1px dashed color-mix(in srgb, var(--muted) 45%, transparent);
+  font-weight: 600;
+}
 
 /* --- Sync problem banner ---------------------------------
    A banner, not a screen: a failed sync does not invalidate anything

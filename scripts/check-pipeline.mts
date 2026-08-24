@@ -146,9 +146,11 @@ const FIXTURES: Fixture[] = [
   // found, and the step has to run in both cases or this email is guessed at.
   { day: "2026-07-04", thread: "t39", sender: "mailer@hackerrankforwork.com", subject: "Thanks for taking the Stark Global ENG Intern Test", company: "Stark Devices", role: null, status: "IN_PROGRESS", stage: "ASSESSMENT", significant: false, title: "Assessment Completion Confirmation" },
 
-  // Invariant: the guard is "exactly one". Two postings at one employer are
-  // both waiting on an assessment here, so the vendor's email cannot say which
-  // it belongs to, and a third row is the honest answer rather than a guess.
+  // Invariant, rewritten at LOOP4 iteration 6: two postings at one employer are
+  // both waiting on an assessment here, so the vendor's email is about both of
+  // them. It used to make a third row, on the grounds that a guess was worse
+  // than an extra row. Belonging is a row of its own now, so there is a third
+  // answer that is neither a guess nor an invention: it reaches both.
   { day: "2026-07-05", thread: "t40", sender: "careers@wayne.example", subject: "Complete your pre interview assessment", company: "Wayne Systems", role: "Software Engineering, Gotham", status: "IN_PROGRESS", stage: "ASSESSMENT", significant: true, title: "Assessment Invitation" },
   { day: "2026-07-05", thread: "t41", sender: "careers@wayne.example", subject: "Complete your pre interview assessment", company: "Wayne Systems", role: "Software Engineering, Bludhaven", status: "IN_PROGRESS", stage: "ASSESSMENT", significant: true, title: "Assessment Invitation" },
   { day: "2026-07-06", thread: "t42", sender: "mailer@codility.com", subject: "Wayne invites you to a test", company: "Wayne Systems", role: "Engineering Test", status: "IN_PROGRESS", stage: "ASSESSMENT", significant: true, title: "Assessment Invitation" },
@@ -253,6 +255,79 @@ const FIXTURES: Fixture[] = [
   // where it was and the history records nothing.
   { day: "2026-10-06", thread: "t74", sender: "careers@bluth.example", subject: "Application received", company: "Bluth Homes", role: "Banana Stand Intern", status: "APPLIED", event: "CONFIRMATION", significant: true, title: "Application Confirmation" },
   { day: "2026-10-07", thread: "t75", sender: "careers@bluth.example", subject: "Confirm your identity to continue", company: "Bluth Homes", role: "Banana Stand Intern", status: "APPLIED", stage: "VERIFICATION", event: "REQUEST", significant: false, title: "Identity Check" },
+
+  // Invariant: an alias may be written from a match somebody could point at.
+  // These two share a thread, which is something the employer's own system
+  // did, and they spell the employer two ways. That pair is exactly what the
+  // alias table is for, and it survives the rule that stopped the guesses.
+  { day: "2026-11-01", thread: "t76", sender: "careers@weyland.example", subject: "Application received", company: "Weyland Yutani", role: "Terraforming Intern", status: "APPLIED", event: "CONFIRMATION", significant: true, title: "Application Confirmation" },
+  { day: "2026-11-02", thread: "t76", sender: "careers@weyland.example", subject: "Re: Application received", company: "Weyland", role: "Terraforming Intern", status: "IN_PROGRESS", stage: "INTERVIEW", event: "INVITATION", significant: true, title: "Recruiter Screen" },
+
+  // Invariant: an application that ended and then went quiet is finished. A
+  // later email under the same title is a new application, because these
+  // postings come back every year and most employers state no season and no
+  // year at all.
+  //
+  // Applied, rejected, and then the same posting comes round fourteen months
+  // later. Two applications, one of which ended.
+  { day: "2026-01-05", thread: "t77", sender: "careers@omnicorp.example", subject: "Application received", company: "Omni Consumer Products", role: "Robotics Intern", status: "APPLIED", event: "CONFIRMATION", significant: true, title: "Application Confirmation" },
+  { day: "2026-01-20", thread: "t78", sender: "careers@omnicorp.example", subject: "Update on your application", company: "Omni Consumer Products", role: "Robotics Intern", status: "REJECTED", event: "DECISION", significant: true, title: "Application Update" },
+  { day: "2027-03-20", thread: "t79", sender: "careers@omnicorp.example", subject: "Application received", company: "Omni Consumer Products", role: "Robotics Intern", status: "APPLIED", event: "CONFIRMATION", significant: true, title: "Application Confirmation" },
+
+  // ... and two weeks is not a new hiring cycle, so this one joins the row it
+  // belongs to and the row stays closed.
+  { day: "2026-01-05", thread: "t80", sender: "careers@sirius.example", subject: "Application received", company: "Sirius Cybernetics", role: "Marketing Intern", status: "APPLIED", event: "CONFIRMATION", significant: true, title: "Application Confirmation" },
+  { day: "2026-01-20", thread: "t81", sender: "careers@sirius.example", subject: "Update on your application", company: "Sirius Cybernetics", role: "Marketing Intern", status: "REJECTED", event: "DECISION", significant: true, title: "Application Update" },
+  { day: "2026-02-03", thread: "t82", sender: "careers@sirius.example", subject: "One more note on your application", company: "Sirius Cybernetics", role: "Marketing Intern", status: "REJECTED", event: "UPDATE", significant: false, title: "Application Update" },
+
+  // ... a reply on the original thread belongs to the old application however
+  // long the gap, because the thread is the employer's own system saying so.
+  { day: "2026-01-05", thread: "t83", sender: "careers@yoyodyne.example", subject: "Application received", company: "Yoyodyne", role: "Propulsion Intern", status: "APPLIED", event: "CONFIRMATION", significant: true, title: "Application Confirmation" },
+  { day: "2026-01-20", thread: "t83", sender: "careers@yoyodyne.example", subject: "Update on your application", company: "Yoyodyne", role: "Propulsion Intern", status: "REJECTED", event: "DECISION", significant: true, title: "Application Update" },
+  { day: "2027-05-20", thread: "t83", sender: "careers@yoyodyne.example", subject: "Re: Update on your application", company: "Yoyodyne", role: "Propulsion Intern", status: "REJECTED", event: "UPDATE", significant: false, title: "Application Update" },
+
+  // ... and so does one quoting the old posting number, which is the employer
+  // saying it directly.
+  { day: "2026-01-05", thread: "t84", sender: "careers@buynlarge.example", subject: "Application received (Job number: 550021)", company: "Buy n Large", role: "Waste Systems Intern", status: "APPLIED", event: "CONFIRMATION", significant: true, title: "Application Confirmation" },
+  { day: "2026-01-20", thread: "t85", sender: "careers@buynlarge.example", subject: "Update on your application", company: "Buy n Large", role: "Waste Systems Intern", status: "REJECTED", event: "DECISION", significant: true, title: "Application Update" },
+  { day: "2027-05-20", thread: "t86", sender: "careers@buynlarge.example", subject: "A note about job number 550021", company: "Buy n Large", role: "Waste Systems Intern", status: "REJECTED", event: "UPDATE", significant: false, title: "Application Update" },
+
+  // Invariant: an email belongs to every application it is about, and to no
+  // others. Two live postings at one employer, both waiting on an assessment.
+  { day: "2026-06-01", thread: "t87", sender: "careers@cheyenne.example", subject: "Application received", company: "Cheyenne Mountain", role: "Systems Intern Alpha", status: "APPLIED", event: "CONFIRMATION", significant: true, title: "Application Confirmation" },
+  { day: "2026-06-01", thread: "t88", sender: "careers@cheyenne.example", subject: "Application received", company: "Cheyenne Mountain", role: "Systems Intern Beta", status: "APPLIED", event: "CONFIRMATION", significant: true, title: "Application Confirmation" },
+  { day: "2026-06-02", thread: "t89", sender: "careers@cheyenne.example", subject: "Complete your assessment", company: "Cheyenne Mountain", role: "Systems Intern Alpha", status: "IN_PROGRESS", stage: "ASSESSMENT", event: "INVITATION", significant: true, title: "Assessment Invitation" },
+  { day: "2026-06-02", thread: "t90", sender: "careers@cheyenne.example", subject: "Complete your assessment", company: "Cheyenne Mountain", role: "Systems Intern Beta", status: "IN_PROGRESS", stage: "ASSESSMENT", event: "INVITATION", significant: true, title: "Assessment Invitation" },
+  // ... and one email about that step naming no posting at all. It is about
+  // both, and it carries something new, so both rows record it.
+  { day: "2026-06-05", thread: "t91", sender: "careers@cheyenne.example", subject: "Your assessment deadline has moved to Friday", company: "Cheyenne Mountain", role: null, status: "IN_PROGRESS", stage: "ASSESSMENT", event: "UPDATE", significant: true, title: "Assessment Deadline Update" },
+  // ... but a decision naming no posting never fans out, because employers
+  // withhold a rejection precisely when the candidate is live elsewhere. One
+  // email may not close two real applications.
+  { day: "2026-06-20", thread: "t92", sender: "careers@cheyenne.example", subject: "Update on your application", company: "Cheyenne Mountain", role: null, status: "REJECTED", event: "DECISION", significant: true, title: "Application Update" },
+
+  // Invariant: fan out reaches rows waiting on this very step and no others.
+  // One of these is waiting on an assessment and the other is merely applied.
+  { day: "2026-06-01", thread: "t93", sender: "careers@nostromo.example", subject: "Application received", company: "Nostromo Freight", role: "Cargo Intern North", status: "APPLIED", event: "CONFIRMATION", significant: true, title: "Application Confirmation" },
+  { day: "2026-06-01", thread: "t94", sender: "careers@nostromo.example", subject: "Application received", company: "Nostromo Freight", role: "Cargo Intern South", status: "APPLIED", event: "CONFIRMATION", significant: true, title: "Application Confirmation" },
+  { day: "2026-06-02", thread: "t95", sender: "careers@nostromo.example", subject: "Complete your assessment", company: "Nostromo Freight", role: "Cargo Intern North", status: "IN_PROGRESS", stage: "ASSESSMENT", event: "INVITATION", significant: true, title: "Assessment Invitation" },
+  { day: "2026-06-04", thread: "t96", sender: "careers@nostromo.example", subject: "A nudge about your assessment", company: "Nostromo Freight", role: null, status: "IN_PROGRESS", stage: "ASSESSMENT", event: "REMINDER", significant: false, title: "Assessment Reminder" },
+
+  // Invariant: a quoted posting number is a real answer and decides alone, so
+  // fan out never runs. Both of these are waiting on an assessment and the
+  // email names one of them by number.
+  { day: "2026-06-01", thread: "t97", sender: "careers@aperturescience.example", subject: "Application received (Job number: 660001)", company: "Aperture Science", role: "Test Chamber Intern", status: "APPLIED", event: "CONFIRMATION", significant: true, title: "Application Confirmation" },
+  { day: "2026-06-01", thread: "t98", sender: "careers@aperturescience.example", subject: "Application received (Job number: 660002)", company: "Aperture Science", role: "Test Chamber Intern", status: "APPLIED", event: "CONFIRMATION", significant: true, title: "Application Confirmation" },
+  { day: "2026-06-02", thread: "t99", sender: "careers@aperturescience.example", subject: "Assessment for 660001", company: "Aperture Science", role: "Test Chamber Intern", status: "IN_PROGRESS", stage: "ASSESSMENT", event: "INVITATION", significant: true, title: "Assessment Invitation" },
+  { day: "2026-06-03", thread: "ta1", sender: "careers@aperturescience.example", subject: "Assessment for 660002", company: "Aperture Science", role: "Test Chamber Intern", status: "IN_PROGRESS", stage: "ASSESSMENT", event: "INVITATION", significant: true, title: "Assessment Invitation" },
+  { day: "2026-06-06", thread: "ta2", sender: "careers@aperturescience.example", subject: "Reminder about job number 660002", company: "Aperture Science", role: null, status: "IN_PROGRESS", stage: "ASSESSMENT", event: "REMINDER", significant: false, title: "Assessment Reminder" },
+
+  // Invariant: a first confirmation has nothing to gate on, so fan out
+  // declines. Two rows at this employer and nothing is waiting on any step, so
+  // the honest answer is that the code does not know which row this belongs to.
+  { day: "2026-06-01", thread: "ta3", sender: "careers@blackmesa.example", subject: "Application received", company: "Black Mesa", role: "Anomalous Materials Intern", status: "APPLIED", event: "CONFIRMATION", significant: true, title: "Application Confirmation" },
+  { day: "2026-06-01", thread: "ta4", sender: "careers@blackmesa.example", subject: "Application received", company: "Black Mesa", role: "Lambda Complex Intern", status: "APPLIED", event: "CONFIRMATION", significant: true, title: "Application Confirmation" },
+  { day: "2026-06-03", thread: "ta5", sender: "careers@blackmesa.example", subject: "Thanks for applying", company: "Black Mesa", role: null, status: "APPLIED", event: "CONFIRMATION", significant: true, title: "Application Confirmation" },
 ];
 
 async function seed() {
@@ -302,16 +377,32 @@ async function seed() {
 }
 
 async function snapshot() {
-  const applications = await prisma.application.findMany({
+  const rows = await prisma.application.findMany({
     orderBy: [{ companyName: "asc" }, { id: "asc" }],
     include: {
-      messages: {
-        select: { id: true, gmailMessageId: true, parentMessageId: true, parentRelation: true, isSignificant: true, subject: true },
-        orderBy: { receivedAt: "asc" },
+      memberships: {
+        select: {
+          parentMessageId: true,
+          parentRelation: true,
+          message: {
+            select: { id: true, gmailMessageId: true, isSignificant: true, subject: true, receivedAt: true },
+          },
+        },
       },
       statusHistory: true,
     },
   });
+
+  const applications = rows.map((application) => ({
+    ...application,
+    messages: application.memberships
+      .map((membership) => ({
+        ...membership.message,
+        parentMessageId: membership.parentMessageId,
+        parentRelation: membership.parentRelation,
+      }))
+      .sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime() || a.id - b.id),
+  }));
 
   return applications.map((application) => ({
     milestones: application.statusHistory.length,
@@ -350,11 +441,11 @@ const first = await snapshot();
 await runPipeline();
 const second = await snapshot();
 
-const unattached = await prisma.emailMessage.count({ where: { applicationId: null } });
+const unattached = await prisma.emailMessage.count({ where: { memberships: { none: {} } } });
 
 console.log(JSON.stringify(first, null, 2));
 
-expect("thirty seven applications", first.length === 37);
+expect("fifty applications", first.length === 50);
 expect(
   "an administrative step holds its own line and moves nothing",
   (() => {
@@ -511,8 +602,11 @@ expect(
   first.find((row) => row.company === "Stark Devices")?.emails.length === 4,
 );
 expect(
-  "two postings waiting on an assessment at once make a third row rather than a guess",
-  first.filter((row) => row.company === "Wayne Systems").length === 3,
+  "one exam covering two postings reaches both of them rather than inventing a third row",
+  first.filter((row) => row.company === "Wayne Systems").length === 2 &&
+    first
+      .filter((row) => row.company === "Wayne Systems")
+      .every((row) => row.emails.length === 2),
 );
 expect(
   "an exam vendor writing about an employer with no application still creates one",
@@ -616,6 +710,7 @@ function titleOf(parts: {
   status?: string;
   stage?: string | null;
   event?: string | null;
+  outcome?: string | null;
   title?: string;
   relation?: string | null;
 }): string {
@@ -631,6 +726,7 @@ function titleOf(parts: {
       status: parts.status ?? "IN_PROGRESS",
       stage_detail: parts.stage ?? null,
       email_event: parts.event ?? null,
+      outcome: parts.outcome ?? null,
       is_application_related: true,
       is_significant: true,
       email_title: parts.title ?? "Whatever The Model Called It",
@@ -641,6 +737,60 @@ function titleOf(parts: {
 }
 
 expect("no branch of the display reads a word out of the model's title", TITLE_KEYWORD_RULES.length === 0);
+
+// LOOP4 Invariant 8. An ending is a fact about the application, exactly as a
+// stage is, and gets a field of the same shape. Four of these are stored
+// ACCEPTED and three are stored REJECTED, so the status alone cannot tell any
+// of them apart.
+expect(
+  "a rescinded offer does not read as an offer",
+  titleOf({ status: "ACCEPTED", event: "DECISION", outcome: "OFFER_RESCINDED" }) ===
+    "Offer Withdrawn by the Employer",
+);
+expect(
+  "an offer taken and an offer turned down read differently, though both are stored Accepted",
+  titleOf({ status: "ACCEPTED", event: "DECISION", outcome: "OFFER_ACCEPTED" }) === "Offer Accepted" &&
+    titleOf({ status: "ACCEPTED", event: "DECISION", outcome: "OFFER_DECLINED" }) === "Offer Declined",
+);
+expect(
+  "a withdrawal and a rejection both close the row and read differently",
+  titleOf({ status: "REJECTED", event: "DECISION", outcome: "WITHDRAWN_BY_APPLICANT" }) ===
+    "Application Withdrawn" &&
+    titleOf({ status: "REJECTED", event: "DECISION", outcome: "REJECTED_BY_EMPLOYER" }) ===
+      "Application Rejected",
+);
+expect(
+  "a posting that went away does not claim anybody was turned down",
+  titleOf({ status: "REJECTED", event: "DECISION", outcome: "POSTING_CANCELLED" }) === "Posting Cancelled",
+);
+expect(
+  "with no ending stated, a closed row still says only what every ending shares",
+  titleOf({ status: "REJECTED", event: "DECISION" }) === "Application Closed",
+);
+expect(
+  "a cancelled interview says the step stopped, not that the application ended",
+  titleOf({ status: "IN_PROGRESS", stage: "INTERVIEW", event: "CANCELLATION" }) === "Interview Cancelled",
+);
+
+// LOOP4 Decision 7. Silence is not something an email says, so staleness is
+// worked out from the set and never asked of the model.
+const { isStale } = await import("../src/lib/pipeline/recompute");
+const now = new Date("2026-06-01T00:00:00Z");
+const daysBefore = (days: number) => new Date(now.getTime() - days * 86_400_000);
+
+expect(
+  "a row silent for months reads as quiet without any email having said so",
+  isStale({ status: "APPLIED", latestEmailAt: daysBefore(120) }, now),
+);
+expect(
+  "and it stops reading as quiet the moment one arrives",
+  !isStale({ status: "APPLIED", latestEmailAt: daysBefore(1) }, now),
+);
+expect(
+  "an application that ended is finished rather than ignored, so it is never quiet",
+  !isStale({ status: "REJECTED", latestEmailAt: daysBefore(400) }, now) &&
+    !isStale({ status: "ACCEPTED", latestEmailAt: daysBefore(400) }, now),
+);
 expect(
   "a recorded interview reads as one",
   titleOf({ stage: "RECORDED_INTERVIEW", event: "INVITATION" }) === "Recorded Interview Invitation",
@@ -700,6 +850,501 @@ expect(
   "an offer reads as an offer, and news about one reads as news",
   titleOf({ status: "ACCEPTED", event: "DECISION" }) === "Offer" &&
     titleOf({ status: "ACCEPTED", event: "UPDATE" }) === "Offer Update",
+);
+
+// LOOP4 Invariant 4. Time is evidence.
+expect(
+  "the same posting coming round a year later is a new application",
+  first.filter((row) => row.company === "Omni Consumer Products").length === 2,
+);
+expect(
+  "and the one that ended still says it ended",
+  first
+    .filter((row) => row.company === "Omni Consumer Products")
+    .map((row) => row.status)
+    .sort()
+    .join(",") === "APPLIED,REJECTED",
+);
+expect(
+  "two weeks is not a new hiring cycle, so a later note joins the row that ended",
+  first.filter((row) => row.company === "Sirius Cybernetics").length === 1 &&
+    first.find((row) => row.company === "Sirius Cybernetics")?.emails.length === 3,
+);
+expect(
+  "a reply on the original thread joins the old application however long the gap",
+  first.filter((row) => row.company === "Yoyodyne").length === 1 &&
+    first.find((row) => row.company === "Yoyodyne")?.emails.length === 3,
+);
+expect(
+  "an email quoting the old posting number joins the old application too",
+  first.filter((row) => row.company === "Buy n Large").length === 1 &&
+    first.find((row) => row.company === "Buy n Large")?.emails.length === 3,
+);
+
+// LOOP4 Invariant 6. An email belongs to every application it is about.
+//
+// Written without naming any message id, because the ids are positions in the
+// fixture list and every insertion above would silently move them.
+const rowsFor = (company: string) => first.filter((row) => row.company === company);
+/** Emails held by more than one of these rows: what fan out actually produced. */
+const sharedAmong = (company: string) => {
+  const counts = new Map<string, number>();
+  for (const row of rowsFor(company)) {
+    for (const id of row.emails) counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  return [...counts.entries()].filter(([, n]) => n > 1).map(([id]) => id);
+};
+
+expect(
+  "one email about a step two rows are waiting on reaches both of them",
+  rowsFor("Cheyenne Mountain").length === 2 && sharedAmong("Cheyenne Mountain").length === 1,
+);
+expect(
+  "and both rows record it, because both of them really did move",
+  rowsFor("Cheyenne Mountain").every((row) => row.milestones >= 3),
+);
+expect(
+  "a decision naming no posting closes exactly one row, never two",
+  rowsFor("Cheyenne Mountain").filter((row) => row.status === "REJECTED").length === 1,
+);
+expect(
+  "a reminder reaches only the row that is waiting, not the one merely applied",
+  (() => {
+    const rows = rowsFor("Nostromo Freight");
+    const waiting = rows.find((row) => row.stage === "ASSESSMENT");
+    const idle = rows.find((row) => row.stage === null);
+    return (
+      rows.length === 2 &&
+      !sharedAmong("Nostromo Freight").length &&
+      waiting?.emails.length === 3 &&
+      idle?.emails.length === 1
+    );
+  })(),
+);
+expect(
+  "a quoted posting number decides alone and fan out never runs",
+  rowsFor("Aperture Science").length === 2 &&
+    !sharedAmong("Aperture Science").length &&
+    rowsFor("Aperture Science")
+      .map((row) => row.emails.length)
+      .sort()
+      .join(",") === "2,3",
+);
+expect(
+  "a first confirmation naming no posting fans out to nothing, because nothing is waiting",
+  rowsFor("Black Mesa").length === 2 && !sharedAmong("Black Mesa").length,
+);
+
+// ------------------------------------------------------------- membership
+//
+// LOOP4 Invariant 5. Belonging to an application is a fact about a pair, so it
+// is stored on the pair. Nothing in the matching rules creates a second
+// membership yet, so this writes one by hand and checks the shape can hold it:
+// one email, two applications, and a different line above it in each drawer.
+
+const { applicationsOf, messagesOf } = await import("../src/lib/pipeline/membership");
+
+{
+  const [left, right] = await prisma.application.findMany({
+    where: { companyName: { in: ["Wayne Systems"] } },
+    orderBy: { id: "asc" },
+    take: 2,
+  });
+  const shared = (await messagesOf(prisma, left.id))[0];
+  const anchor = (await messagesOf(prisma, right.id))[0];
+
+  await prisma.applicationMembership.create({
+    data: {
+      applicationId: right.id,
+      messageId: shared.id,
+      reason: "FANOUT",
+      parentMessageId: anchor.id,
+      parentRelation: "UPDATE",
+    },
+  });
+
+  const inLeft = await messagesOf(prisma, left.id);
+  const inRight = await messagesOf(prisma, right.id);
+  const homes = await applicationsOf(prisma, shared.id);
+
+  expect(
+    "one email can belong to two applications",
+    homes.length === 2 && homes.includes(left.id) && homes.includes(right.id),
+  );
+  expect(
+    "and it sits under a different line in each drawer",
+    inLeft.find((message) => message.id === shared.id)?.parentMessageId === null &&
+      inRight.find((message) => message.id === shared.id)?.parentMessageId === anchor.id,
+  );
+
+  // Put it back, so nothing below sees a board the matching rules never made.
+  await prisma.applicationMembership.delete({
+    where: { applicationId_messageId: { applicationId: right.id, messageId: shared.id } },
+  });
+}
+
+const { repairGrouping } = await import("../src/lib/pipeline/repair");
+const { emptyCounters } = await import("../src/lib/pipeline/counters");
+
+type Seed = {
+  company: string;
+  role: string | null;
+  status?: string;
+  stage?: string | null;
+  emails: { day: string; subject: string; reason?: string }[];
+};
+
+let seedCount = 0;
+
+/** One application with its emails, written straight into the board. */
+async function seedApplication(account: number, seed: Seed): Promise<number> {
+  seedCount += 1;
+  const application = await prisma.application.create({
+    data: {
+      companyName: seed.company,
+      companyNormalized: seed.company.toLowerCase(),
+      roleTitle: seed.role,
+      dedupeKey: `seed:${seedCount}`,
+      status: seed.status ?? "APPLIED",
+    },
+  });
+
+  for (const [index, email] of seed.emails.entries()) {
+    const message = await prisma.emailMessage.create({
+      data: {
+        gmailAccountId: account,
+        gmailMessageId: `seed-${seedCount}-${index}`,
+        threadId: `seed-thread-${seedCount}-${index}`,
+        senderEmail: "careers@seed.example",
+        senderDomain: "seed.example",
+        subject: email.subject,
+        bodyText: email.subject,
+        receivedAt: new Date(`${email.day}T12:00:00Z`),
+        classificationStatus: "OK",
+        classifierVersion: CLASSIFIER_VERSION,
+        isApplicationRelated: true,
+        isSignificant: true,
+        emailTitle: "Seed",
+        llmClassificationRaw: JSON.stringify({
+          is_application_related: true,
+          company_name: seed.company,
+          role_title: seed.role,
+          status: seed.status ?? "APPLIED",
+          stage_detail: seed.stage ?? null,
+          is_significant: true,
+          email_title: "Seed",
+          confidence_score: 0.9,
+        }),
+      },
+    });
+    await prisma.applicationMembership.create({
+      data: {
+        applicationId: application.id,
+        messageId: message.id,
+        reason: email.reason ?? "TITLE",
+      },
+    });
+  }
+
+  return application.id;
+}
+
+async function clearSeeds(): Promise<void> {
+  await prisma.applicationMembership.deleteMany({
+    where: { message: { gmailMessageId: { startsWith: "seed-" } } },
+  });
+  await prisma.emailMessage.deleteMany({ where: { gmailMessageId: { startsWith: "seed-" } } });
+  await prisma.application.deleteMany({ where: { dedupeKey: { startsWith: "seed:" } } });
+  await prisma.application.deleteMany({ where: { dedupeKey: { contains: "#split:" } } });
+}
+
+const seedAccount = (await prisma.gmailAccount.findFirstOrThrow()).id;
+
+// ------------------------------------------------------------ adjudicator
+//
+// LOOP4 Invariant 9. A tie is a question, not an answer. The model reads the
+// email; when the code has run out of evidence, the model is asked, once, with
+// the candidates in front of it.
+//
+// Driven with a stub rather than a provider, so these cost nothing and are
+// deterministic. What is being checked is the rule around the call: when it
+// fires, what it is allowed to do with each answer, and that every failure
+// leaves the board exactly as it would have been.
+
+{
+  const { attachClassified: match } = await import("../src/lib/pipeline/match");
+  const { recomputeAll: recompute } = await import("../src/lib/pipeline/recompute");
+
+/**
+   * Two live rows at one employer. With a stage they are both waiting on the
+   * very step the loose email is about, which is trigger 2; without one the
+   * loose email reaches the score with two exactly level candidates, which is
+   * trigger 1.
+   */
+  async function twoWaiting(company: string, stage: string | null = null): Promise<number[]> {
+    const ids: number[] = [];
+    for (const suffix of ["North", "South"]) {
+      ids.push(
+        await seedApplication(seedAccount, {
+          company,
+          role: `${company} Intern ${suffix}`,
+          status: "IN_PROGRESS",
+          stage,
+          emails: [{ day: "2026-01-01", subject: `Complete your assessment ${suffix}` }],
+        }),
+      );
+    }
+    return ids;
+  }
+
+  /** One unclaimed email about that step, naming no posting. */
+  async function loose(company: string): Promise<void> {
+    seedCount += 1;
+    await prisma.emailMessage.create({
+      data: {
+        gmailAccountId: seedAccount,
+        gmailMessageId: `seed-${seedCount}-loose`,
+        threadId: `seed-loose-${seedCount}`,
+        senderEmail: "tests@vendor.example",
+        senderDomain: "vendor.example",
+        subject: "Thanks for taking the test",
+        bodyText: "Thanks for taking the test",
+        receivedAt: new Date("2026-01-05T12:00:00Z"),
+        classificationStatus: "OK",
+        classifierVersion: CLASSIFIER_VERSION,
+        isApplicationRelated: true,
+        isSignificant: false,
+        emailTitle: "Assessment Completed",
+        llmClassificationRaw: JSON.stringify({
+          is_application_related: true,
+          company_name: company,
+          role_title: null,
+          status: "IN_PROGRESS",
+          stage_detail: "ASSESSMENT",
+          email_event: "COMPLETION",
+          sender_role: "ASSESSMENT_VENDOR",
+          is_significant: false,
+          email_title: "Assessment Completed",
+          confidence_score: 0.95,
+        }),
+      },
+    });
+  }
+
+  /** How many rows the loose email ended up on. */
+  async function landedOn(): Promise<number[]> {
+    const message = await prisma.emailMessage.findFirstOrThrow({
+      where: { gmailMessageId: { endsWith: "-loose" } },
+    });
+    return (await applicationsOf(prisma, message.id)).sort((a, b) => a - b);
+  }
+
+  async function run(
+    answer: number[] | null,
+    forCompany: string,
+    stage: string | null = null,
+  ): Promise<number[]> {
+    const rows = await twoWaiting(forCompany, stage);
+    await loose(forCompany);
+    let asked = 0;
+    const outcome = await match(prisma, async (_message, candidates) => {
+      asked += 1;
+      if (answer === null) return null;
+      return { chosen: answer.map((index) => candidates[index]?.id ?? -1), costUsd: 0.001 };
+    });
+    await recompute(prisma, outcome.touched);
+    const landed = await landedOn();
+    expect(`the adjudicator is asked exactly once for ${forCompany}`, asked === 1);
+    return [rows.length, landed.length];
+  }
+
+  // It plainly belongs to one of them: the adjudicator picks it, and fan out
+  // does not reach the other.
+  expect("two level candidates and one answer means one row", (await run([0], "Adjudicone"))[1] === 1);
+  await clearSeeds();
+
+  // It plainly belongs to both: the answer goes through the same fan out
+  // safety rules, so both are reached.
+  expect("two level candidates and both named means two rows", (await run([0, 1], "Adjudictwo"))[1] === 2);
+  await clearSeeds();
+
+  // None of them. A new application, which is what "none" means.
+  expect("none of them means a new application rather than a guess", (await run([], "Adjudicnone"))[1] === 1);
+  await clearSeeds();
+
+  // Out of credit, unreachable, or an answer that would not parse. A paid call
+  // may never be load bearing, so the score decides exactly as it would have.
+  expect(
+    "an adjudicator that cannot answer leaves the score to decide, as it always did",
+    (await run(null, "Adjudicdown"))[1] === 1,
+  );
+  await clearSeeds();
+
+  // Trigger 2: both rows are waiting on the very step this email is about, so
+  // fan out would reach both. Asking can only narrow it.
+  expect(
+    "an answer narrows a fan out that would have reached both",
+    (await run([0], "Adjudicnarrow", "ASSESSMENT"))[1] === 1,
+  );
+  await clearSeeds();
+  expect(
+    "and an adjudicator that cannot answer leaves fan out reaching both",
+    (await run(null, "Adjudicwide", "ASSESSMENT"))[1] === 2,
+  );
+  await clearSeeds();
+}
+
+// ----------------------------------------------------------------- repair
+//
+// LOOP4 Invariant 7. A grouping decision made on partial evidence is revisited
+// once when the evidence is complete, and never more than once.
+//
+// Driven against boards built here rather than through the matching rules,
+// because the matching rules are good enough that producing a genuine merge
+// suspect through them takes contortion, and a fixture that has to be
+// contorted is testing the contortion. The repair is a function of the board,
+// so the board is what these hand it.
+
+
+{
+  // Two rows a shared posting number proves are one. Stage 4 filed them apart
+  // because the titles disagreed when each arrived.
+  await seedApplication(seedAccount, {
+    company: "Repairco",
+    role: "Alpha Intern",
+    emails: [{ day: "2026-01-01", subject: "Application received, job number 771001" }],
+  });
+  await seedApplication(seedAccount, {
+    company: "Repairco",
+    role: "Beta Intern",
+    emails: [{ day: "2026-01-03", subject: "Next steps for job number 771001" }],
+  });
+
+  const counters = emptyCounters();
+  const outcome = await repairGrouping(prisma, counters);
+  expect(
+    "two rows a shared posting number proves are one get merged",
+    counters.repairMerges === 1 && outcome.actions[0]?.kind === "MERGE",
+  );
+  await clearSeeds();
+}
+
+{
+  // One row holding two disjoint posting numbers is two applications. The
+  // matching rules already refuse to build this, so the repair is where you
+  // find out that something did.
+  await seedApplication(seedAccount, {
+    company: "Splitco",
+    role: "Systems Intern",
+    emails: [
+      { day: "2026-01-01", subject: "Application received, job number 880001" },
+      { day: "2026-01-02", subject: "Application received, job number 880002" },
+    ],
+  });
+
+  const counters = emptyCounters();
+  await repairGrouping(prisma, counters);
+  expect("one row holding two disjoint posting numbers gets split", counters.repairSplits === 1);
+  await clearSeeds();
+}
+
+{
+  // The same board, except the second email is on the row because it shares a
+  // thread with the first. That is the employer's own system speaking and the
+  // repair does not get to overrule it on the strength of a number.
+  await seedApplication(seedAccount, {
+    company: "Threadco",
+    role: "Systems Intern",
+    emails: [
+      { day: "2026-01-01", subject: "Application received, job number 990001" },
+      { day: "2026-01-02", subject: "Application received, job number 990002", reason: "THREAD" },
+    ],
+  });
+
+  const counters = emptyCounters();
+  await repairGrouping(prisma, counters);
+  expect("a repair that would undo a thread link declines", counters.repairSplits === 0);
+  await clearSeeds();
+}
+
+{
+  // Three rows any two of which would merge. The pass makes one move, refuses
+  // to touch a row twice, and counts what it left rather than chasing it.
+  for (const role of ["Gamma Intern", "Gamma Intern", "Gamma Intern"]) {
+    await seedApplication(seedAccount, {
+      company: "Oscillo",
+      role,
+      emails: [{ day: "2026-01-01", subject: "Application received" }],
+    });
+  }
+
+  const counters = emptyCounters();
+  await repairGrouping(prisma, counters);
+  expect(
+    "a row already touched is left alone, and the leftover work is counted rather than chased",
+    counters.repairMerges === 1 && counters.repairUnsettled === 2,
+  );
+  await clearSeeds();
+}
+
+// ---------------------------------------------------------------- aliases
+//
+// LOOP4 Invariant 3. A rule may believe what it observed. It may not believe
+// what it guessed as strongly as what it observed. An alias outlives every
+// email that made it and nothing but a rebuild removes it, so it may only come
+// from a match somebody could point at.
+
+const aliases = await prisma.companyAlias.findMany({ orderBy: { aliasNormalized: "asc" } });
+
+expect(
+  "every alias records the link that made it",
+  aliases.length > 0 && aliases.every((alias) => alias.reason !== null),
+);
+expect(
+  "no alias was written from a score, a hand off or a fan out",
+  aliases.every((alias) => ["NEW", "THREAD", "REQUISITION", "TITLE"].includes(alias.reason ?? "")),
+);
+expect(
+  "a thread match still writes one, because a shared thread is something the employer did",
+  aliases.some((alias) => alias.reason === "THREAD"),
+);
+// Wayne Systems is the fixture where two postings are both waiting on an
+// assessment and a vendor's paper can say which. Before this rule, matching
+// that paper wrote an alias from a guess.
+expect(
+  "an exam vendor's paper writes no alias, however it was filed",
+  !aliases.some((alias) => alias.aliasNormalized.includes("engineering test")),
+);
+
+// -------------------------------------------------------------- prefilter
+//
+// LOOP4 Invariant 1. The junk filter runs before the model, so anything it
+// drops is invisible to every metric computed over the board. It may therefore
+// only remove what is certainly not an application, and it may never contradict
+// a rule the prompt states.
+
+const { prefilter } = await import("../src/lib/prefilter");
+
+function kept(subject: string, sender = "no-reply@careers.example"): boolean {
+  return prefilter({ senderEmail: sender, senderDomain: sender.split("@")[1], subject }).keep;
+}
+
+expect(
+  "an identity check naming its posting reaches the model",
+  kept("Verify your email to complete your application for Systems Intern") &&
+    kept("Please verify your identity for the Software Engineer Intern position") &&
+    kept("Security alert: confirm it was you who submitted an application"),
+);
+expect(
+  "a bare passcode naming no application still reaches the model, and rule 4 is what rejects it",
+  kept("Password reset request") && kept("Verify your account"),
+);
+expect(
+  "the digest rules are untouched, so the filter still does the job it is for",
+  !kept("12 new jobs for you", "jobalerts-noreply@linkedin.com") && // loop allow: linkedin.com, the digest sender list is a cache of names by design (LOOP P4) and a fixture for it has to name one
+    !kept("Your weekly job digest") &&
+    !kept("Recommended jobs you may be interested in") &&
+    !prefilter({ senderEmail: "alerts@indeed.com", senderDomain: "indeed.com", subject: "Anything" }).keep,
 );
 
 let failures = 0;
