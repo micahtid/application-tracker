@@ -144,6 +144,12 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   max-width: 1200px;
   margin-inline: auto;
   padding: clamp(48px, 7vw, 88px) clamp(20px, 4vw, 56px) 96px;
+  /* Nothing may drag the page sideways. Anything too wide for the column
+     scrolls in a box of its own, and the sheet is the only thing that is.
+
+     clip rather than hidden: hidden would make this a scroll container on
+     both axes and clip the menus and drawers that hang below a row. */
+  overflow-x: clip;
 }
 
 /* ===============================================================
@@ -301,7 +307,11 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 }
 .ctrl__count[hidden] { display: none; }
 
-/* Dropdowns stay flat: a hairline border instead of a shadow. */
+/* Dropdowns stay flat: a hairline border instead of a shadow.
+
+   The anatomy is the modal's at popover scale: a titled group, then a
+   bordered foot holding the one action that undoes the rest. Every hairline
+   runs the full width of the rows, so the menu measures out on one edge. */
 .menu {
   position: absolute;
   top: calc(100% + 6px);
@@ -311,19 +321,23 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   padding: 8px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 10px;
   animation: pop 0.16s var(--ease) both;
 }
 .menu--wide { min-width: 212px; }
 
 .menu__label {
   margin: 5px 8px 4px;
-  font-size: 12px; font-weight: 700; letter-spacing: -0.005em;
+  font-size: 12px; font-weight: 700; letter-spacing: -0.01em;
   color: var(--text-3);
 }
-.menu__label--sep {
-  margin-top: 8px;
-  padding-top: 9px;
+/* Drawn on a pseudo element so it can reach back out to the row edge, which
+   the label's own box is inset from. */
+.menu__label--sep { margin-top: 10px; }
+.menu__label--sep::before {
+  content: "";
+  display: block;
+  margin: 0 -8px 10px;
   border-top: 1px solid var(--line-soft);
 }
 
@@ -333,20 +347,30 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   width: 100%; padding: 7px 8px;
   font: inherit; font-size: 14px;
   text-align: left;
-  background: none; border: 0; border-radius: 5px;
+  background: none; border: 0; border-radius: var(--radius);
   cursor: pointer;
+  transition: background 0.15s, color 0.15s;
 }
 .menu__item { color: var(--text); }
 .menu__item:hover,
 .menu__clear:hover { background: var(--hover); }
+.menu__item:active,
+.menu__clear:active { background: var(--press); }
 
 /* The tick keeps its space when hidden so labels stay aligned. */
 .menu__item > svg { font-size: 15px; color: var(--blue); opacity: 0; }
 .menu__item[aria-checked="true"] > svg { opacity: 1; }
 .menu__item[aria-checked="true"] { font-weight: 600; }
 
-.menu__foot { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--line-soft); }
-.menu__clear { font-size: 13.5px; color: var(--text-2); }
+/* A row of statuses reads as a list of words rather than as a column of
+   mostly empty tick boxes, so the tick goes to the far end and the labels
+   start where the menu does. */
+.menu__item--status { gap: 12px; }
+.menu__item--status > svg { order: 1; margin-left: auto; }
+
+.menu__foot { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+/* The ghost button's weight and colour, since that is what it is. */
+.menu__clear { font-size: 14px; font-weight: 500; color: var(--text-2); }
 .menu__clear:hover { color: var(--text); }
 
 /* ===============================================================
@@ -475,6 +499,22 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   white-space: nowrap;
 }
 .tag--year { font-variant-numeric: tabular-nums; }
+
+/* A status, in the colour its section wears. The board says a status with a
+   heading and never needs one of these; the sheet gives the status a column,
+   and this is what fills it. */
+.tag--accepted { --tone: var(--green); }
+.tag--progress { --tone: var(--amber); }
+.tag--applied  { --tone: var(--blue); }
+.tag--rejected { --tone: var(--red); }
+.tag--accepted,
+.tag--progress,
+.tag--applied,
+.tag--rejected {
+  font-weight: 600;
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 13%, transparent);
+}
 
 /* ===============================================================
    5. Emails inside an expanded row
@@ -984,13 +1024,6 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   font-weight: 600;
 }
 .tag--override > svg { font-size: 12px; }
-/* Which ending a closed row reached. The section header says it is closed;
-   this says which of the several endings that word covers. */
-.tag--outcome {
-  color: var(--muted);
-  background: color-mix(in srgb, var(--muted) 11%, transparent);
-  font-weight: 600;
-}
 /* Nothing has arrived for a season. Quiet on purpose: it is the absence of
    news rather than news, and it must not shout over a row that is live. */
 .tag--stale {
@@ -1075,3 +1108,232 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
    clip an open row menu. While one is open, let that section overflow: it is
    only ever open while the section is still. */
 .section:has(.item__menu-btn[aria-expanded="true"]) .section__body > ul { overflow: visible; }
+
+/* ===============================================================
+   Sheet design
+
+   The other of the two designs the button in the masthead swaps between.
+   Everything below is scoped under .sheet, so the board is untouched by it.
+
+   Drawn in the same hand as the board: hairlines rather than gridlines, no
+   box around the whole thing, and the board's own tag for a status. A grid
+   reads as a grid because its columns line up, not because it is fenced in,
+   and a fence would make a second window inside the page to scroll.
+   =============================================================== */
+.sheet {
+  margin-top: 52px;
+  animation: fade 0.45s var(--ease) both;
+}
+
+/* Sideways only, and only on a window too narrow to hold the columns. Nothing
+   here sets a height, so this never becomes a pane with a scrollbar of its
+   own: the page scrolls down the way every other page does. */
+.sheet__scroll { overflow-x: auto; }
+
+/* A row menu opens downward out of the last column, and the scroller would
+   cut it off below the last row. The board answers this by switching its
+   clipping off, which is not available here: this box is what keeps a wide
+   grid from dragging the page sideways. So the box gets room to open into,
+   and the sheet takes the same amount back off its bottom margin, leaving
+   everything below the grid where it was. 280px clears the tallest menu. */
+.sheet:has(.item__menu-btn[aria-expanded="true"]) { margin-bottom: -280px; }
+.sheet:has(.item__menu-btn[aria-expanded="true"]) .sheet__scroll { padding-bottom: 280px; }
+
+.sheet__grid {
+  /* The gap between one column and the next, named once because the headings
+     and the cells both set it, and a grid whose two halves disagree about it
+     reads as two grids.
+
+     It has to be stated rather than left to the table. A table shares spare
+     width out in proportion to what each column holds, so Company and Role
+     take nearly all of it and the seven short columns crowd together. */
+  --gap: 34px;
+
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* --- Headings ---------------------------------------------
+   The hairline the board draws under a section title, over labels at the
+   weight and colour its menus give one.
+
+   Every heading sits on its column's left edge, dates and counts included, so
+   the eye reads down one edge rather than hunting for the start of each
+   column. The figures still line up, because they are tabular. */
+.sheet__grid th {
+  padding: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  color: var(--text-3);
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+
+.sheet__sort,
+.sheet__label {
+  display: block;
+  width: 100%;
+  padding: 0 var(--gap) 13px 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+}
+/* Hover is carried by the text alone, as it is everywhere else on the page. */
+.sheet__sort { cursor: pointer; transition: color 0.15s; }
+.sheet__sort:hover { color: var(--text-2); }
+.sheet__sort.is-active { color: var(--text); }
+.sheet__arrow {
+  display: inline-block;
+  margin-left: 5px;
+  font-size: 12px;
+  vertical-align: -1px;
+  color: var(--blue);
+}
+
+/* --- The numbered gutter ----------------------------------
+   The row's place on screen rather than a name for it: sort the grid and 1 is
+   still the top line. Quiet, because it is scaffolding rather than
+   information. The 1% is how a table is told that a column should be no wider
+   than the widest thing in it. */
+.sheet__gutter {
+  width: 1%;
+  padding-right: 18px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+  user-select: none;
+}
+
+/* --- Rows and cells ----------------------------------------
+   The row carries the text colour and the cells inherit it, so a column with
+   a colour of its own can say so without out specifying the default. */
+.sheet__row { color: var(--text-2); cursor: pointer; }
+.sheet__row > td {
+  padding: 12px var(--gap) 12px 0;
+  border-bottom: 1px solid var(--line-soft);
+  transition: color 0.15s, background 0.15s;
+}
+.sheet__grid tbody > tr:last-child > td { border-bottom: 0; }
+
+/* The gutter and the menu are scaffolding rather than columns of content, so
+   they keep their own gap. Both have to out specify the rule above, which
+   reaches its cells through the element name. */
+.sheet__row > .sheet__gutter { padding-right: 18px; }
+.sheet__row > .sheet__menu { padding-right: 0; }
+
+/* The board's rows answer the pointer with their text alone, because a filled
+   band would be the loudest thing on a page of words. A grid is not that page:
+   ten columns is further than the eye carries a line unaided, so the row is
+   banded as well, in the same faint wash every other hover uses. */
+.sheet__row:hover,
+.sheet__row:focus-visible { color: var(--text); }
+.sheet__row:hover > td,
+.sheet__row:focus-visible > td { background: var(--hover); }
+.sheet__row:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+
+/* An opened row and the drawer under it are one thing, so no line is drawn
+   between them. The drawer closes the pair off instead. */
+.sheet__row.is-open > td { border-bottom-color: transparent; }
+
+.sheet__row.is-hidden > td { opacity: 0.55; }
+
+/* Company is the column the eye lands in, and it is given exactly what the
+   board gives it: the weight, and an underline that comes up out of the
+   hairline it rests at when the row is under the pointer. */
+.sheet__company-cell { color: var(--text); }
+.sheet__company {
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+  transition: text-decoration-color 0.15s;
+}
+.sheet__row:hover .sheet__company { text-decoration-color: var(--text-3); }
+
+.sheet__chevron {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  margin-right: 2px;
+  font-size: 15px;
+  color: var(--text-3);
+  vertical-align: -3px;
+  transition: transform 0.22s var(--ease), color 0.15s;
+}
+.sheet__row.is-open .sheet__chevron { transform: rotate(90deg); color: var(--text-2); }
+.sheet__row:hover .sheet__chevron { color: var(--text); }
+
+/* Cut short, because a role is the one cell with nothing bounding its
+   length. An inline block caps its own width, which a cell in a table laid
+   out from its contents cannot be relied on to do. */
+.sheet__role {
+  display: inline-block;
+  max-width: 26ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+/* Dates are the quietest thing in the row, as they are in a drawer. */
+.sheet__date { color: var(--text-3); }
+.sheet__row:hover > .sheet__date { color: var(--text-2); }
+
+/* Nothing has arrived for a season. Marked on the date, because that is the
+   cell the fact is about, and quietly, because it is the absence of news. */
+.sheet__date.is-stale {
+  text-decoration: underline dashed;
+  text-decoration-color: color-mix(in srgb, var(--text-3) 55%, transparent);
+  text-underline-offset: 4px;
+}
+
+/* Set by hand rather than read out of an email. The same tick the board puts
+   on its override tag, with no room here for the label beside it. */
+.sheet__override {
+  display: inline-block;
+  margin-left: 7px;
+  font-size: 13px;
+  vertical-align: -2px;
+  color: var(--blue);
+}
+
+/* --- The menu at the end of a row -------------------------- */
+.sheet__menu { width: 1%; padding-right: 0; }
+.sheet__menu .item__menu-wrap { display: flex; justify-content: flex-end; }
+.sheet__row:hover .item__menu-btn,
+.sheet__menu .item__menu-btn:focus-visible,
+.sheet__menu .item__menu-btn[aria-expanded="true"] { opacity: 1; }
+
+/* --- The drawer under an opened row -------------------------
+   One cell spanning the grid, which is how a sheet shows a group opened out
+   under its line. The list inside is the board list, so an email reads the
+   same in both designs. */
+.sheet__drawer { padding: 2px var(--gap) 14px 0; }
+.sheet__drawer .emails { margin: 0; padding: 2px 0 2px 22px; }
+.sheet__drawer-row > td { border-bottom: 1px solid var(--line-soft); }
+
+/* Read out but not drawn: the two headings a grid needs and a sighted reader
+   already has from the shape of it. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* On a narrow screen the grid keeps its columns and scrolls sideways, rather
+   than folding into something that is no longer a sheet. */
+@media (max-width: 620px) {
+  .sheet { margin-top: 28px; }
+  .sheet__grid { --gap: 22px; font-size: 13.5px; }
+  .sheet__row > td { padding-top: 11px; padding-bottom: 11px; }
+}

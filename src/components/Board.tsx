@@ -1,71 +1,11 @@
 "use client";
 
-import {
-  Ban,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  CircleCheck,
-  Clock,
-  CornerDownRight,
-  Ellipsis,
-  Eye,
-  EyeOff,
-  List,
-  Mail,
-  RotateCcw,
-} from "lucide-react";
+import { Ban, Check, ChevronDown, ChevronRight, CircleCheck, Clock, List } from "lucide-react";
+import EmailList from "./EmailList";
 import Highlight from "./Highlight";
-import MenuItem from "./MenuItem";
-import { SECTIONS, formatDate, type ApplicationView, type EmailView } from "@/lib/view";
-import { OUTCOME_LABELS, STAGE_LABELS, STATUSES, STATUS_LABELS, type Status } from "@/lib/constants";
-
-/** The anchor itself, which a parent line and a child line draw identically. */
-function EmailAnchor({
-  email,
-  query,
-  icon: Icon,
-}: {
-  email: EmailView;
-  query: string;
-  icon: React.ElementType;
-}) {
-  return (
-    <a href={email.href} target="_blank" rel="noopener noreferrer">
-      <Icon className="lucide" />
-      <span className="email__title">
-        <Highlight text={email.title} query={query} />
-      </span>
-      <span className="email__date">{formatDate(email.date)}</span>
-    </a>
-  );
-}
-
-/**
- * One line of a drawer, and the lines shown under it. The tree is one level
- * deep by construction, so this renders children directly rather than calling
- * itself: a grandchild has no meaning to draw.
- *
- * A nested line carries no chip saying what kind of report it is. The title
- * already says it, and a notice sent three times reads as three identical
- * lines, which is exactly what happened.
- */
-function EmailLine({ email, query }: { email: EmailView; query: string }) {
-  return (
-    <li className="email">
-      <EmailAnchor email={email} query={query} icon={Mail} />
-      {email.children.length ? (
-        <ul className="emails emails--nested">
-          {email.children.map((child) => (
-            <li className="email email--child" key={child.id}>
-              <EmailAnchor email={child} query={query} icon={CornerDownRight} />
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </li>
-  );
-}
+import RowMenu from "./RowMenu";
+import { SECTIONS, type ApplicationView, type Row, type RowHandlers } from "@/lib/view";
+import { STAGE_LABELS, STATUSES, STATUS_LABELS, type Status } from "@/lib/constants";
 
 const SECTION_ICONS: Record<Status, React.ElementType> = {
   ACCEPTED: CircleCheck,
@@ -74,20 +14,11 @@ const SECTION_ICONS: Record<Status, React.ElementType> = {
   REJECTED: Ban,
 };
 
-export type Row = { app: ApplicationView; viaEmail: boolean };
-
-type BoardProps = {
+type BoardProps = RowHandlers & {
   rows: Row[];
   totals: Record<Status, number>;
-  query: string;
-  open: Set<number>;
   collapsed: Set<Status>;
-  menuFor: number | null;
-  onToggleRow: (id: number) => void;
   onToggleSection: (key: Status) => void;
-  onToggleMenu: (id: number | null) => void;
-  onHide: (application: ApplicationView, hidden: boolean) => void;
-  onSetStatus: (application: ApplicationView, status: Status | null) => void;
 };
 
 export default function Board(props: BoardProps) {
@@ -159,15 +90,10 @@ function ApplicationRow({
   onToggleMenu,
   onHide,
   onSetStatus,
-}: {
+}: Omit<RowHandlers, "open" | "menuFor"> & {
   application: ApplicationView;
   open: boolean;
-  query: string;
   menuOpen: boolean;
-  onToggleRow: (id: number) => void;
-  onToggleMenu: (id: number | null) => void;
-  onHide: (application: ApplicationView, hidden: boolean) => void;
-  onSetStatus: (application: ApplicationView, status: Status | null) => void;
 }) {
   return (
     <li
@@ -206,13 +132,6 @@ function ApplicationRow({
                 {STAGE_LABELS[application.stageDetail]}
               </span>
             ) : null}
-            {/* Which ending it was. The section already says the row is closed,
-                so this says the one thing the section cannot: whether the
-                employer turned it down, whether the applicant walked away, or
-                whether an offer was taken back. */}
-            {application.outcome ? (
-              <span className="tag tag--outcome">{OUTCOME_LABELS[application.outcome]}</span>
-            ) : null}
             {/* Nothing has arrived for a season. No email said so, and none
                 ever will: it is a fact about the set rather than about any
                 message. */}
@@ -226,69 +145,18 @@ function ApplicationRow({
           </span>
         </button>
 
-        <div className="item__menu-wrap">
-          <button
-            className="item__menu-btn"
-            type="button"
-            aria-haspopup="true"
-            aria-expanded={menuOpen}
-            aria-label="Row Options"
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggleMenu(menuOpen ? null : application.id);
-            }}
-          >
-            <Ellipsis className="lucide" />
-          </button>
-
-          {menuOpen ? (
-            <div className="menu" role="menu" onClick={(event) => event.stopPropagation()}>
-              <button
-                className="menu__item"
-                role="menuitem"
-                onClick={() => onHide(application, !application.isHidden)}
-              >
-                {application.isHidden ? (
-                  <Eye className="lucide" style={{ opacity: 1 }} />
-                ) : (
-                  <EyeOff className="lucide" style={{ opacity: 1 }} />
-                )}
-                {application.isHidden ? "Show on the Board" : "Hide This Row"}
-              </button>
-
-              <p className="menu__label menu__label--sep">Set Status</p>
-              {STATUSES.map((status) => (
-                <MenuItem
-                  key={status}
-                  role="menuitemradio"
-                  checked={application.statusOverride === status}
-                  onClick={() => onSetStatus(application, status)}
-                >
-                  {STATUS_LABELS[status]}
-                </MenuItem>
-              ))}
-              <div className="menu__foot">
-                <button className="menu__clear" type="button" onClick={() => onSetStatus(application, null)}>
-                  <RotateCcw className="lucide" />
-                  Set Automatically from Emails
-                </button>
-              </div>
-            </div>
-          ) : null}
-        </div>
+        <RowMenu
+          application={application}
+          open={menuOpen}
+          onToggleMenu={onToggleMenu}
+          onHide={onHide}
+          onSetStatus={onSetStatus}
+        />
       </div>
 
       <div className="item__drawer">
         <div>
-          <ul className="emails">
-            {application.emails.length ? (
-              application.emails.map((email) => (
-                <EmailLine key={email.id} email={email} query={query} />
-              ))
-            ) : (
-              <li className="email__none">No Emails Yet.</li>
-            )}
-          </ul>
+          <EmailList emails={application.emails} query={query} />
         </div>
       </div>
     </li>

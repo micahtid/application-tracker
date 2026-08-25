@@ -1,4 +1,4 @@
-import { STATUS_LABELS, type Outcome, type StageDetail, type Status } from "@/lib/constants";
+import { STATUSES, STATUS_LABELS, type Outcome, type StageDetail, type Status } from "@/lib/constants";
 
 /** The board's shape, as the browser sees it. */
 export type EmailView = {
@@ -44,14 +44,42 @@ export const SECTIONS: { key: Status; label: string; modifier: string }[] = [
   { key: "REJECTED", label: STATUS_LABELS.REJECTED, modifier: "rejected" },
 ];
 
+/** The class a status is drawn in, which is the one its section wears. */
+export const STATUS_MODIFIERS = Object.fromEntries(
+  SECTIONS.map((section) => [section.key, section.modifier]),
+) as Record<Status, string>;
+
 export const SORTS = [
   { key: "company-asc", label: "Company · A to Z" },
   { key: "company-desc", label: "Company · Z to A" },
+  { key: "status", label: "Status" },
   { key: "recent", label: "Last Activity" },
   { key: "emails", label: "Most Emails" },
 ] as const;
 
 export type SortKey = (typeof SORTS)[number]["key"];
+
+/**
+ * Which design the rows are drawn in. Nothing else differs between the two:
+ * the search, the sort, the filters and the row menu are all the same, and a
+ * row left open in one is still open in the other.
+ */
+export const DESIGNS = ["board", "sheet"] as const;
+export type Design = (typeof DESIGNS)[number];
+
+/** One line on screen, and whether the search reached it through an email. */
+export type Row = { app: ApplicationView; viaEmail: boolean };
+
+/** Everything a row needs from whichever design is drawing it. */
+export type RowHandlers = {
+  query: string;
+  open: Set<number>;
+  menuFor: number | null;
+  onToggleRow: (id: number) => void;
+  onToggleMenu: (id: number | null) => void;
+  onHide: (application: ApplicationView, hidden: boolean) => void;
+  onSetStatus: (application: ApplicationView, status: Status | null) => void;
+};
 
 /** A set with the value removed if it was there, added if it was not. */
 export function toggled<T>(set: Set<T>, value: T): Set<T> {
@@ -112,6 +140,10 @@ export function sortApplications(
         return byCompany(a, b);
       case "company-desc":
         return byCompany(b, a);
+      case "status":
+        // Board order, so sorting by status in the sheet lays the rows out in
+        // the order the board would have drawn its sections.
+        return STATUSES.indexOf(a.status) - STATUSES.indexOf(b.status) || byCompany(a, b);
       case "emails":
         // Top level lines only, so a long exchange about one step cannot
         // outrank a row that really reached more of them.

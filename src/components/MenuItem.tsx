@@ -12,15 +12,23 @@ export default function MenuItem({
   role,
   checked,
   onClick,
+  className = "",
   children,
 }: {
   role: "menuitemradio" | "menuitemcheckbox";
   checked: boolean;
   onClick: () => void;
+  /** A modifier for a menu that lays its lines out differently. */
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <button className="menu__item" role={role} aria-checked={checked} onClick={onClick}>
+    <button
+      className={`menu__item${className ? " " + className : ""}`}
+      role={role}
+      aria-checked={checked}
+      onClick={onClick}
+    >
       <Check className="lucide" />
       {children}
     </button>

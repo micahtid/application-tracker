@@ -1,17 +1,31 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Eraser, Inbox, Palette, RefreshCw, Settings, TriangleAlert, Unplug, X } from "lucide-react";
-import Board, { type Row } from "./Board";
+import {
+  Eraser,
+  Inbox,
+  RefreshCw,
+  Rows3,
+  Settings,
+  Table,
+  TriangleAlert,
+  Unplug,
+  X,
+} from "lucide-react";
+import Board from "./Board";
+import Sheet from "./Sheet";
 import Toolbar from "./Toolbar";
 import SettingsModal, { type SettingsState } from "./SettingsModal";
 import ResetModal from "./ResetModal";
 import {
   matchQuery,
   passesFilters,
+  DESIGNS,
   sortApplications,
   toggled,
   type ApplicationView,
+  type Design,
+  type Row,
   type SortKey,
 } from "@/lib/view";
 import { STATUSES, type Provider, type Status } from "@/lib/constants";
@@ -93,6 +107,16 @@ type StateResponse = {
 const isoDay = (date: Date) => dayString(date, "-");
 
 /**
+ * Where the chosen design is kept between visits. The browser's own storage
+ * rather than the database, because it is a fact about the screen it is read
+ * on: the same account can want a sheet on a monitor and a board on a laptop.
+ */
+const DESIGN_KEY = "tracker.design";
+
+const isDesign = (value: string | null): value is Design =>
+  DESIGNS.includes(value as Design);
+
+/**
  * Every request this file makes, so a request that failed says what failed
  * rather than throwing where the body is parsed.
  *
@@ -138,6 +162,7 @@ export default function Tracker() {
   const [filters, setFilters] = useState({ season: new Set<string>(), year: new Set<string>() });
   const [open, setOpen] = useState<Set<number>>(new Set());
   const [collapsed, setCollapsed] = useState<Set<Status>>(new Set());
+  const [design, setDesign] = useState<Design>("board");
   const [toolbarMenu, setToolbarMenu] = useState<"sort" | "filter" | null>(null);
   const [rowMenu, setRowMenu] = useState<number | null>(null);
   const [showHidden, setShowHidden] = useState(false);
@@ -180,6 +205,29 @@ export default function Tracker() {
     },
     [setSync],
   );
+
+  /**
+   * The saved choice, read after the first paint rather than during it. The
+   * server cannot see this browser's storage, so reading it while rendering
+   * would have the markup it sends disagree with the markup the browser
+   * builds. The rest of the page arrives a moment later anyway.
+   */
+  useEffect(() => {
+    const saved = window.localStorage.getItem(DESIGN_KEY);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (isDesign(saved)) setDesign(saved);
+  }, []);
+
+  const chooseDesign = useCallback((next: Design) => {
+    setDesign(next);
+    // A browser set to refuse storage throws here. The design still changes;
+    // only the remembering is lost, so there is nothing to report.
+    try {
+      window.localStorage.setItem(DESIGN_KEY, next);
+    } catch {
+      /* nothing to do */
+    }
+  }, []);
 
   // The board draws from saved data immediately; syncing never blocks it.
   useEffect(() => {
@@ -347,6 +395,20 @@ export default function Tracker() {
 
   const progress = running && data?.sync ? syncProgress(data.sync) : null;
 
+  // What a row can do, which is the same in both designs, so it is written
+  // once here rather than at each of the two call sites.
+  const rowHandlers = {
+    query,
+    open,
+    menuFor: rowMenu,
+    onToggleRow: (id: number) => setOpen((current) => toggled(current, id)),
+    onToggleMenu: setRowMenu,
+    onHide: (application: ApplicationView, hidden: boolean) =>
+      void patchApplication(application.id, { isHidden: hidden }),
+    onSetStatus: (application: ApplicationView, status: Status | null) =>
+      void patchApplication(application.id, { statusOverride: status ?? "AUTO" }),
+  };
+
   return (
     <main className="app" role="application" aria-label="Internship Applications Tracker">
       <div className={`page${disconnected ? " is-disconnected" : ""}`}>
@@ -390,10 +452,22 @@ export default function Tracker() {
               <span className="masthead__rule" aria-hidden="true" />
 
               <div className="masthead__group">
-                {/* Nothing behind it yet. Disabled rather than hidden, so the
-                    row is the row it will be and does not shuffle later. */}
-                <button className="icon-btn" type="button" aria-label="Style" title="Style" disabled>
-                  <Palette className="lucide" />
+                {/* Swaps the two designs. The icon is the one being switched
+                    to, not the one on screen, because a toggle showing its own
+                    state reads as a button that would set it. */}
+                <button
+                  className="icon-btn"
+                  type="button"
+                  aria-pressed={design === "sheet"}
+                  aria-label={design === "board" ? "Switch to Sheet View" : "Switch to Board View"}
+                  title={design === "board" ? "Sheet View" : "Board View"}
+                  onClick={() => chooseDesign(design === "board" ? "sheet" : "board")}
+                >
+                  {design === "board" ? (
+                    <Table className="lucide" />
+                  ) : (
+                    <Rows3 className="lucide" />
+                  )}
                 </button>
                 <button
                   className="icon-btn"
@@ -523,23 +597,17 @@ export default function Tracker() {
               searchRef={searchRef}
             />
 
-            <Board
-              rows={rows}
-              totals={totals}
-              query={query}
-              open={open}
-              collapsed={collapsed}
-              menuFor={rowMenu}
-              onToggleRow={(id) => setOpen((current) => toggled(current, id))}
-              onToggleSection={(key) => setCollapsed((current) => toggled(current, key))}
-              onToggleMenu={setRowMenu}
-              onHide={(application, hidden) =>
-                void patchApplication(application.id, { isHidden: hidden })
-              }
-              onSetStatus={(application, status) =>
-                void patchApplication(application.id, { statusOverride: status ?? "AUTO" })
-              }
-            />
+            {design === "board" ? (
+              <Board
+                rows={rows}
+                totals={totals}
+                collapsed={collapsed}
+                onToggleSection={(key) => setCollapsed((current) => toggled(current, key))}
+                {...rowHandlers}
+              />
+            ) : (
+              <Sheet rows={rows} sort={sort} onSort={setSort} {...rowHandlers} />
+            )}
 
             {loaded && !rows.length ? (
               <p className="empty">
