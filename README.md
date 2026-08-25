@@ -1,341 +1,155 @@
-# Internship Applications Tracker
+<h1 align="center">Application Tracker</h1>
 
-A local first board that reads your Gmail and works out which applications you have running.
-Nothing leaves your machine except two calls you can name: Gmail, and whichever LLM provider
-you gave a key to.
+<p align="center">
+  A local board that reads your Gmail and works out which applications you have open.
+</p>
 
-`PRD.md` says what it does. `PLANNING.md` says why each decision was taken.
+<p align="center">
+  <img src="docs/board.png" alt="The board, with applications grouped by status" width="900">
+</p>
 
-**New here?** Do [First time setup](#first-time-setup) first. Until it is done the app runs, but the
-board is replaced by a Not Connected screen, because there is no inbox to read and no key to read it
-with.
+It runs on your machine at <http://127.0.0.1:3939>. Nothing leaves it but the Gmail API and
+whichever model provider you gave a key to.
 
-## Running it
+## Running It
 
-Double click **`start.bat`**. It installs anything missing, applies database migrations, builds
-once, then serves on <http://127.0.0.1:3939> and opens your browser.
+Double click **`start.bat`**. It installs what is missing, migrates, builds, serves, and opens your
+browser. For development, run `npm run dev`.
 
-For development instead: `npm run dev`.
+The first launch takes a minute or two. Later ones open straight away.
 
-The first launch takes a minute or two, since it installs dependencies and builds. Later launches
-open straight away.
+Two things not to change:
 
-The server binds to `127.0.0.1` on purpose. It has no login, so it must never listen on
-`0.0.0.0` where anyone on the same wireless network could read your inbox through it.
+- **The address.** The server binds to `127.0.0.1`. It has no login, so on `0.0.0.0` anyone on your
+  network could read your inbox.
+- **The Prisma version.** Version 7 drops the built in query engine for a driver adapter, which on
+  SQLite means compiling `better-sqlite3`. Avoiding that compile is why Prisma was chosen.
 
-**Prisma stays on version 6 deliberately.** Version 7 drops the built in query engine and wants a
-driver adapter, which on SQLite means `better-sqlite3`, a native module that has to compile. Avoiding
-exactly that is why Prisma was chosen (D21), so do not let an upgrade pull it in.
+## Setup
 
-## First time setup
+Three things, once. The Google part takes about fifteen minutes.
 
-Three things, once: a secret file that already exists, a Google OAuth client you create by hand,
-and an API key you paste into Settings. Budget about fifteen minutes for the Google part the first
-time. Nothing here recurs.
+### 1. The Secret File
 
-### 1. The secret file
+`.env.local` already exists, holding a fresh `APP_SECRET`. It is gitignored.
 
-`.env.local` was created for you with a fresh `APP_SECRET`. It is gitignored, and it is the one file
-worth backing up separately: without it the saved API key cannot be decrypted. Losing it is not a
-disaster, you just paste the key in again.
+Back it up. Without it the saved API key cannot be decrypted, though the fix is only to paste the
+key in again.
 
-You will add two more lines to it in step 2.7 below.
+### 2. A Google OAuth Client
 
-### 2. A Google OAuth client
+Google only reads a Gmail inbox for an app registered as a project you own. These steps make that
+registration. Nothing in it is published or reviewed, and you are its only user.
 
-Google will not let an app read a Gmail inbox unless that app is registered as a project you own.
-You are making that registration. Nothing in it is published, reviewed, or shared, and you are the
-only user it will ever have.
+Consent screen setup lives under **Google Auth Platform**. Older guides call the same pages
+*APIs & Services > OAuth consent screen*.
 
-By the end you will have: a project, the Gmail API turned on, an OAuth app that is **published** and
-**unverified**, one read only scope, and a client ID and secret sitting in `.env.local`.
+1. **Create the project.** [Google Cloud Console](https://console.cloud.google.com/) > project
+   picker > **New project**. Name it anything.
 
-> **Where things live.** Google moved consent screen setup out of *APIs & Services* into a section
-> called **Google Auth Platform**. Older guides that tell you to open *APIs & Services → OAuth
-> consent screen* are describing the same settings under their previous name.
+   Check the picker now shows it. Configuring the wrong project is the usual way this goes sideways.
 
-#### 2.1 Create a project
+2. **Enable the Gmail API.**
+   ☰ > **APIs & Services** > **Library** > **Gmail API** > **Enable**.
 
-1. Open the [Google Cloud Console](https://console.cloud.google.com/).
-2. Click the project picker in the top bar, then **New project**.
-3. Give it a name only you will read, such as `applications-tracker`. Leave the organisation alone.
-4. Click **Create**, then make sure the picker now shows that project. Everything below applies to
-   whichever project is selected, and configuring the wrong one is the most common way this goes
-   sideways.
+   Skip this and sign in still works, while every sync fails with
+   `Gmail API has not been used in project`.
 
-#### 2.2 Turn on the Gmail API
+3. **Set up the consent screen.**
+   ☰ > **Google Auth Platform** > **Branding** > **Get started**.
 
-1. Menu (☰) → **APIs & Services** → **Library**.
-2. Search for **Gmail API**, open it, and click **Enable**.
+   Give an app name and your email, choose **Audience: External**, add your email again for
+   contacts, agree, then **Create**. Internal is only for a Workspace organisation.
 
-Without this, sign in still works and every sync fails with `Gmail API has not been used in project`.
+4. **Add the Gmail scope.**
+   **Data access** > **Add or remove scopes** > **Manually add scopes**.
 
-#### 2.3 Set up the OAuth app
+   Paste `https://www.googleapis.com/auth/gmail.readonly`, then **Add to table**, tick it,
+   **Update**, **Save**.
 
-1. Menu (☰) → **Google Auth Platform** → **Branding**.
-2. Click **Get started**. (This appears only the first time. If the project is already configured
-   you will land straight on the Branding page, and can skip to 2.4.)
-3. **App information** — **App name**: what you will see on the consent screen, such as
-   `Applications Tracker`. **User support email**: your own address. → **Next**
-4. **Audience** — choose **External**. Internal exists only inside a Google Workspace organisation,
-   and a personal Gmail account cannot use it. → **Next**
-5. **Contact information** — your email again, for Google's notices about the project. → **Next**
-6. **Finish** — tick **I agree to the Google API Services: User Data Policy**, then **Continue** and
-   **Create**.
+   `gmail.readonly` is restricted, so it usually will not appear in the table on its own. It should
+   end up your only restricted scope. The sign in basics need no adding. Nothing here can send,
+   delete, or alter mail.
 
-#### 2.4 Add the Gmail read scope
+5. **Publish the app.** **Audience** > **Publish app**.
 
-1. **Google Auth Platform** → **Data access**.
-2. Click **Add or remove scopes**. A panel opens with a filterable table of scopes.
-3. `gmail.readonly` is a **restricted** scope and often will not show up in that table. Scroll to
-   **Manually add scopes**, paste the line below, and click **Add to table**:
+   **Do not skip this.** While an external app sits in Testing, Google expires its refresh token
+   after seven days, so the app quietly stops reading your mail every week.
 
-   ```
-   https://www.googleapis.com/auth/gmail.readonly
-   ```
+   Publishing submits nothing for review. The app stays unverified, which costs one "Google hasn't
+   verified this app" screen and a cap of 100 users. Verifying a restricted scope means a third
+   party security assessment, which costs months and real money.
 
-4. Tick it, click **Update**, then **Save** on the Data access page.
-5. Confirm it now appears under **Your restricted scopes**, and that it is the only one there. The
-   sign in basics (`openid`, `userinfo.email`, `userinfo.profile`) need no adding: the app asks for
-   them during sign in, and they are only how it learns which mailbox it just connected to.
-
-This scope is read only. There is no scope here that can send, delete, or alter mail, and the app
-never asks for one.
-
-#### 2.5 Publish the app
-
-1. **Google Auth Platform** → **Audience**.
-2. Under **Publishing status** it will say **Testing**. Click **Publish app**, then confirm.
-3. It should now read **In production**.
-
-**Do not skip this.** While an external app sits in Testing, Google expires its refresh tokens after
-**seven days**, so the app would quietly stop reading your mail every week and send you back to the
-Reconnect screen. Publishing removes that expiry. This is decision D1 in `PLANNING.md`.
-
-Publishing does **not** submit anything for review. Your app stays unverified, which has exactly two
-consequences, both fine here:
-
-- Every person who signs in sees a **"Google hasn't verified this app"** screen once. That is you,
-  once.
-- An unverified app is capped at 100 users in total. You are one.
-
-Getting verified for a restricted scope means a third party security assessment (CASA), which takes
-months and costs real money. That is out of scope for a tool with one user, on purpose.
-
-#### 2.6 Create the client
-
-1. **Google Auth Platform** → **Clients** → **Create client**.
-2. **Application type**: **Web application**.
-3. **Name**: anything, it is only shown in the console.
-4. Under **Authorized redirect URIs**, click **Add URI** and paste this exactly:
+6. **Create the client.** **Clients** > **Create client** > **Web application**. Under
+   **Authorized redirect URIs** paste this exactly, then copy the ID and secret:
 
    ```
    http://127.0.0.1:3939/api/auth/google/callback
    ```
 
-   Exactly means exactly: `http` not `https`, `127.0.0.1` not `localhost` (Google treats them as
-   different origins), port `3939`, and no trailing slash. A single character off and sign in ends
-   at a `redirect_uri_mismatch` error page.
+   Exactly means `http` not `https`, `127.0.0.1` not `localhost` (different origins to Google),
+   port 3939, and no trailing slash. One character off ends sign in at `redirect_uri_mismatch`.
 
-5. Click **Create**. A dialog shows **Client ID** and **Client secret**. Copy both now, or click
-   **Download JSON**. You can reopen them later from the client's row on the Clients page.
+7. **Fill in `.env.local`.** Then restart the app, since the file is only read at boot:
 
-#### 2.7 Put them in `.env.local`
+   ```
+   GOOGLE_CLIENT_ID="1234567890-abcdefg.apps.googleusercontent.com"
+   GOOGLE_CLIENT_SECRET="GOCSPX-…"
+   GOOGLE_REDIRECT_URI="http://127.0.0.1:3939/api/auth/google/callback"
+   ```
 
-```
-GOOGLE_CLIENT_ID="1234567890-abcdefg.apps.googleusercontent.com"
-GOOGLE_CLIENT_SECRET="GOCSPX-…"
-GOOGLE_REDIRECT_URI="http://127.0.0.1:3939/api/auth/google/callback"
-```
+   Moving off port 3939 means changing four places: this file, the redirect URI in step 6, the
+   `dev` and `start` scripts, and the URL `start.bat` opens. Sign in breaks the moment two disagree.
 
-`GOOGLE_REDIRECT_URI` is already in the file and only needs changing if you move off port 3939. Move
-it everywhere or nowhere: this line, the **Authorized redirect URIs** entry from 2.6, the `dev` and
-`start` scripts in `package.json`, and the URL `start.bat` opens. Sign in breaks the moment two of
-them disagree.
+8. **Sign in.** Settings > **Sign in** > pick the account > **Advanced**, then
+   **Go to {your app} (unsafe)**, which means unreviewed by Google rather than unsafe to you.
 
-**Restart the app.** `.env.local` is read at boot, so a running server will not pick up the change,
-and Settings will keep telling you no Google client is configured.
-
-#### 2.8 Sign in
-
-1. Open the app, then **Settings** → **Sign in**.
-2. Pick the Google account whose mail you want read.
-3. On **"Google hasn't verified this app"**, click **Advanced**, then
-   **Go to {your app name} (unsafe)**. This is the screen from 2.5, and "unsafe" here means
-   "unreviewed by Google", not "unsafe to you": the app is on your machine, you built it, and the
-   scope is read only.
-4. On the permission screen, **make sure the Gmail checkbox is ticked** before **Continue**. Google
-   lets you approve sign in while declining the mail scope, and the result is an app that looks
-   connected and fails on every sync with an insufficient scopes error.
-
-You land back on the board, and the first sync starts.
+   **Tick the Gmail checkbox** before Continue. Google lets you approve sign in while declining the
+   mail scope, which leaves the app looking connected and failing every sync.
 
 ### 3. Settings
 
-Open Settings and fill in three things:
+Fill in three fields:
 
-- **Gmail Account** — sign in, as above.
-- **API Key** — from OpenRouter, Anthropic, or Gemini. **There is nothing to choose:** the provider
-  is read off the key, since each stamps its own prefix (`sk-or-`, `sk-ant-`, `AIza`), and there is
-  no model selector either, because each provider ships with one chosen model. **Check** calls that
-  provider's model list endpoint, which is free, needs a working key, and confirms the model still
-  exists; once it passes, the line under the field names the provider and model you will be using.
-- **Read Emails From** — a start date, capped at 12 months ago.
+- **Gmail Account.** Sign in, as above.
+- **API Key.** From OpenRouter, Anthropic, or Gemini. Nothing else to choose: the provider is read
+  off the key prefix (`sk-or-`, `sk-ant-`, `AIza`), and each ships with one model.
+- **Read Emails From.** A start date, capped at 12 months back.
 
-Logging out clears the saved API key along with the account, since a key with no mailbox to read is
-of no use. Your downloaded emails and their classifications survive it, so signing back in does not
-pay for the backfill twice.
+**Check** calls the provider's model list, which is free, and confirms the key works and the model
+exists.
 
-Save, and the first sync starts. It reads roughly 250 emails and classifies each one, which takes
-a few minutes and costs about 20 cents. Every sync after that reads only what is new.
+Save, and the first sync starts. It reads roughly 250 emails, takes a few minutes, and costs about
+20 cents. Every sync after that reads only what is new.
 
-### When sign in goes wrong
+Logging out clears the saved key with the account. Downloaded emails and their classifications
+survive, so signing back in does not pay for that first sync twice.
 
-| What you see | What it means | The fix |
-|---|---|---|
-| `redirect_uri_mismatch` | The URI in the console is not character for character the one the app sent | Re-read 2.6. Usually `localhost` instead of `127.0.0.1`, a trailing slash, or the wrong port |
-| `invalid_client` or "The OAuth client was not found" | The ID or secret is wrong, or belongs to a different project | Re-copy both from the Clients page, then restart the app |
-| `access_denied` | You closed the consent screen, or the app is still in Testing and you are not on its test user list | Publish the app (2.5), or add yourself under **Audience → Test users** |
-| "Gmail API has not been used in project …" | The API was never enabled | Step 2.2, then wait a minute for it to take effect |
-| "Request had insufficient authentication scopes" (403) | The Gmail checkbox was left unticked at consent | Settings → **Log out**, then **Sign in** again and tick it (2.8). Logging out also clears the saved API key, so have it to hand |
-| The board keeps showing **Reconnect Gmail** | The refresh token was rejected | Sign in again. Google invalidates it when you revoke access, when you change your Google password (it holds Gmail scopes), after six months unused, or if the app is still in Testing |
-| Settings says no Google client is configured | `.env.local` was edited while the server was running, or the values are empty | Save the file and restart |
+## What Each Provider Costs
 
-To revoke this app's access entirely, use
-[your Google account's third party access page](https://myaccount.google.com/connections). The app
-holds nothing you cannot take back from there.
+Each provider ships with one model, priced per million tokens:
 
-## What each provider costs
-
-| Provider | Model | Input / MTok | Output / MTok |
+| Provider | Model | Input | Output |
 |---|---|---|---|
 | OpenRouter | `google/gemini-3.7-flash` | $0.375 | $1.875 |
 | Anthropic | `claude-haiku-4-5` | $1.00 | $5.00 |
 | Gemini | `gemini-3.7-flash` | $0.75 | $3.75 |
 
-The running total is in Settings, for all time, and is never reset. Where a provider reports the
-real cost on the response, as OpenRouter does, that figure is used instead of our own estimate.
+Settings shows the running total for all time and never resets it. Where a provider reports the real
+cost, as OpenRouter does, that figure replaces the estimate.
 
-## Forcing a fresh classification pass
+## When Sign In Goes Wrong
 
-Every result the model gives is saved and never re-requested. When you change the prompt, the junk
-filter, or the chosen model, raise `CLASSIFIER_VERSION` in `src/lib/constants.ts`. The next sync
-then re-reads every cached email, for the price of one backfill. This is deliberate rather than
-automatic: without it, results from an old prompt would sit silently beside results from a new one.
+| Symptom | Cause | Fix |
+|---|---|---|
+| Sign in fails with `redirect_uri_mismatch`. | The console URI does not exactly match the one the app sent. | Redo step 6. The culprit is usually `localhost` instead of `127.0.0.1`, a trailing slash, or the wrong port. |
+| Sign in fails with `invalid_client`, or says the OAuth client was not found. | The ID or secret is wrong, or belongs to another project. | Re-copy both from the Clients page, then restart the app. |
+| Sign in fails with `access_denied`. | You closed the consent screen, or you are not a test user on an app still in Testing. | Publish the app in step 5, or add yourself under **Audience > Test users**. |
+| A sync fails with `Gmail API has not been used in project …`. | The API was never enabled. | Redo step 2, then wait a minute. |
+| A sync fails with a 403, `Request had insufficient authentication scopes`. | The Gmail checkbox was left unticked at consent. | Settings > **Log out**, then sign in again and tick it. This also clears the saved API key, so have it ready. |
+| The board keeps showing **Reconnect Gmail**. | The refresh token was rejected. | Sign in again. Google rejects the token after revoked access, a password change, six months idle, or an app left in Testing. |
+| Settings says to add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to `.env.local`. | `.env.local` changed while the server was running, or its values are empty. | Save the file and restart the app. |
 
-## Checking your work
-
-```
-npm run check
-```
-
-**This is the one command to run after touching anything.** It is the whole gate, in order: the type
-checker, the linter, the pipeline fixtures, and the adapter tests. Nothing is committed without it.
-
-The type checker covers `scripts` as well as `src`, because `tsconfig.json` includes `**/*.mts` and
-the loop scripts import straight out of `src/lib`. A changed signature in the library breaks the
-harness loudly rather than quietly. That is deliberate, so do not narrow the include to make a
-refactor easier.
-
-The four parts can also be run on their own:
-
-| Command | What it does |
-|---|---|
-| `npm run typecheck` | `tsc --noEmit` over `src`, `scripts` and the app |
-| `npm run lint` | ESLint, with the Next.js rules for hooks and accessibility |
-| `npm run check:pipeline` | stages 4 and 5 over made up emails in a throwaway database |
-| `npm run check:adapters` | the three provider adapters, with no network |
-
-`check:pipeline` asserts the behaviours that cannot be seen by looking at the board: two emails from
-one company make one row, a rejection arriving after an interview wins, a scheduling reply writes no
-status, identity comes from the oldest email, and running the whole thing again changes nothing. It
-never calls Gmail or a model.
-
-Classifier accuracy itself is measured by the loop harness below, and reviewed by hand in Prisma
-Studio.
-
-**A note on the linter.** `eslint.config.mjs` writes out the rules `eslint-config-next` bundles
-rather than importing that config, because importing it loads `typescript-eslint`, which refuses to
-start against the TypeScript 7 this project builds with. Everything the production checklist asks
-for still runs. Fold the two imports back in once typescript-eslint supports TypeScript 7.
-
-## The loop harness
-
-`scripts/loop/` is a measurement harness for the matching and classification rules. It exists
-because the only honest way to know whether a rule change helped is to label a mailbox by hand once
-and then score every later change against those labels.
-
-It never writes to your real database. `npm run loop:snapshot` copies it to `loop/work.db`, and
-every later command works on that copy. Everything the harness produces stays under `loop/`, which
-is gitignored.
-
-Start with `npm run loop:snapshot`, then:
-
-| Command | What it does |
-|---|---|
-| `loop:review` | writes the labelling sheet, filled in with what the pipeline currently believes |
-| `loop:label` | reads the edited sheet back into the two label files |
-| `loop:replay` | regroups the whole message set from the cached model answers, free, about two seconds |
-| `loop:reclassify` | runs classification again over chosen messages, then replays. **The only command that costs money** |
-| `loop:score` | compares the rebuilt board to the labels and writes the scorecard |
-| `loop:diff` | what changed since the last replay, row by row |
-| `loop:ratchet` | raises every floor the last scored pass earned, so a metric can never quietly fall back |
-| `loop:intake-audit` | samples the mailbox for application mail the search never asked for |
-| `check:nouns` | fails if a company name or sender domain from your mailbox appears in the diff |
-
-The everyday cycle is `loop:replay`, `loop:score`, `loop:diff`. Scores are reported twice, over a
-60% tune split and a 40% holdout that is never looked at while a change is being designed, so a
-change that moves one and not the other is fitted to this mailbox rather than right.
-
-## Looking at the data
-
-```
-npm run db:studio
-```
-
-Prisma Studio is how classifier accuracy gets reviewed by hand: sort `email_messages` by
-`confidence_score`, or look at what the prefilter marked `SKIPPED_PREFILTER` and why.
-
-## Layout
-
-```
-prisma/schema.prisma      the database
-src/lib/gmail/            sweeping, fetching, MIME walking, body cleaning
-src/lib/llm/              one adapter per provider, one shared output schema
-src/lib/pipeline/         the five stages: fetch, classify, match, recompute, sync
-src/app/api/              the routes the browser talks to
-src/components/           the board, the toolbar, settings
-scripts/loop/             the measurement harness, see above
-prototype/                the original static prototype, kept as the visual reference
-```
-
-**`AGENTS.md` is written by `next dev`, not by hand.** It is regenerated on every run, so an edit to
-it is undone the next time the dev server starts. The generator lives at
-`node_modules/next/dist/server/lib/generate-agent-files.js`.
-
-## What this app deliberately does not have
-
-Each of these is on the Next.js production checklist and each is a decision here rather than an
-oversight.
-
-- **No Content Security Policy.** The app binds to `127.0.0.1`, serves one person, and loads no
-  third party code.
-- **No sitemap, robots file, or social images.** Nothing is public and nothing is crawled.
-- **No image component.** The app ships no images.
-- **Fonts are already handled.** `layout.tsx` uses the font module, so Figtree is self hosted at
-  build time and the app fetches nothing at runtime.
-- **Reduced motion is already handled.** `globals.css` turns off every animation and shortens every
-  transition when the reader asks for less motion.
-
-## Before shipping a change
-
-```
-npm run check
-npm run build
-npm start
-```
-
-The production build enforces things the type checker does not, especially around the boundary
-between server and client code. Note that this version of Next.js removed the size and First Load JS
-columns from the build report because they were inaccurate; measure the front end with Lighthouse in
-a private window instead.
+To revoke access entirely, use your
+[Google account's third party access page](https://myaccount.google.com/connections). It holds
+nothing you cannot take back.
