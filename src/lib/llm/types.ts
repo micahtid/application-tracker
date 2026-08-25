@@ -26,14 +26,14 @@ export type Classification = {
    * field. Null and UPDATE are different states: UPDATE is an answer meaning
    * "none of the others fits", null is no answer at all, and the display shows
    * the model's own words rather than a standard phrase when it has neither
-   * this nor a stage (LOOP3 Decision 7).
+   * this nor a stage.
    */
   emailEvent: EmailEvent | null;
   /**
    * Which ending this email announced, or null on the great majority that
-   * announce none (LOOP4 Decision 7). Null is also what an answer given before
-   * the field existed reads as, which is right: it says nothing rather than
-   * claiming an ending nobody stated.
+   * announce none. Null is also what an answer given before the field existed
+   * reads as, which is right: it says nothing rather than claiming an ending
+   * nobody stated.
    */
   outcome: Outcome | null;
   /**
@@ -68,7 +68,7 @@ export type ProviderAdapter = {
   checkKey(apiKey: string): Promise<{ ok: true } | { ok: false; message: string }>;
   classify(apiKey: string, system: string, user: string): Promise<ClassifyResult>;
   /**
-   * One structured question that is not a classification (LOOP4 Decision 6).
+   * One structured question that is not a classification.
    *
    * The classification schema is the shape of an answer about one email read
    * alone. Matching is nothing but context, so the adjudicator asks a different
@@ -86,7 +86,7 @@ export type ProviderAdapter = {
 };
 
 /**
- * A structured answer that does not parse (LOOP Invariant 7).
+ * A structured answer that does not parse.
  *
  * Its own kind of failure, not a transport one. Repeating the identical
  * request reproduces the identical cut, so the fix is a larger output cap
@@ -130,6 +130,17 @@ export async function attemptClassify(
 export type Rates = { inputPerMTok: number; outputPerMTok: number };
 
 /**
+ * What a call cost at those rates. Every adapter prices its calls here, so a
+ * change to how cost is worked out reaches all of them at once.
+ */
+export function costOf(rates: Rates, inputTokens: number, outputTokens: number): number {
+  return (
+    (inputTokens / 1_000_000) * rates.inputPerMTok +
+    (outputTokens / 1_000_000) * rates.outputPerMTok
+  );
+}
+
+/**
  * One answer, parsed and priced. A provider that reports its own cost is
  * believed over our sum; the others are priced from the rates beside the model.
  */
@@ -142,9 +153,7 @@ export function classifyResult(args: {
   reportedCostUsd?: number | null;
 }): ClassifyResult {
   const { model, rates, raw, inputTokens, outputTokens } = args;
-  const summed =
-    (inputTokens / 1_000_000) * rates.inputPerMTok +
-    (outputTokens / 1_000_000) * rates.outputPerMTok;
+  const summed = costOf(rates, inputTokens, outputTokens);
 
   return {
     classification: parseRaw(raw),

@@ -1,5 +1,5 @@
 /**
- * What the search never asked for (LOOP4 Decision 9 and Invariant 10).
+ * What the search never asked for.
  *
  * > Recall is measured against the mailbox, not against the subset the search
  * > returned.
@@ -32,15 +32,15 @@ import {
   readJson,
   writeJson,
 } from "./common.mts";
-import { authorizedClient, gmailFor } from "../../src/lib/gmail/client.ts";
-import { buildQueries } from "../../src/lib/gmail/query.ts";
-import { extractBody, headerValue, parseSender } from "../../src/lib/gmail/body.ts";
-import { prefilter } from "../../src/lib/prefilter.ts";
-import { decryptSecret } from "../../src/lib/crypto.ts";
-import { adapterFor } from "../../src/lib/llm/index.ts";
-import type { Provider } from "../../src/lib/constants.ts";
-import { SYSTEM_PROMPT, buildUserContent } from "../../src/lib/llm/prompt.ts";
-import { MAX_MONTHS_BACK } from "../../src/lib/constants.ts";
+import { authorizedClient, gmailFor } from "@/lib/gmail/client";
+import { buildQueries } from "@/lib/gmail/query";
+import { extractBody, headerValue, parseSender } from "@/lib/gmail/body";
+import { prefilter } from "@/lib/prefilter";
+import { decryptSecret } from "@/lib/crypto";
+import { adapterFor } from "@/lib/llm";
+import type { Provider } from "@/lib/constants";
+import { SYSTEM_PROMPT, buildUserContent } from "@/lib/llm/prompt";
+import { MAX_MONTHS_BACK } from "@/lib/constants";
 
 const budget = Number(arg("budget"));
 if (!Number.isFinite(budget) || budget <= 0) {

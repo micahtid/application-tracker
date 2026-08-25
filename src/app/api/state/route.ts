@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { connectionState } from "@/lib/settings";
+import { connectionState, earliestStartDate } from "@/lib/settings";
+import { dayString } from "@/lib/text";
 import { googleConfigured } from "@/lib/gmail/client";
 import { currentRun } from "@/lib/pipeline/sync";
 import { PROVIDER_LABELS } from "@/lib/llm";
 
 export const dynamic = "force-dynamic";
 
-/** Everything the shell needs to decide which of the states in D32 it is in. */
+/** Everything the shell needs to decide whether it is connected. */
 export async function GET() {
   const connection = await connectionState();
   const [usage, run] = await Promise.all([
@@ -35,6 +36,9 @@ export async function GET() {
     providers: PROVIDER_LABELS,
     hasKey: connection.hasKey,
     readFromDate: connection.settings.readFromDate,
+    // Sent as a day rather than a date, so the browser reads the same window
+    // the sweep enforces instead of working the rule out a second time.
+    earliest: dayString(earliestStartDate(), "-"),
     usageUsd: usage._sum.costUsd ?? 0,
     sync: run
       ? {

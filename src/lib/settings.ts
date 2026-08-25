@@ -39,8 +39,8 @@ export async function getApiKey(): Promise<string | null> {
 export type ConnectionState = "CONNECTED" | "NOT_CONNECTED" | "RECONNECT";
 
 /**
- * The three states of D32, worked out in one place so the board, the refresh
- * button and the sync route cannot disagree about which one is true.
+ * The three connection states, worked out in one place so the board, the
+ * refresh button and the sync route cannot disagree about which one is true.
  */
 export async function connectionState() {
   const [settings, account] = await Promise.all([

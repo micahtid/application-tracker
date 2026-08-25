@@ -1,33 +1,26 @@
 /**
- * What the pipeline did that the board cannot show afterwards (LOOP4 Gate 9
- * and Decision 8).
- *
- * > A decision the code cannot make honestly is recorded as a decision it
- * > could not make.
+ * What the pipeline did that the board cannot show afterwards.
  *
  * Every number here records a moment where the rules ran out and something had
- * to be chosen anyway: two rows scored the same and one was picked, a dedupe
- * key collided and was made unique to get past it, an alias was written from a
- * match nobody witnessed. None of them leaves a trace on the board. A row that
- * won a coin flip looks exactly like a row that was the only candidate, which
- * is precisely why a stable arbitrary answer is worse than an unstable one:
- * nobody ever notices it.
+ * to be chosen anyway. None of them leaves a trace on the board: a row that won
+ * a coin flip looks exactly like a row that was the only candidate.
  *
  * They are threaded through the return values rather than kept in a module
  * level tally, because two syncs may run at once and a global would add one
  * run's guesses to the other's.
  */
+import { plural, verb } from "@/lib/text";
 
 /**
  * Why a message is attached to an application.
  *
  * Ordered from the strongest evidence to the weakest, which is also the order
- * the matching rules try them in. The distinction is not decoration: Decision 5
- * reads it to decide whether an alias may be written at all, and Decision 3
- * reads it to decide which links a repair pass is allowed to undo. A link made
- * because two emails quote the same posting number is evidence. A link made
- * because one row scored 0.5 and another scored 0.5 is a guess, and the two
- * must not be stored as though they were the same kind of thing.
+ * the matching rules try them in. The distinction is not decoration:
+ * `isWitnessed` reads it to decide whether an alias may be written at all, and
+ * the repair pass reads it to decide which links it is allowed to undo. A link
+ * made because two emails quote the same posting number is evidence. A link
+ * made because one row scored 0.5 and another scored 0.5 is a guess, and the
+ * two must not be stored as though they were the same kind of thing.
  *
  *   NEW          this message started the application, so there was nothing to choose
  *   THREAD       a message already on the row shares this one's thread
@@ -50,9 +43,9 @@ export const LINK_REASONS = [
 export type LinkReason = (typeof LINK_REASONS)[number];
 
 /**
- * The reasons that are evidence rather than a guess (LOOP4 Decision 5).
+ * The reasons that are evidence rather than a guess.
  *
- * An alias is a standing claim that two names are one employer, believed by
+ * An alias is a standing claim that two names are one employer, acted on by
  * every later message, so it may only be written from a link somebody could
  * point at. A score picking between two candidates is not that.
  */
@@ -60,7 +53,7 @@ const WITNESSED_REASONS: readonly LinkReason[] = ["NEW", "THREAD", "REQUISITION"
 
 /**
  * Whether the link that produced an alias is something somebody could point
- * at (LOOP4 Decision 5).
+ * at.
  *
  * A shared thread and a shared posting number are statements the employer
  * made. A title that agrees word for word is the same claim in weaker form and
@@ -88,7 +81,7 @@ export type PipelineCounters = {
   fanoutRowsReached: number;
   repairMerges: number;
   repairSplits: number;
-  /** Repairs a second pass would have found, deliberately not run (Decision 3). */
+  /** Repairs a second pass would have found, deliberately not run. */
   repairUnsettled: number;
   adjudicateCalls: number;
   /** Calls that were made and came back with nothing: out of credit, down, or unparseable. */
@@ -132,7 +125,7 @@ export function mergeCounters(...parts: PipelineCounters[]): PipelineCounters {
 /**
  * The lines worth saying out loud, for the sync notes and the scorecard.
  *
- * Only the numbers that are not nought, because a run that guessed at nothing
+ * Only the numbers that are not zero, because a run that guessed at nothing
  * should say nothing rather than print a wall of zeroes. A run that guessed
  * should be impossible to miss.
  */
@@ -141,37 +134,37 @@ export function counterNotes(counters: PipelineCounters): string[] {
 
   if (counters.dedupeCollisions) {
     notes.push(
-      `${counters.dedupeCollisions} application${counters.dedupeCollisions === 1 ? "" : "s"} collided on their identity key and were kept apart by adding the row id. Two rows that should be one is the likeliest reason.`,
+      `${plural(counters.dedupeCollisions, "application")} collided on their identity key and were kept apart by adding the row id. Two rows that should be one is the likeliest reason.`,
     );
   }
   if (counters.scoreTies) {
     notes.push(
-      `${counters.scoreTies} email${counters.scoreTies === 1 ? "" : "s"} could have belonged to more than one application and were filed against the lowest numbered one, because nothing in them said which.`,
+      `${plural(counters.scoreTies, "email")} could have belonged to more than one application and were filed against the lowest numbered one, because nothing in them said which.`,
     );
   }
   if (counters.aliasesGuessed) {
     notes.push(
-      `${counters.aliasesGuessed} company alias${counters.aliasesGuessed === 1 ? " was" : "es were"} written from a match nobody witnessed.`,
+      `${plural(counters.aliasesGuessed, "company alias", "company aliases")} ${verb(counters.aliasesGuessed, "was", "were")} written from a match nobody witnessed.`,
     );
   }
   if (counters.fanoutEvents) {
     notes.push(
-      `${counters.fanoutEvents} email${counters.fanoutEvents === 1 ? "" : "s"} were about more than one application and were filed against ${counters.fanoutRowsReached} rows in total.`,
+      `${plural(counters.fanoutEvents, "email")} were about more than one application and were filed against ${counters.fanoutRowsReached} rows in total.`,
     );
   }
   if (counters.repairMerges || counters.repairSplits) {
     notes.push(
-      `A repair pass joined ${counters.repairMerges} row${counters.repairMerges === 1 ? "" : "s"} and separated ${counters.repairSplits}.`,
+      `A repair pass joined ${plural(counters.repairMerges, "row")} and separated ${counters.repairSplits}.`,
     );
   }
   if (counters.adjudicateUnanswered) {
     notes.push(
-      `${counters.adjudicateUnanswered} of ${counters.adjudicateCalls} question${counters.adjudicateCalls === 1 ? "" : "s"} about which application an email belonged to could not be answered, so the ordinary rules decided.`,
+      `${counters.adjudicateUnanswered} of ${plural(counters.adjudicateCalls, "question")} about which application an email belonged to could not be answered, so the ordinary rules decided.`,
     );
   }
   if (counters.repairUnsettled) {
     notes.push(
-      `${counters.repairUnsettled} further repair${counters.repairUnsettled === 1 ? "" : "s"} were found and deliberately not run, because a repair pass makes one move per row and stops.`,
+      `${plural(counters.repairUnsettled, "further repair")} were found and deliberately not run, because a repair pass makes one move per row and stops.`,
     );
   }
 

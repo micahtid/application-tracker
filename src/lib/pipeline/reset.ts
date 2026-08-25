@@ -13,7 +13,7 @@ import { clearGrouping } from "./rebuild";
  * model answers, the applications projected out of them, and the sync history,
  * whose absence is what makes the next run a FULL one. Corrections go with the
  * emails they anchor to, because a rescrape downloads the same mail under
- * fresh row ids (LOOP Invariant 1).
+ * fresh row ids.
  */
 export async function resetEverything(db: Db): Promise<void> {
   // Nesting used to be a message pointing at another message and needed

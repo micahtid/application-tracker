@@ -7,9 +7,9 @@ import { counterNotes, mergeCounters, type PipelineCounters } from "./counters";
 import { repairGrouping, type RepairAction } from "./repair";
 
 /**
- * The application table is a projection of the messages (LOOP Invariant 1), so
- * clearing everything derived and grouping the set again, oldest first, gives
- * the same board back.
+ * The application table is a projection of the messages, so clearing
+ * everything derived and grouping the set again, oldest first, gives the same
+ * board back.
  *
  * This is how a changed stage 4 or 5 rule reaches mail that is already grouped
  * wrong: stage 4 groups as it goes and never revisits a decision.
@@ -23,7 +23,7 @@ export type RebuildOutcome = {
   attached: number;
   created: number;
   notes: string[];
-  /** Every decision the rules could not make honestly (LOOP4 Decision 8). */
+  /** Every decision the rules could not make honestly. */
   counters: PipelineCounters;
   /** What the repair pass joined or separated, for the scorer to judge. */
   repairs: RepairAction[];
@@ -57,8 +57,8 @@ export async function rebuildGrouping(
 
   // Stage 4 groups as it goes and never looks again, so this is the one place
   // a decision taken on partial evidence is revisited once, over a board that
-  // is already complete (LOOP4 Invariant 7). It runs after stage 5 because it
-  // reads what each row reached, and exactly once.
+  // is already complete. It runs after stage 5 because it reads what each row
+  // reached, and exactly once.
   const repaired = await repairGrouping(db, counters);
   if (repaired.touched.length) await recomputeAll(db, repaired.touched);
 

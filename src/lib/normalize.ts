@@ -1,7 +1,7 @@
 /**
  * Company name cleaning and loose role comparison.
  * Both are deliberately plain: predictable beats clever when a wrong match
- * silently splits or merges applications.
+ * splits or merges applications with nothing on screen to say so.
  */
 
 const LEGAL_ENDINGS = [
@@ -13,10 +13,10 @@ const LEGAL_ENDINGS = [
 export function normalizeCompany(name: string): string {
   let value = name
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")   // fold accents
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/&/g, " and ")
-    .replace(/[^a-z0-9]+/g, " ")       // collapse punctuation
+    .replace(/[^a-z0-9]+/g, " ")
     .trim();
 
   if (value.startsWith("the ")) value = value.slice(4);
@@ -35,7 +35,7 @@ export function normalizeCompany(name: string): string {
 const CONNECTORS = ["and", "of", "the", "for"];
 
 /**
- * Whether two normalised names mean the same employer (LOOP Invariant 2).
+ * Whether two normalised names mean the same employer.
  *
  * True when one name's words are all present in the other, or when the two are
  * equal once spaces are removed. One employer writes itself several ways over
@@ -59,6 +59,55 @@ export function sameEmployer(left: string, right: string): boolean {
   return left.replace(/ /g, "") === right.replace(/ /g, "");
 }
 
+/**
+ * The groups a name belongs to for the purpose of finding pairs worth
+ * comparing: each of its words, and the name with the spaces taken out.
+ *
+ * `sameEmployer` is true only when one name's words are all present in the
+ * other, or when the two are equal once spaces are removed. Either way the two
+ * names share at least one of these groups, so two names sharing none of them
+ * can never be the same employer.
+ *
+ * Grouping on the first word alone would not be safe. "acme" and "global acme"
+ * are one employer to `sameEmployer` and their first words differ.
+ */
+function groupsOf(normalized: string): string[] {
+  const tokens = normalized.split(" ").filter(Boolean);
+  return [...new Set([...tokens, normalized.replace(/ /g, "")])];
+}
+
+/**
+ * Every pair of positions worth comparing, in the order a sweep of every name
+ * against every other would have found them.
+ *
+ * Both board wide scans compare every row against every other and normalise a
+ * name inside the comparison, which is quadratic in the number of rows. This
+ * drops the pairs that share no group, and those are exactly the pairs
+ * `sameEmployer` would have rejected, so the answer is unchanged.
+ */
+export function pairsToCompare(names: string[]): [number, number][] {
+  const holding = new Map<string, number[]>();
+  const laterPartners = names.map(() => new Set<number>());
+
+  names.forEach((name, index) => {
+    for (const group of groupsOf(name)) {
+      const sharing = holding.get(group);
+      if (!sharing) {
+        holding.set(group, [index]);
+        continue;
+      }
+      for (const earlier of sharing) laterPartners[earlier].add(index);
+      sharing.push(index);
+    }
+  });
+
+  const pairs: [number, number][] = [];
+  laterPartners.forEach((later, index) => {
+    for (const other of [...later].sort((a, b) => a - b)) pairs.push([index, other]);
+  });
+  return pairs;
+}
+
 /** Every leading run of tokens: "a b c" gives "a", "a b", "a b c". */
 export function namePrefixes(normalized: string): string[] {
   const tokens = normalized.split(" ").filter(Boolean);
@@ -73,10 +122,10 @@ const ROLE_NOISE = new Set([
 ]);
 
 /**
- * A year in a job title, matched as a shape rather than listed (LOOP3
- * Invariant 1). A list of named years expires: once past the last one, two
- * emails about one posting stop matching and one application becomes two, on a
- * date rather than in a mailbox.
+ * A year in a job title, matched as a shape rather than listed. A list of
+ * named years expires: once past the last one, two emails about one posting
+ * stop matching and one application becomes two, on a date rather than in a
+ * mailbox.
  *
  * Posting numbers are longer, and are read separately by `requisitionNumbers`.
  */
@@ -149,12 +198,12 @@ export function normalizeSubject(subject: string | null | undefined): string {
     .trim();
 }
 
-/** Above this two roles rank as the better of several candidates (Phase 4). */
+/** Above this two roles rank as the better of several candidates. */
 export const ROLE_MATCH_THRESHOLD = 0.5;
 
 /**
- * Whether two stated titles are about the same posting (LOOP Invariant 9).
- * True when one title's words all appear in the other's. Employers advertise a
+ * Whether two stated titles are about the same posting. True when one title's
+ * words all appear in the other's. Employers advertise a
  * family of postings under one wording with a word changed for the place or
  * track, so a word only one side has is the difference between them rather
  * than noise.
@@ -176,7 +225,7 @@ export function rolesMatch(left: string | null, right: string | null): boolean {
 
 /**
  * Whether two stated titles are word for word the same posting, once the
- * noise words and the year are taken out (LOOP4 Decision 5).
+ * noise words and the year are taken out.
  *
  * Stricter than `rolesMatch`, and deliberately so. `rolesMatch` is true when
  * one title's words are all present in the other's, which is right for
@@ -226,15 +275,23 @@ export function requisitionNumbers(
   return found;
 }
 
+/** True when the two sides name a posting in common. */
+export function requisitionsAgree(left: Set<string>, right: Set<string>): boolean {
+  for (const value of left) if (right.has(value)) return true;
+  return false;
+}
+
 /**
  * True when both sides name a posting and they name different ones. Silence on
  * either side is not a disagreement: most employers never quote a number at
  * all, and a rejection rarely repeats the one from the confirmation.
+ *
+ * Written in terms of the agreement above, so how two posting numbers compare
+ * is decided in one place and the two answers cannot drift apart.
  */
 export function requisitionsDisagree(left: Set<string>, right: Set<string>): boolean {
   if (!left.size || !right.size) return false;
-  for (const value of left) if (right.has(value)) return false;
-  return true;
+  return !requisitionsAgree(left, right);
 }
 
 /**

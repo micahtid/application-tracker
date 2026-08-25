@@ -1,5 +1,5 @@
 /**
- * What changed since the last replay, row by row (LOOP 3.6).
+ * What changed since the last replay, row by row.
  *
  * Rows are lined up by their earliest message rather than by id, because a
  * rebuild renumbers everything. A row that gained or lost an email, changed

@@ -2,7 +2,7 @@
  * Applicant tracking systems. Three jobs:
  *   1. The sender domain sweep, which is not narrowed by keywords.
  *   2. The blocklist that stops a vendor being returned as the employer.
- *   3. Which of two kinds of go between sent an email (LOOP2 Invariant 1).
+ *   3. Which of two kinds of go between sent an email.
  *
  * `kind` is wrong in both directions if mislabelled. PLATFORM sends the
  * employer's own mail and can begin an application; call one ASSESSMENT and
@@ -72,12 +72,21 @@ export const ATS_BLOCKLIST: string[] = [
   "hiring team",
 ];
 
+/**
+ * Whether a domain is a suffix, which means the domain itself or anything
+ * under it. Both this file and the junk filter match domains that way, and a
+ * change to what counts has to reach both at once.
+ */
+export function matchesDomain(domain: string, suffix: string): boolean {
+  return domain === suffix || domain.endsWith("." + suffix);
+}
+
 /** The list entry behind a sender domain, or null when it is not an ATS. */
 export function atsForDomain(domain: string | null | undefined) {
   if (!domain) return null;
   const lower = domain.toLowerCase();
   for (const entry of ATS_VENDORS) {
-    if (entry.domains.some((d) => lower === d || lower.endsWith("." + d))) return entry;
+    if (entry.domains.some((known) => matchesDomain(lower, known))) return entry;
   }
   return null;
 }

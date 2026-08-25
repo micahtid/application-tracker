@@ -5,6 +5,7 @@
  * rejects it; a wrong discard is invisible, because an application never
  * ingested never appears. So only remove what is certainly not an application.
  */
+import { matchesDomain } from "@/lib/ats";
 
 /** Senders that only ever send digests and adverts. */
 const NOISE_SENDERS = [
@@ -49,26 +50,6 @@ const NOISE_SUBJECTS: RegExp[] = [
   /\bhas endorsed you\b|\bcongratulate\b/i,
 ];
 
-/**
- * LOOP4 Invariant 1. Two rules may not disagree about the same email with the
- * earlier one winning in silence.
- *
- * Three patterns used to sit in the list above, matching "password reset",
- * "verify your email" and "security alert". LOOP3 iteration 3 changed rule 4 of
- * the prompt so that an identity check naming its posting is application mail
- * rather than an account notice, which is what moved `recall.related` to 1.000.
- * These three went on dropping exactly that email before the model ever saw it.
- *
- * An applicant tracking system that writes "Verify your email to complete your
- * application" was thrown away as junk by a rule that had been overruled
- * elsewhere, and nothing anywhere could notice: a message the prefilter drops
- * never reaches the board, so no metric computed over the board can miss it.
- *
- * They fired on nothing in this mailbox, which is why nothing caught them. That
- * is luck rather than correctness. The model is the gate, which is what the
- * comment at the top of this file already says it is.
- */
-
 /** Whole domains that never carry a real application email. */
 const NOISE_DOMAINS = [
   "e.linkedin.com",
@@ -91,7 +72,7 @@ export function prefilter(input: {
   if (sender && NOISE_SENDERS.includes(sender)) {
     return { keep: false, reason: `Digest sender ${sender}` };
   }
-  if (domain && NOISE_DOMAINS.some((noise) => domain === noise || domain.endsWith("." + noise))) {
+  if (domain && NOISE_DOMAINS.some((noise) => matchesDomain(domain, noise))) {
     return { keep: false, reason: `Digest domain ${domain}` };
   }
   const subjectHit = NOISE_SUBJECTS.find((pattern) => pattern.test(subject));

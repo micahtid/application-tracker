@@ -1,11 +1,34 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { drawerTitle, drawerTree } from "@/lib/drawer";
+import {
+  drawerTitle,
+  drawerTree,
+  type DrawerMessage,
+  type DrawerNode,
+} from "@/lib/drawer";
 import { gmailLink } from "@/lib/links";
 import { NO_CORRECTION, resolveCorrections } from "@/lib/pipeline/corrections";
 import { isStale } from "@/lib/pipeline/recompute";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * One line of a drawer, without the lines under it.
+ *
+ * A parent and a child carry the same five fields, and the tree is one level
+ * deep by construction, so the caller adds the children rather than this
+ * calling itself.
+ */
+function emailView(node: DrawerNode<DrawerMessage>, accountEmail: string | null) {
+  return {
+    id: node.message.id,
+    title: drawerTitle(node.message),
+    date: node.message.receivedAt,
+    // Addresses the exact stored message, never a Gmail text search.
+    href: gmailLink(accountEmail, node.message.gmailMessageId),
+    relation: node.relation,
+  };
+}
 
 /**
  * The whole board in one request. Search, sort and filter then run in the
@@ -20,9 +43,9 @@ export async function GET() {
       include: {
         // Every email the row owns, read through the membership, because
         // where an email sits in a drawer belongs to the pairing rather than
-        // to the email (LOOP4 Decision 1). Which of them the drawer shows, and
-        // under what, is one rule and it lives in @/lib/drawer, so the board
-        // and the loop harness cannot drift apart on the answer.
+        // to the email. Which of them the drawer shows, and under what, is one
+        // rule and it lives in @/lib/drawer, so the board and the loop harness
+        // cannot drift apart on the answer.
         memberships: {
           select: {
             parentMessageId: true,
@@ -45,7 +68,7 @@ export async function GET() {
     }),
     prisma.gmailAccount.findFirst({ orderBy: { id: "asc" } }),
     // The corrections live in their own table, keyed by the message they were
-    // made against, so a rebuild cannot delete them (LOOP Invariant 1).
+    // made against, so a rebuild cannot delete them.
     resolveCorrections(prisma),
   ]);
 
@@ -83,18 +106,9 @@ export async function GET() {
         firstEmailAt: application.firstEmailAt,
         atsVendor: application.atsVendor,
         emails: drawerTree(messages).map((node) => ({
-          id: node.message.id,
-          title: drawerTitle(node.message),
-          date: node.message.receivedAt,
-          // Addresses the exact stored message, never a Gmail text search.
-          href: gmailLink(account?.emailAddress ?? null, node.message.gmailMessageId),
-          relation: node.relation,
+          ...emailView(node, account?.emailAddress ?? null),
           children: node.children.map((child) => ({
-            id: child.message.id,
-            title: drawerTitle(child.message),
-            date: child.message.receivedAt,
-            href: gmailLink(account?.emailAddress ?? null, child.message.gmailMessageId),
-            relation: child.relation,
+            ...emailView(child, account?.emailAddress ?? null),
             children: [],
           })),
         })),

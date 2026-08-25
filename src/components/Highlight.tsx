@@ -5,11 +5,13 @@ export default function Highlight({ text, query }: { text: string; query: string
   if (!query) return <>{text}</>;
 
   const needle = query.toLowerCase();
+  // Lowered once. Inside the loop it was rebuilt for every hit found.
+  const haystack = text.toLowerCase();
   const parts: React.ReactNode[] = [];
   let cursor = 0;
 
   for (;;) {
-    const at = text.toLowerCase().indexOf(needle, cursor);
+    const at = haystack.indexOf(needle, cursor);
     if (at === -1) break;
     if (at > cursor) parts.push(text.slice(cursor, at));
     parts.push(<mark key={at}>{text.slice(at, at + needle.length)}</mark>);

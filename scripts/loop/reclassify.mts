@@ -1,6 +1,5 @@
 /**
- * L2. Run stage 3 again over chosen messages in the scratch database, then L1
- * (LOOP 3.6).
+ * L2. Run stage 3 again over chosen messages in the scratch database, then L1.
  *
  * This is the only command in the harness that costs money, so three things
  * hold:
@@ -27,12 +26,12 @@ import {
   writeJson,
   type SnapshotState,
 } from "./common.mts";
-import { decryptSecret } from "../../src/lib/crypto.ts";
-import { adapterFor } from "../../src/lib/llm/index.ts";
-import type { Provider } from "../../src/lib/constants.ts";
-import { SYSTEM_PROMPT, buildUserContent } from "../../src/lib/llm/prompt.ts";
-import { CLASSIFIER_VERSION } from "../../src/lib/constants.ts";
-import { rebuildGrouping } from "../../src/lib/pipeline/rebuild.ts";
+import { decryptSecret } from "@/lib/crypto";
+import { adapterFor } from "@/lib/llm";
+import type { Provider } from "@/lib/constants";
+import { SYSTEM_PROMPT, buildUserContent } from "@/lib/llm/prompt";
+import { CLASSIFIER_VERSION } from "@/lib/constants";
+import { rebuildGrouping } from "@/lib/pipeline/rebuild";
 
 const budget = Number(arg("budget"));
 if (!Number.isFinite(budget) || budget <= 0) {

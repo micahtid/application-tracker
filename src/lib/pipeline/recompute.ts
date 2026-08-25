@@ -11,7 +11,13 @@ import {
 import { vendorForDomain } from "@/lib/ats";
 import { emptyCounters, type PipelineCounters } from "./counters";
 import { messagesOf } from "./membership";
-import { STALE_AFTER_DAYS, type Outcome, type StageDetail, type Status } from "@/lib/constants";
+import {
+  STALE_AFTER_DAYS,
+  hasEnded,
+  type Outcome,
+  type StageDetail,
+  type Status,
+} from "@/lib/constants";
 
 /**
  * Stage 5. Every field on a row is worked out from its emails and
@@ -21,14 +27,33 @@ import { STALE_AFTER_DAYS, type Outcome, type StageDetail, type Status } from "@
  *   significant one.
  */
 
+/**
+ * Answers already worked out, keyed by the message object they came from.
+ *
+ * One pass over one application asks for the same message eight or more times,
+ * and the answer only depends on `llmClassificationRaw`. A message object is
+ * read from the database and never edited afterwards, so a cached answer
+ * cannot go stale. The map is weak, so an answer is dropped as soon as the
+ * message it belongs to is.
+ */
+const parsedClassifications = new WeakMap<object, Classification | null>();
+
 /** The saved model answer for one email, or null when there is not one. */
 export function classificationOf(message: { llmClassificationRaw: string | null }): Classification | null {
-  if (!message.llmClassificationRaw) return null;
-  try {
-    return parseClassification(JSON.parse(message.llmClassificationRaw));
-  } catch {
-    return null;
+  const cached = parsedClassifications.get(message);
+  if (cached !== undefined) return cached;
+
+  let parsed: Classification | null = null;
+  if (message.llmClassificationRaw) {
+    try {
+      parsed = parseClassification(JSON.parse(message.llmClassificationRaw));
+    } catch {
+      parsed = null;
+    }
   }
+
+  parsedClassifications.set(message, parsed);
+  return parsed;
 }
 
 /**
@@ -74,7 +99,7 @@ function commonestCompanyName(messages: EmailMessage[]): string | null {
 
 /**
  * The value from the oldest email that states this field, rather than the
- * value on the oldest email full stop (LOOP Invariant 4).
+ * value on the oldest email full stop.
  *
  * "Oldest wins" is right for a conflict and wrong for an absence: an email
  * saying nothing about the role does not disagree with one that does. Working
@@ -96,7 +121,7 @@ function firstStated<T>(
 export type TreeNode = { parent: number | null; relation: string | null };
 
 /**
- * Where every email of an application sits in its drawer (LOOP2 Invariant 3).
+ * Where every email of an application sits in its drawer.
  *
  * One line for each state the application reached, which is the earliest email
  * stating that state. Every other email sits under the line for its own state.
@@ -172,9 +197,9 @@ export type HeadState = {
   stageDetail: StageDetail | null;
   /**
    * Which ending the application reached, read off the same newest significant
-   * email the status comes from (LOOP4 Decision 7). Present only on a status
-   * that is an ending, exactly as `stageDetail` is present only on one that is
-   * not, so the two can never both be claiming the row at once.
+   * email the status comes from. Present only on a status that is an ending,
+   * exactly as `stageDetail` is present only on one that is not, so the two
+   * can never both be claiming the row at once.
    */
   outcome: Outcome | null;
 };
@@ -214,7 +239,7 @@ export function headState(messages: EmailMessage[]): HeadState {
 
   const status = newest.status;
   const said = classificationOf(newest.message);
-  const ended = status === "ACCEPTED" || status === "REJECTED";
+  const ended = hasEnded(status);
   return {
     status,
     stageDetail: status === "IN_PROGRESS" ? (said?.stageDetail as StageDetail | null) ?? null : null,
@@ -223,7 +248,7 @@ export function headState(messages: EmailMessage[]): HeadState {
 }
 
 /**
- * Whether a row has gone quiet (LOOP4 Decision 7 and V3).
+ * Whether a row has gone quiet.
  *
  * Every board of this kind fills with rows acknowledged once and never
  * mentioned again. They read APPLIED for ever, sort into the middle of the
@@ -233,7 +258,7 @@ export function headState(messages: EmailMessage[]): HeadState {
  * model: no model reading one email can tell you that nothing followed it. It
  * is a fact about the set, worked out here beside `headState`. It is also not
  * stored, because it changes with the date rather than with the mail, and a
- * stored value would be quietly wrong every day after it was written.
+ * stored value would be out of date the day after it was written.
  *
  * An application that has ended is never stale. It is finished, which is a
  * different thing from being ignored.
@@ -242,7 +267,7 @@ export function isStale(
   state: { status: string; latestEmailAt: Date | null },
   now: Date,
 ): boolean {
-  if (state.status === "ACCEPTED" || state.status === "REJECTED") return false;
+  if (hasEnded(state.status)) return false;
   if (!state.latestEmailAt) return false;
   return (now.getTime() - state.latestEmailAt.getTime()) / 86_400_000 > STALE_AFTER_DAYS;
 }
@@ -276,31 +301,45 @@ export async function recomputeApplication(
 
   // Written on the membership rather than on the message, because where an
   // email sits in a drawer is a fact about the pairing: the same email in two
-  // applications sits under a different line in each (LOOP4 Decision 1).
-  for (const message of messages) {
-    const node = tree.get(message.id) ?? { parent: null, relation: null };
-    if (message.parentMessageId !== node.parent || message.parentRelation !== node.relation) {
-      await db.applicationMembership.update({
-        where: { applicationId_messageId: { applicationId, messageId: message.id } },
-        data: { parentMessageId: node.parent, parentRelation: node.relation },
-      });
-    }
+  // applications sits under a different line in each.
+  //
+  // Only the rows that actually moved are written, and they go in one round
+  // trip rather than one each.
+  const moved = messages
+    .map((message) => ({ message, node: tree.get(message.id) ?? { parent: null, relation: null } }))
+    .filter(
+      ({ message, node }) =>
+        message.parentMessageId !== node.parent || message.parentRelation !== node.relation,
+    );
+
+  if (moved.length) {
+    await db.$transaction(
+      moved.map(({ message, node }) =>
+        db.applicationMembership.update({
+          where: { applicationId_messageId: { applicationId, messageId: message.id } },
+          data: { parentMessageId: node.parent, parentRelation: node.relation },
+        }),
+      ),
+    );
   }
 
   // History is rewritten from the whole set rather than added to as emails
   // arrive, so the first occurrence always survives whatever order they came
   // in, and a message that stops being a repeat gets its milestone back.
-  await db.applicationStatusHistory.deleteMany({ where: { applicationId } });
-  for (const milestone of milestonesIn(messages)) {
-    await db.applicationStatusHistory.create({
-      data: {
-        applicationId,
-        messageId: milestone.message.id,
-        status: milestone.status,
-        detectedAt: milestone.message.receivedAt,
-      },
-    });
-  }
+  //
+  // The delete and the write go in one transaction, so a crash cannot leave an
+  // application with the old history gone and no new history in its place.
+  const history = milestonesIn(messages).map((milestone) => ({
+    applicationId,
+    messageId: milestone.message.id,
+    status: milestone.status,
+    detectedAt: milestone.message.receivedAt,
+  }));
+
+  await db.$transaction([
+    db.applicationStatusHistory.deleteMany({ where: { applicationId } }),
+    db.applicationStatusHistory.createMany({ data: history }),
+  ]);
 
   const { status, stageDetail, outcome } = headState(messages);
 
@@ -340,13 +379,9 @@ export async function recomputeApplication(
     await db.application.update({ where: { id: applicationId }, data: { ...data, dedupeKey: key } });
   } catch {
     // The unique rule on dedupe_key is an alarm, not the thing that prevents
-    // duplicates. Keeping the row distinct lets the sync finish; the
-    // collision is what the alarm was for.
-    //
-    // LOOP4 M5. Until this count existed, the alarm silenced itself: both rows
-    // stayed on the board, still distinct, each carrying a key quietly made
-    // unique by appending its own id, and nothing anywhere said so. An alarm
-    // nobody hears is a catch that hides a bug.
+    // duplicates. Keeping the row distinct lets the sync finish, and the count
+    // is what makes the collision visible. Without it this catch would hide
+    // the very bug the rule exists to report.
     counters.dedupeCollisions += 1;
     await db.application.update({
       where: { id: applicationId },

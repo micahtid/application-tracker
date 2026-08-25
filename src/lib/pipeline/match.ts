@@ -1,12 +1,18 @@
 import type { Application, EmailMessage } from "@prisma/client";
 import type { Db } from "@/lib/db";
-import { ADJUDICATE_CONFIDENCE_FLOOR, CLASSIFIER_VERSION, REOPEN_GAP_DAYS } from "@/lib/constants";
+import {
+  ADJUDICATE_CONFIDENCE_FLOOR,
+  CLASSIFIER_VERSION,
+  REOPEN_GAP_DAYS,
+  hasEnded,
+} from "@/lib/constants";
 import {
   ROLE_MATCH_THRESHOLD,
   dedupeKey,
   namePrefixes,
   normalizeCompany,
   requisitionNumbers,
+  requisitionsAgree,
   requisitionsDisagree,
   roleSimilarity,
   rolesIdentical,
@@ -16,7 +22,13 @@ import {
 import { isAssessmentVendor } from "@/lib/ats";
 import { classificationOf, headState } from "./recompute";
 import { emptyCounters, isWitnessed, type LinkReason, type PipelineCounters } from "./counters";
-import { applicationForThread, link, messagesOf, unclaimedMessages } from "./membership";
+import {
+  applicationForThread,
+  link,
+  messagesOf,
+  unclaimedMessages,
+  type MessageInApplication,
+} from "./membership";
 import type { Classification } from "@/lib/llm";
 
 /**
@@ -29,7 +41,7 @@ import type { Classification } from "@/lib/llm";
  */
 
 /**
- * Asked when the code has run out of evidence (LOOP4 Decision 6).
+ * Asked when the code has run out of evidence.
  *
  * Injected rather than imported, so stage 4 stays a function of the database
  * and knows nothing about providers or keys. It returns the ids of the rows the
@@ -49,32 +61,101 @@ export type MatchOutcome = {
 };
 
 /**
- * Candidate rows for a company name, from the alias table and from the name
- * itself. Both passes stay on the `company_normalized` index: an equality
+ * What one matching pass has already worked out.
+ *
+ * Every rule below asks the same two questions of the same handful of candidate
+ * rows, once for each incoming message: which emails are on this row, and which
+ * posting numbers do they quote. Reading that back out of the database each
+ * time is most of the work stage 4 does, so the answers are kept here for the
+ * length of the pass.
+ *
+ * A new link is the only thing that changes either answer, so both are dropped
+ * for an application the moment `attach` writes one. That is the whole
+ * invalidation rule and it is meant to stay this small.
+ *
+ * The alias table is loaded once for the same reason. `rememberAlias` adds to
+ * the loaded copy as it writes, so a name recorded early in the pass is still
+ * found by a later message.
+ */
+type Pass = {
+  db: Db;
+  messages: Map<number, MessageInApplication[]>;
+  requisitions: Map<number, Set<string>>;
+  /** Alias name to the canonical name it stands for, exactly as stored. */
+  aliasOf: Map<string, string>;
+  /** Normalised canonical name to every alias name pointing at it. */
+  aliasesTo: Map<string, string[]>;
+};
+
+async function startPass(db: Db): Promise<Pass> {
+  const pass: Pass = {
+    db,
+    messages: new Map(),
+    requisitions: new Map(),
+    aliasOf: new Map(),
+    aliasesTo: new Map(),
+  };
+
+  const rows = await db.companyAlias.findMany({
+    select: { aliasNormalized: true, canonicalCompanyName: true },
+  });
+  for (const row of rows) indexAlias(pass, row.aliasNormalized, row.canonicalCompanyName);
+
+  return pass;
+}
+
+/**
+ * Adds one alias to the loaded copy. An alias already known keeps the name it
+ * already had, which is what the upsert in `rememberAlias` does on disk.
+ */
+function indexAlias(pass: Pass, aliasNormalized: string, canonicalCompanyName: string): void {
+  if (pass.aliasOf.has(aliasNormalized)) return;
+  pass.aliasOf.set(aliasNormalized, canonicalCompanyName);
+
+  if (!canonicalCompanyName) return;
+  const canonical = normalizeCompany(canonicalCompanyName);
+  const pointing = pass.aliasesTo.get(canonical);
+  if (pointing) pointing.push(aliasNormalized);
+  else pass.aliasesTo.set(canonical, [aliasNormalized]);
+}
+
+/** Every email of an application, read from the database once per pass. */
+async function messagesIn(pass: Pass, applicationId: number): Promise<MessageInApplication[]> {
+  const held = pass.messages.get(applicationId);
+  if (held) return held;
+
+  const messages = await messagesOf(pass.db, applicationId);
+  pass.messages.set(applicationId, messages);
+  return messages;
+}
+
+/** Both held answers for one application go stale the moment it gains an email. */
+function forgetApplication(pass: Pass, applicationId: number): void {
+  pass.messages.delete(applicationId);
+  pass.requisitions.delete(applicationId);
+}
+
+/**
+ * Candidate rows for a company name, from the aliases and from the name itself.
+ * Both database lookups stay on the `company_normalized` index: an equality
  * lookup over every leading prefix of the incoming name catches a shorter
  * stored name, and a prefix match on the first token catches a shorter
- * incoming one.
+ * incoming one. The aliases come from the pass rather than from the table.
  */
-async function candidatesFor(db: Db, normalized: string): Promise<Application[]> {
+async function candidatesFor(pass: Pass, normalized: string): Promise<Application[]> {
   const names = new Set([normalized, ...namePrefixes(normalized)]);
   const aliased = new Set<string>();
 
-  const alias = await db.companyAlias.findUnique({ where: { aliasNormalized: normalized } });
-  if (alias) aliased.add(normalizeCompany(alias.canonicalCompanyName));
+  const canonical = pass.aliasOf.get(normalized);
+  if (canonical !== undefined) aliased.add(normalizeCompany(canonical));
 
-  const aliasesTo = await db.companyAlias.findMany({
-    where: { canonicalCompanyName: { not: "" } },
-    select: { aliasNormalized: true, canonicalCompanyName: true },
-  });
-  for (const row of aliasesTo) {
-    if (normalizeCompany(row.canonicalCompanyName) === normalized) aliased.add(row.aliasNormalized);
-  }
+  for (const alias of pass.aliasesTo.get(normalized) ?? []) aliased.add(alias);
 
   const firstToken = normalized.split(" ")[0] ?? normalized;
 
   const [byName, byPrefix] = await Promise.all([
-    db.application.findMany({ where: { companyNormalized: { in: [...names, ...aliased] } } }),
-    db.application.findMany({ where: { companyNormalized: { startsWith: firstToken } } }),
+    pass.db.application.findMany({ where: { companyNormalized: { in: [...names, ...aliased] } } }),
+    pass.db.application.findMany({ where: { companyNormalized: { startsWith: firstToken } } }),
   ]);
 
   const found = new Map<number, Application>();
@@ -99,27 +180,28 @@ function rolesDisagree(role: string | null, classification: Classification): boo
 
 /** True when both sides quote a posting number and they quote the same one. */
 async function requisitionAgrees(
-  db: Db,
+  pass: Pass,
   applicationId: number,
   incoming: Set<string>,
 ): Promise<boolean> {
   if (!incoming.size) return false;
-  const known = await requisitionsOf(db, applicationId);
-  for (const value of incoming) if (known.has(value)) return true;
-  return false;
+  return requisitionsAgree(await requisitionsOf(pass, applicationId), incoming);
 }
 
-/** Every posting number quoted by any email already on an application. */
-async function requisitionsOf(db: Db, applicationId: number): Promise<Set<string>> {
-  const messages = await db.emailMessage.findMany({
-    where: { memberships: { some: { applicationId } } },
-    select: { subject: true, bodyText: true },
-  });
+/**
+ * Every posting number quoted by any email already on an application, read out
+ * of the emails the pass already holds and then kept beside them.
+ */
+async function requisitionsOf(pass: Pass, applicationId: number): Promise<Set<string>> {
+  const held = pass.requisitions.get(applicationId);
+  if (held) return held;
 
   const all = new Set<string>();
-  for (const message of messages) {
+  for (const message of await messagesIn(pass, applicationId)) {
     for (const value of requisitionNumbers(message.subject, message.bodyText)) all.add(value);
   }
+
+  pass.requisitions.set(applicationId, all);
   return all;
 }
 
@@ -130,31 +212,30 @@ async function requisitionsOf(db: Db, applicationId: number): Promise<Set<string
  * thing that cannot be.
  */
 async function requisitionContradicts(
-  db: Db,
+  pass: Pass,
   applicationId: number,
   incoming: Set<string>,
 ): Promise<boolean> {
   if (!incoming.size) return false;
-  return requisitionsDisagree(await requisitionsOf(db, applicationId), incoming);
+  return requisitionsDisagree(await requisitionsOf(pass, applicationId), incoming);
 }
 
 /**
- * Whether this email came from a third party running one step for an employer
- * (LOOP3 Invariant 5).
+ * Whether this email came from a third party running one step for an employer.
  *
  * The model answers it, because the email says so plainly. The vendor list is
  * consulted too and can only add certainty: a sender the list knows counts
- * whatever the model said, and an unknown sender is no worse off. A lookup
- * alone was the LOOP2 rule, and it silently failed in any mailbox whose
- * vendors were not on the list.
+ * whatever the model said, and an unknown sender is no worse off. The list on
+ * its own is not enough, because it is silently wrong in any mailbox whose
+ * vendors are not on it.
  */
 function runsAStepForAnEmployer(message: EmailMessage, classification: Classification): boolean {
   return classification.senderRole === "ASSESSMENT_VENDOR" || isAssessmentVendor(message.senderDomain);
 }
 
 /**
- * LOOP2 Invariant 1. A company that runs exams never receives an application,
- * so its email can only continue one that already exists.
+ * A company that runs exams never receives an application, so its email can
+ * only continue one that already exists.
  *
  * The title comparison this sits behind is the wrong question for an exam: the
  * vendor names the paper after the programme rather than the posting. So it is
@@ -167,7 +248,7 @@ function runsAStepForAnEmployer(message: EmailMessage, classification: Classific
  * `status` column, which stage 5 has not written yet.
  */
 async function assessmentHandOff(
-  db: Db,
+  pass: Pass,
   message: EmailMessage,
   classification: Classification,
   candidates: Application[],
@@ -176,11 +257,11 @@ async function assessmentHandOff(
 
   const waiting: Application[] = [];
   for (const candidate of candidates) {
-    const state = headState(await messagesOf(db, candidate.id));
+    const state = headState(await messagesIn(pass, candidate.id));
     // Any step the applicant was sent away to do, not the assessment stage
     // alone: a row waiting on a recorded interview or a background check is
     // waiting on a third party just as much. Naming one value of four would
-    // narrow this rule silently as the vocabulary grows.
+    // narrow this rule as the vocabulary grows, with nothing to say it had.
     if (state.status === "IN_PROGRESS" && state.stageDetail) waiting.push(candidate);
   }
 
@@ -188,55 +269,19 @@ async function assessmentHandOff(
 }
 
 /**
- * LOOP4 Invariant 6. An email belongs to every application it is about, and to
- * no others.
+ * Every row waiting on the very step this email is about. An email belongs to
+ * every application it is about, and to no others.
  *
- * The generalisation of `assessmentHandOff`, which gives up whenever more than
- * one row is waiting. It stops giving up and reaches all of them, under
- * conditions that are all about the email rather than about any employer.
+ * A decision never reaches more than one row: an email reaching two rows writes
+ * a milestone on each, which is right for a reminder and would close two real
+ * applications on one rejection. A quoted posting number stops this too, being
+ * a real answer that has to decide on its own.
  *
- * **It never fans out a decision.** This is the rule that makes the rest safe,
- * and it is load bearing rather than cautious. `milestonesIn` writes one
- * history row per significant email per application, so an email reaching two
- * applications writes two milestones and `headState` reads each row's newest.
- * For an assessment reminder that is exactly right: both rows really did move.
- * For a rejection it would close two real applications on one email, and
- * employers withhold a rejection precisely when the candidate is still live on
- * another requisition, so the one case that looks like it covers everything is
- * the case where it provably does not.
- *
- * **A quoted posting number stops it dead.** A number is a real answer and has
- * to decide on its own.
- *
- * **It reaches only rows waiting on the same thing.** Not "waiting" in general:
- * the row's head state has to be IN_PROGRESS at the very step this email is
- * about. An assessment reminder reaches every row waiting on an assessment. It
- * does not reach a row waiting on an interview, and it does not reach a row
- * that is merely APPLIED.
- *
- * **A stated title still contradicts, unless it is a paper's name.** Decision 2
- * says the email must state no role at all. That is very nearly right and it is
- * not quite the rule, because it fails in both directions.
- *
- * Too loose: an employer running two postings sends a step invitation for each,
- * and the second names its own posting. Ignoring that title reaches the first
- * row and welds two real applications into one. The title disagreeing is
- * positive evidence, not silence.
- *
- * Too strict: the email this loop exists for does state a role, and it is the
- * wrong kind of role. A vendor names the paper after the programme rather than
- * after the posting, which is the whole reason the title comparison is the
- * wrong question for an exam and why `assessmentHandOff` sits behind it.
- * Requiring silence would leave the one real case in this mailbox unreachable
- * while still claiming to fix it.
- *
- * So the title is believed exactly when it is a posting title: when the email
- * states none, or when its sender is running a step for the employer and is
- * therefore naming its own paper. That is the same judgement `assessmentHandOff`
- * already makes, applied to the same question.
+ * A stated title contradicts, unless the sender runs the step and is therefore
+ * naming its own paper rather than the posting.
  */
 async function rowsWaitingOnThisStep(
-  db: Db,
+  pass: Pass,
   message: EmailMessage,
   classification: Classification,
   candidates: Application[],
@@ -251,7 +296,7 @@ async function rowsWaitingOnThisStep(
   const waiting: Application[] = [];
   for (const candidate of candidates) {
     if (titleNamesAPosting && rolesDisagree(candidate.roleTitle, classification)) continue;
-    const state = headState(await messagesOf(db, candidate.id));
+    const state = headState(await messagesIn(pass, candidate.id));
     if (state.status === "IN_PROGRESS" && state.stageDetail === classification.stageDetail) {
       waiting.push(candidate);
     }
@@ -260,9 +305,9 @@ async function rowsWaitingOnThisStep(
 }
 
 /**
- * LOOP4 Invariant 4. An application that ended and then went quiet is
- * finished. A later email with the same title is a new application unless the
- * thread or a posting number says otherwise.
+ * An application that ended and then went quiet is finished. A later email
+ * with the same title is a new application unless the thread or a posting
+ * number says otherwise.
  *
  * Apply in one year, get rejected, apply again the next to the same posting.
  * The title is word for word identical and the employer states no season and
@@ -283,22 +328,22 @@ async function rowsWaitingOnThisStep(
  * out of date.
  */
 async function endedAndQuiet(
-  db: Db,
+  pass: Pass,
   candidate: Application,
   message: EmailMessage,
   incomingRequisitions: Set<string>,
 ): Promise<boolean> {
-  const attached = await messagesOf(db, candidate.id);
+  const attached = await messagesIn(pass, candidate.id);
   if (!attached.length) return false;
 
   const { status } = headState(attached);
-  if (status !== "ACCEPTED" && status !== "REJECTED") return false;
+  if (!hasEnded(status)) return false;
 
   const newest = attached[attached.length - 1].receivedAt.getTime();
   const gapDays = (message.receivedAt.getTime() - newest) / 86_400_000;
   if (gapDays <= REOPEN_GAP_DAYS) return false;
 
-  return !(await requisitionAgrees(db, candidate.id, incomingRequisitions));
+  return !(await requisitionAgrees(pass, candidate.id, incomingRequisitions));
 }
 
 function scoreCandidate(candidate: Application, classification: Classification): number {
@@ -317,7 +362,7 @@ function scoreCandidate(candidate: Application, classification: Classification):
 }
 
 async function createApplication(
-  db: Db,
+  pass: Pass,
   classification: Classification,
   message: EmailMessage,
   counters: PipelineCounters,
@@ -333,21 +378,12 @@ async function createApplication(
   });
 
   /**
-   * A key collision no longer hands back the row that owns the key.
-   *
-   * It used to, and that made this a second matching rule sitting underneath
-   * the first and quietly overruling it. Two applications to the same posting a
-   * year apart share every part of the key: same employer, same title, and no
-   * season, year or posting number, which is the case for about half the
-   * labelled groups here. So Invariant 4 would decide the old row is closed,
-   * and this lookup would hand it straight back.
-   *
-   * The rules above have already decided this is a new application. The key is
-   * an alarm rather than the thing that prevents duplicates (LOOP Invariant 6),
-   * so the collision is counted and the row is made distinct, exactly as stage
-   * 5 does. Stage 5 will settle on its own suffix on the next recalculation.
+   * A key collision hands back nothing. The rules above have already decided
+   * this is a new application, and the key is an alarm rather than the thing
+   * that prevents duplicates, so the collision is counted and the row is made
+   * distinct. Stage 5 settles on its own suffix on the next recalculation.
    */
-  const collision = await db.application.findUnique({ where: { dedupeKey: key } });
+  const collision = await pass.db.application.findUnique({ where: { dedupeKey: key } });
   if (collision) counters.dedupeCollisions += 1;
   const distinctKey = collision ? `${key}#${message.gmailMessageId}` : key;
 
@@ -355,9 +391,11 @@ async function createApplication(
   // and a prefix lookup cannot see across a space that is not there. Recording
   // the run together form as an alias lets the later email find this row.
   const joined = companyNormalized.replace(/ /g, "");
-  if (joined !== companyNormalized) await rememberAlias(db, joined, companyName, "NEW", true, counters);
+  if (joined !== companyNormalized) {
+    await rememberAlias(pass, joined, companyName, "NEW", true, counters);
+  }
 
-  return db.application.create({
+  return pass.db.application.create({
     data: {
       companyName,
       companyNormalized,
@@ -376,19 +414,20 @@ async function createApplication(
 }
 
 async function attach(
-  db: Db,
+  pass: Pass,
   message: EmailMessage,
   applicationId: number,
   classification: Classification,
   reason: LinkReason,
 ): Promise<void> {
-  await link(db, applicationId, message.id, reason);
+  await link(pass.db, applicationId, message.id, reason);
+  forgetApplication(pass, applicationId);
 
   // Only significant emails write status history. Without this rule a
   // "sounds good, see you Thursday" reply would drag an offer out of
   // Accepted.
   if (classification.isSignificant) {
-    await db.applicationStatusHistory.upsert({
+    await pass.db.applicationStatusHistory.upsert({
       where: {
         applicationId_messageId_status: {
           applicationId,
@@ -411,12 +450,11 @@ async function attach(
  * Records that two names are one employer.
  *
  * Counted by the link that produced it, because an alias made from a guess is
- * believed by every later message just as strongly as one made from evidence,
- * and nothing ever removes it (LOOP4 M2). The count is what makes that
- * visible; Iteration 3 is what stops it happening.
+ * used by every later message just as readily as one made from evidence, and
+ * nothing ever removes it. The count is what makes that visible.
  */
 async function rememberAlias(
-  db: Db,
+  pass: Pass,
   aliasNormalized: string,
   canonicalCompanyName: string,
   reason: LinkReason,
@@ -425,21 +463,19 @@ async function rememberAlias(
 ) {
   if (!aliasNormalized || aliasNormalized === normalizeCompany(canonicalCompanyName)) return;
 
-  // LOOP4 Invariant 3. A rule may believe what it observed. It may not believe
-  // what it guessed as strongly as what it observed.
+  // A rule may act on what it observed. It may not act on what it guessed as
+  // readily as on what it observed.
   //
-  // This used to fire on every successful match, including one the score
-  // picked between two equally good candidates. From then on `candidatesFor`
-  // took the alias at its word, so a single wrong score welded two employers
-  // together for good: nothing removes an alias except a rebuild, which
-  // removes all of them. One wrong link then infects everything built on it.
+  // A wrong score writing an alias welds two employers together for good:
+  // nothing removes an alias except a rebuild, which removes all of them.
   if (!witnessed) return;
 
-  await db.companyAlias.upsert({
+  await pass.db.companyAlias.upsert({
     where: { aliasNormalized },
     create: { aliasNormalized, canonicalCompanyName, reason },
     update: {},
   });
+  indexAlias(pass, aliasNormalized, canonicalCompanyName);
   counters.aliasesWritten += 1;
 }
 
@@ -453,6 +489,7 @@ export async function attachClassified(
     isApplicationRelated: true,
   });
 
+  const pass = await startPass(db);
   const touched = new Set<number>();
   const counters = emptyCounters();
   let attached = 0;
@@ -482,14 +519,14 @@ export async function attachClassified(
         const contradicted =
           application &&
           (rolesDisagree(application.roleTitle, classification) ||
-            (await requisitionContradicts(db, application.id, incomingRequisitions)));
+            (await requisitionContradicts(pass, application.id, incomingRequisitions)));
 
         if (!contradicted) {
-          await attach(db, message, siblingApplicationId, classification, "THREAD");
+          await attach(pass, message, siblingApplicationId, classification, "THREAD");
           counters.linksByReason.THREAD += 1;
           if (classification.companyName && application) {
             await rememberAlias(
-              db,
+              pass,
               normalizeCompany(classification.companyName),
               application.companyName,
               "THREAD",
@@ -513,15 +550,15 @@ export async function attachClassified(
 
     // 2 and 3. Indexed equality lookup, then a loose role comparison inside
     //          that candidate set only.
-    const found = await candidatesFor(db, normalized);
+    const found = await candidatesFor(pass, normalized);
 
     // A row that names a different posting is not a candidate at all, however
     // well the titles happen to score against each other. Neither is one that
     // ended and then went quiet for a season.
     const candidates: Application[] = [];
     for (const candidate of found) {
-      if (await requisitionContradicts(db, candidate.id, incomingRequisitions)) continue;
-      if (await endedAndQuiet(db, candidate, message, incomingRequisitions)) continue;
+      if (await requisitionContradicts(pass, candidate.id, incomingRequisitions)) continue;
+      if (await endedAndQuiet(pass, candidate, message, incomingRequisitions)) continue;
       candidates.push(candidate);
     }
 
@@ -530,7 +567,7 @@ export async function attachClassified(
     const numbered: Application[] = [];
     const titled: Application[] = [];
     for (const candidate of candidates) {
-      if (await requisitionAgrees(db, candidate.id, incomingRequisitions)) numbered.push(candidate);
+      if (await requisitionAgrees(pass, candidate.id, incomingRequisitions)) numbered.push(candidate);
       else if (!rolesDisagree(candidate.roleTitle, classification)) titled.push(candidate);
     }
 
@@ -548,15 +585,15 @@ export async function attachClassified(
       // Not settled: either no row will take it, or several will and the score
       // would be picking between them. An exam is neither of those questions,
       // so it is asked first, and only then does the score get its turn.
-      target = await assessmentHandOff(db, message, classification, candidates);
+      target = await assessmentHandOff(pass, message, classification, candidates);
       if (target) reason = "HANDOFF";
 
       if (!target) {
         // More than one row is waiting on the very step this email is about,
         // so it is about all of them. This is the only place a message gains
-        // more than one membership (LOOP4 Invariant 6).
+        // more than one membership.
         let reached = await rowsWaitingOnThisStep(
-          db,
+          pass,
           message,
           classification,
           candidates,
@@ -566,14 +603,14 @@ export async function attachClassified(
         // Exactly one row waiting on this step is the ordinary hand off, and it
         // is the answer whoever sent the email. More than one means the email
         // is about all of them, and this is the only place a message gains
-        // more than one membership (LOOP4 Invariant 6).
+        // more than one membership.
         if (reached.length === 1) {
           target = reached[0];
           reason = "HANDOFF";
         } else if (reached.length > 1) {
-          // LOOP4 Invariant 9, trigger 2: fan out has more than one plausible
-          // reading. Asking can only narrow it, and an answer that names none
-          // of them or cannot be had leaves fan out exactly as it was.
+          // Fan out has more than one plausible reading. Asking can only
+          // narrow it, and an answer that names none of them or cannot be had
+          // leaves fan out exactly as it was.
           if (adjudicator) {
             counters.adjudicateCalls += 1;
             const answer = await adjudicator(message, reached);
@@ -587,7 +624,7 @@ export async function attachClassified(
           }
 
           for (const row of reached) {
-            await attach(db, message, row.id, classification, "FANOUT");
+            await attach(pass, message, row.id, classification, "FANOUT");
             counters.linksByReason.FANOUT += 1;
             touched.add(row.id);
           }
@@ -605,16 +642,16 @@ export async function attachClassified(
           .map((candidate) => ({ candidate, score: scoreCandidate(candidate, classification) }))
           .sort((a, b) => b.score - a.score || a.candidate.id - b.candidate.id);
 
-        // Gate 9. A dead heat means nothing in the email said which row it
-        // belonged to and the lowest row id won. The answer is stable, which
-        // is exactly what stops anybody noticing, so it is counted.
+        // A dead heat means nothing in the email said which row it belonged to
+        // and the lowest row id won. The answer is stable, which is exactly
+        // what stops anybody noticing, so it is counted.
         const levelHeat = ranked.length > 1 && ranked[0].score === ranked[1].score;
         if (levelHeat) counters.scoreTies += 1;
 
-        // LOOP4 Invariant 9. A tie is a question, not an answer. The two
-        // triggers here are the two ways the code can reach this point without
-        // evidence: the rows are exactly level, or the model was not sure what
-        // it was reading in the first place.
+        // A tie is a question, not an answer. The two triggers here are the
+        // two ways the code can reach this point without evidence: the rows are
+        // exactly level, or the model was not sure what it was reading in the
+        // first place.
         const unsure = classification.confidenceScore < ADJUDICATE_CONFIDENCE_FLOOR;
         if (adjudicator && (levelHeat || unsure)) {
           counters.adjudicateCalls += 1;
@@ -628,7 +665,7 @@ export async function attachClassified(
             const many = picked.length > 1 && classification.emailEvent !== "DECISION";
             if (many) {
               for (const row of picked) {
-                await attach(db, message, row.id, classification, "FANOUT");
+                await attach(pass, message, row.id, classification, "FANOUT");
                 counters.linksByReason.FANOUT += 1;
                 touched.add(row.id);
               }
@@ -638,7 +675,7 @@ export async function attachClassified(
               continue;
             }
             if (picked.length === 1) {
-              await attach(db, message, picked[0].id, classification, "SCORE");
+              await attach(pass, message, picked[0].id, classification, "SCORE");
               counters.linksByReason.SCORE += 1;
               touched.add(picked[0].id);
               attached += 1;
@@ -646,9 +683,9 @@ export async function attachClassified(
             }
             if (answer.chosen.length === 0) {
               // None of them. A new application, which is what "none" means.
-              const fresh = await createApplication(db, classification, message, counters);
+              const fresh = await createApplication(pass, classification, message, counters);
               counters.linksByReason.NEW += 1;
-              await attach(db, message, fresh.id, classification, "NEW");
+              await attach(pass, message, fresh.id, classification, "NEW");
               touched.add(fresh.id);
               created += 1;
               attached += 1;
@@ -663,12 +700,12 @@ export async function attachClassified(
     }
 
     if (!target) {
-      target = await createApplication(db, classification, message, counters);
+      target = await createApplication(pass, classification, message, counters);
       reason = "NEW";
       created += 1;
     } else {
       await rememberAlias(
-        db,
+        pass,
         normalized,
         target.companyName,
         reason,
@@ -678,7 +715,7 @@ export async function attachClassified(
     }
 
     counters.linksByReason[reason] += 1;
-    await attach(db, message, target.id, classification, reason);
+    await attach(pass, message, target.id, classification, reason);
     touched.add(target.id);
     attached += 1;
   }

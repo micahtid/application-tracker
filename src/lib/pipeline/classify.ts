@@ -53,6 +53,13 @@ export async function revisitSkipped(db: Db): Promise<void> {
     },
   });
 
+  // The verdict has two outcomes, so the ids are collected rather than written
+  // one at a time. The rejected side is grouped by the reason it was given,
+  // because that reason is stored on the row and names the sender or the
+  // domain that produced it.
+  const reconsider: number[] = [];
+  const rejected = new Map<string, number[]>();
+
   for (const message of stale) {
     const verdict = prefilter({
       senderEmail: message.senderEmail,
@@ -60,11 +67,27 @@ export async function revisitSkipped(db: Db): Promise<void> {
       subject: message.subject,
     });
 
-    await db.emailMessage.update({
-      where: { id: message.id },
-      data: verdict.keep
-        ? { classificationStatus: "PENDING", classificationError: null }
-        : { classifierVersion: CLASSIFIER_VERSION, classificationError: verdict.reason },
+    if (verdict.keep) {
+      reconsider.push(message.id);
+      continue;
+    }
+
+    const sharing = rejected.get(verdict.reason);
+    if (sharing) sharing.push(message.id);
+    else rejected.set(verdict.reason, [message.id]);
+  }
+
+  if (reconsider.length) {
+    await db.emailMessage.updateMany({
+      where: { id: { in: reconsider } },
+      data: { classificationStatus: "PENDING", classificationError: null },
+    });
+  }
+
+  for (const [reason, ids] of rejected) {
+    await db.emailMessage.updateMany({
+      where: { id: { in: ids } },
+      data: { classifierVersion: CLASSIFIER_VERSION, classificationError: reason },
     });
   }
 }
@@ -152,9 +175,9 @@ export async function classifyPending(
           classificationAttempts: attempts,
           classificationError: detail.slice(0, 500),
           // An answer that would not parse is kept as the model wrote it, so
-          // the failure can be read rather than guessed at (LOOP Invariant 7).
-          // Nothing downstream trusts it: reading a saved answer already
-          // tolerates one that does not parse.
+          // the failure can be read rather than guessed at. Nothing downstream
+          // trusts it: reading a saved answer already tolerates one that does
+          // not parse.
           ...(error instanceof MalformedOutputError
             ? { llmClassificationRaw: error.raw.slice(0, 8000) }
             : {}),

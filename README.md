@@ -223,18 +223,69 @@ filter, or the chosen model, raise `CLASSIFIER_VERSION` in `src/lib/constants.ts
 then re-reads every cached email, for the price of one backfill. This is deliberate rather than
 automatic: without it, results from an old prompt would sit silently beside results from a new one.
 
-## Checking the pipeline by hand
+## Checking your work
 
 ```
-npm run check:pipeline
+npm run check
 ```
 
-Runs stages 4 and 5 over made up emails in a throwaway database, and asserts the behaviours that
-cannot be seen by looking at the board: two emails from one company make one row, a rejection
-arriving after an interview wins, a scheduling reply writes no status, identity comes from the
-oldest email, and running the whole thing again changes nothing. It never calls Gmail or a model.
+**This is the one command to run after touching anything.** It is the whole gate, in order: the type
+checker, the linter, the pipeline fixtures, and the adapter tests. Nothing is committed without it.
 
-Classifier accuracy itself is still reviewed by hand, in Prisma Studio.
+The type checker covers `scripts` as well as `src`, because `tsconfig.json` includes `**/*.mts` and
+the loop scripts import straight out of `src/lib`. A changed signature in the library breaks the
+harness loudly rather than quietly. That is deliberate, so do not narrow the include to make a
+refactor easier.
+
+The four parts can also be run on their own:
+
+| Command | What it does |
+|---|---|
+| `npm run typecheck` | `tsc --noEmit` over `src`, `scripts` and the app |
+| `npm run lint` | ESLint, with the Next.js rules for hooks and accessibility |
+| `npm run check:pipeline` | stages 4 and 5 over made up emails in a throwaway database |
+| `npm run check:adapters` | the three provider adapters, with no network |
+
+`check:pipeline` asserts the behaviours that cannot be seen by looking at the board: two emails from
+one company make one row, a rejection arriving after an interview wins, a scheduling reply writes no
+status, identity comes from the oldest email, and running the whole thing again changes nothing. It
+never calls Gmail or a model.
+
+Classifier accuracy itself is measured by the loop harness below, and reviewed by hand in Prisma
+Studio.
+
+**A note on the linter.** `eslint.config.mjs` writes out the rules `eslint-config-next` bundles
+rather than importing that config, because importing it loads `typescript-eslint`, which refuses to
+start against the TypeScript 7 this project builds with. Everything the production checklist asks
+for still runs. Fold the two imports back in once typescript-eslint supports TypeScript 7.
+
+## The loop harness
+
+`scripts/loop/` is a measurement harness for the matching and classification rules. It exists
+because the only honest way to know whether a rule change helped is to label a mailbox by hand once
+and then score every later change against those labels.
+
+It never writes to your real database. `npm run loop:snapshot` copies it to `loop/work.db`, and
+every later command works on that copy. Everything the harness produces stays under `loop/`, which
+is gitignored.
+
+Start with `npm run loop:snapshot`, then:
+
+| Command | What it does |
+|---|---|
+| `loop:review` | writes the labelling sheet, filled in with what the pipeline currently believes |
+| `loop:label` | reads the edited sheet back into the two label files |
+| `loop:replay` | regroups the whole message set from the cached model answers, free, about two seconds |
+| `loop:reclassify` | runs classification again over chosen messages, then replays. **The only command that costs money** |
+| `loop:score` | compares the rebuilt board to the labels and writes the scorecard |
+| `loop:diff` | what changed since the last replay, row by row |
+| `loop:ratchet` | raises every floor the last scored pass earned, so a metric can never quietly fall back |
+| `loop:intake-audit` | samples the mailbox for application mail the search never asked for |
+| `check:nouns` | fails if a company name or sender domain from your mailbox appears in the diff |
+
+The everyday cycle is `loop:replay`, `loop:score`, `loop:diff`. Scores are reported twice, over a
+60% tune split and a 40% holdout that is never looked at while a change is being designed, so a
+change that moves one and not the other is fitted to this mailbox rather than right.
 
 ## Looking at the data
 
@@ -254,5 +305,37 @@ src/lib/llm/              one adapter per provider, one shared output schema
 src/lib/pipeline/         the five stages: fetch, classify, match, recompute, sync
 src/app/api/              the routes the browser talks to
 src/components/           the board, the toolbar, settings
+scripts/loop/             the measurement harness, see above
 prototype/                the original static prototype, kept as the visual reference
 ```
+
+**`AGENTS.md` is written by `next dev`, not by hand.** It is regenerated on every run, so an edit to
+it is undone the next time the dev server starts. The generator lives at
+`node_modules/next/dist/server/lib/generate-agent-files.js`.
+
+## What this app deliberately does not have
+
+Each of these is on the Next.js production checklist and each is a decision here rather than an
+oversight.
+
+- **No Content Security Policy.** The app binds to `127.0.0.1`, serves one person, and loads no
+  third party code.
+- **No sitemap, robots file, or social images.** Nothing is public and nothing is crawled.
+- **No image component.** The app ships no images.
+- **Fonts are already handled.** `layout.tsx` uses the font module, so Figtree is self hosted at
+  build time and the app fetches nothing at runtime.
+- **Reduced motion is already handled.** `globals.css` turns off every animation and shortens every
+  transition when the reader asks for less motion.
+
+## Before shipping a change
+
+```
+npm run check
+npm run build
+npm start
+```
+
+The production build enforces things the type checker does not, especially around the boundary
+between server and client code. Note that this version of Next.js removed the size and First Load JS
+columns from the build report because they were inaccurate; measure the front end with Lighthouse in
+a private window instead.

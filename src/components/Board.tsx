@@ -16,13 +16,35 @@ import {
   RotateCcw,
 } from "lucide-react";
 import Highlight from "./Highlight";
+import MenuItem from "./MenuItem";
 import { SECTIONS, formatDate, type ApplicationView, type EmailView } from "@/lib/view";
 import { OUTCOME_LABELS, STAGE_LABELS, STATUSES, STATUS_LABELS, type Status } from "@/lib/constants";
 
+/** The anchor itself, which a parent line and a child line draw identically. */
+function EmailAnchor({
+  email,
+  query,
+  icon: Icon,
+}: {
+  email: EmailView;
+  query: string;
+  icon: React.ElementType;
+}) {
+  return (
+    <a href={email.href} target="_blank" rel="noopener noreferrer">
+      <Icon className="lucide" />
+      <span className="email__title">
+        <Highlight text={email.title} query={query} />
+      </span>
+      <span className="email__date">{formatDate(email.date)}</span>
+    </a>
+  );
+}
+
 /**
  * One line of a drawer, and the lines shown under it. The tree is one level
- * deep by construction (LOOP2 3.2 rule 3), so this renders children directly
- * rather than calling itself: a grandchild has no meaning to draw.
+ * deep by construction, so this renders children directly rather than calling
+ * itself: a grandchild has no meaning to draw.
  *
  * A nested line carries no chip saying what kind of report it is. The title
  * already says it, and a notice sent three times reads as three identical
@@ -31,24 +53,12 @@ import { OUTCOME_LABELS, STAGE_LABELS, STATUSES, STATUS_LABELS, type Status } fr
 function EmailLine({ email, query }: { email: EmailView; query: string }) {
   return (
     <li className="email">
-      <a href={email.href} target="_blank" rel="noopener noreferrer">
-        <Mail className="lucide" />
-        <span className="email__title">
-          <Highlight text={email.title} query={query} />
-        </span>
-        <span className="email__date">{formatDate(email.date)}</span>
-      </a>
+      <EmailAnchor email={email} query={query} icon={Mail} />
       {email.children.length ? (
         <ul className="emails emails--nested">
           {email.children.map((child) => (
             <li className="email email--child" key={child.id}>
-              <a href={child.href} target="_blank" rel="noopener noreferrer">
-                <CornerDownRight className="lucide" />
-                <span className="email__title">
-                  <Highlight text={child.title} query={query} />
-                </span>
-                <span className="email__date">{formatDate(child.date)}</span>
-              </a>
+              <EmailAnchor email={child} query={query} icon={CornerDownRight} />
             </li>
           ))}
         </ul>
@@ -63,7 +73,6 @@ const SECTION_ICONS: Record<Status, React.ElementType> = {
   APPLIED: List,
   REJECTED: Ban,
 };
-
 
 export type Row = { app: ApplicationView; viaEmail: boolean };
 
@@ -82,10 +91,15 @@ type BoardProps = {
 };
 
 export default function Board(props: BoardProps) {
+  // One pass fills every section, rather than one pass over the whole board
+  // for each of the four.
+  const bySection = new Map<Status, Row[]>(STATUSES.map((status) => [status, []]));
+  for (const row of props.rows) bySection.get(row.app.status)?.push(row);
+
   return (
     <div className="board" id="board">
       {SECTIONS.map((section, index) => {
-        const rows = props.rows.filter(({ app }) => app.status === section.key);
+        const rows = bySection.get(section.key) ?? [];
         if (!rows.length) return null;
 
         const total = props.totals[section.key] ?? 0;
@@ -195,7 +209,7 @@ function ApplicationRow({
             {/* Which ending it was. The section already says the row is closed,
                 so this says the one thing the section cannot: whether the
                 employer turned it down, whether the applicant walked away, or
-                whether an offer was taken back (LOOP4 Decision 7). */}
+                whether an offer was taken back. */}
             {application.outcome ? (
               <span className="tag tag--outcome">{OUTCOME_LABELS[application.outcome]}</span>
             ) : null}
@@ -244,16 +258,14 @@ function ApplicationRow({
 
               <p className="menu__label menu__label--sep">Set Status</p>
               {STATUSES.map((status) => (
-                <button
+                <MenuItem
                   key={status}
-                  className="menu__item"
                   role="menuitemradio"
-                  aria-checked={application.statusOverride === status}
+                  checked={application.statusOverride === status}
                   onClick={() => onSetStatus(application, status)}
                 >
-                  <Check className="lucide" />
                   {STATUS_LABELS[status]}
-                </button>
+                </MenuItem>
               ))}
               <div className="menu__foot">
                 <button className="menu__clear" type="button" onClick={() => onSetStatus(application, null)}>

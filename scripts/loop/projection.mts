@@ -3,10 +3,10 @@
  *
  * Row ids are left out on purpose. A rebuild renumbers every application, so
  * two boards that differ only by id are the same board, and `rebuild.stable`
- * has to be able to say so (LOOP 3.5).
+ * has to be able to say so.
  */
 import type { PrismaClient } from "@prisma/client";
-import { resolveCorrections } from "../../src/lib/pipeline/corrections.ts";
+import { resolveCorrections } from "@/lib/pipeline/corrections";
 
 export type ProjectedApplication = {
   company: string;

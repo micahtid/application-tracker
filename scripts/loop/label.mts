@@ -1,5 +1,5 @@
 /**
- * Read the edited sheet back into the two label files (LOOP 3.3).
+ * Read the edited sheet back into the two label files.
  *
  * The sheet is the human surface and the JSON is the machine one. Anything the
  * parser cannot read is reported by line rather than guessed at, and a message
@@ -33,7 +33,7 @@ const problems: string[] = [];
 const groups: GroupLabel[] = [];
 const messages: MessageLabels = {};
 /**
- * Which blocks each message id has been seen in, in sheet order (LOOP4 5.1).
+ * Which blocks each message id has been seen in, in sheet order.
  *
  * A second sighting used to be an error. It is now the one way to say that an
  * email covers two applications, so it is recorded rather than rejected, and
@@ -60,9 +60,9 @@ const SAMPLED = /^-\s*([0-9a-f]{6,32})\s*\|\s*related\s*:\s*(yes|no)\b\s*\|(.*)$
  * appear and stopping at the first thing that is not one.
  *
  * Written as a scan rather than as one long pattern because the sheet gained
- * two chips in LOOP3 and will gain more. A pattern that spells out every
+ * two chips already and will gain more. A pattern that spells out every
  * combination has to be rewritten each time, and the failure when it is not is
- * a line silently read as unparseable prose.
+ * a line read as unparseable prose with nothing to say so.
  */
 const CHIP = /^\s*(sig|stage|event|outcome|rel)\s*:\s*([A-Za-z_-]*)\s*$/;
 
@@ -89,7 +89,7 @@ function oneOf(raw: string | undefined, allowed: readonly string[]): string | nu
 /**
  * Two spaces means "shown under the nearest line above with less indentation".
  * Anything deeper is an error rather than a deeper tree, because the drawer is
- * one level and a grandchild would have no meaning to read (LOOP2 3.2 rule 3).
+ * one level and a grandchild would have no meaning to read.
  */
 const INDENT = 2;
 
@@ -277,7 +277,7 @@ lines.forEach((line, index) => {
 closeGroup();
 
 // Written only where there is more than one, so the field means what it says
-// and almost every message carries nothing at all (LOOP4 5.1).
+// and almost every message carries nothing at all.
 for (const [id, memberships] of membershipsOf) {
   if (memberships.length > 1 && messages[id]) messages[id].groups = memberships;
 }

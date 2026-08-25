@@ -7,7 +7,7 @@ import { messagesOf } from "./membership";
 import type { Adjudicator } from "./match";
 
 /**
- * The paid half of LOOP4 Decision 6, kept out of stage 4.
+ * The paid half of asking the model, kept out of stage 4.
  *
  * Stage 4 takes an `Adjudicator` and knows nothing about providers, keys or
  * money. This is what one looks like when there is a key to pay with, and the
@@ -59,5 +59,5 @@ export function adjudicatorFor(
   };
 }
 
-/** What one scored pass may spend asking (LOOP4 5.3). */
+/** What one pass may spend asking. */
 export const ADJUDICATE_CAP_USD = 0.05;

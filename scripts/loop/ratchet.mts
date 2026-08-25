@@ -1,8 +1,8 @@
 /**
- * Raise every floor the last scored pass earned (LOOP2 Gate 5).
+ * Raise every floor the last scored pass earned.
  *
- * The ratchet was kept by hand until LOOP4, which meant an iteration that
- * improved something either moved its floor by hand or quietly left it where
+ * The ratchet was once kept by hand, which meant a pass that improved
+ * something either moved its floor by hand or left it where
  * it was. A floor left behind is a floor that has stopped catching anything.
  *
  * Only ever upwards for a ratio and downwards for a count, so a floor records

@@ -8,7 +8,7 @@ export type EmailView = {
   href: string;
   /** REPEAT | REMINDER | UPDATE, or null on an email that holds its own line. */
   relation: "REPEAT" | "REMINDER" | "UPDATE" | null;
-  /** Always present, often empty, and never nested further (LOOP2 3.2 rule 3). */
+  /** Always present, often empty, and never nested further. */
   children: EmailView[];
 };
 
@@ -24,9 +24,9 @@ export type ApplicationView = {
   /** Which ending a finished application reached, or null when it has not ended. */
   outcome: Outcome | null;
   /**
-   * True when nothing has arrived for a season and the row has not ended
-   * (LOOP4 Decision 7). Worked out on every read from the date rather than
-   * stored, because it changes with the calendar rather than with the mail.
+   * True when nothing has arrived for a season and the row has not ended.
+   * Worked out on every read from the date rather than stored, because it
+   * changes with the calendar rather than with the mail.
    */
   isStale: boolean;
   isHidden: boolean;

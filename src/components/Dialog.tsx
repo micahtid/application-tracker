@@ -40,8 +40,12 @@ export default function Dialog({
   // The page re renders about once a second while a sync runs, each time with
   // a fresh onClose. Read through a ref so the setup below runs once, on open.
   // Depending on onClose directly would drag focus back every second.
+  // Written after the render rather than during it. It is only read from a
+  // keypress, which cannot land while a render is in progress.
   const closeRef = useRef(onClose);
-  closeRef.current = onClose;
+  useEffect(() => {
+    closeRef.current = onClose;
+  });
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
@@ -88,6 +92,10 @@ export default function Dialog({
       document.body.style.overflow = "";
       opener?.focus?.();
     };
+    // Runs once, when the dialog opens. Listing `initialFocus` would tear the
+    // trap down and set it up again whenever the caller passed a new ref, which
+    // would drag focus back to the top mid typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Hung off the body because the page carries a transform for its entry

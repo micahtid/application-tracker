@@ -118,11 +118,24 @@ export function extractBody(payload: Part | undefined): string {
   return cleanBody(htmlToText(html.join("\n")));
 }
 
+/**
+ * Every header of one message, keyed by its lowered name.
+ *
+ * Built once per message rather than searched for once per header wanted, and
+ * the first of a repeated name wins, which is what a search for it found.
+ */
+export function headersOf(payload: Part | undefined): Map<string, string | null> {
+  const headers = new Map<string, string | null>();
+  for (const header of payload?.headers ?? []) {
+    const name = header.name?.toLowerCase();
+    if (!name || headers.has(name)) continue;
+    headers.set(name, header.value ?? null);
+  }
+  return headers;
+}
+
 export function headerValue(payload: Part | undefined, name: string): string | null {
-  const header = payload?.headers?.find(
-    (candidate) => candidate.name?.toLowerCase() === name.toLowerCase(),
-  );
-  return header?.value ?? null;
+  return headersOf(payload).get(name.toLowerCase()) ?? null;
 }
 
 /** "Acme Recruiting <no-reply@acme.com>" becomes its three parts. */

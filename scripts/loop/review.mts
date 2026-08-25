@@ -1,5 +1,5 @@
 /**
- * Write the labelling sheet from the current state (LOOP 3.3).
+ * Write the labelling sheet from the current state.
  *
  * Labelling is bounded work, not a data entry job. The sheet arrives filled in
  * already with what the pipeline currently believes, so it is corrected in
@@ -24,7 +24,7 @@ import {
   LABEL_STAGES,
   type GroupLabel,
 } from "./common.mts";
-import { classificationOf } from "../../src/lib/pipeline/recompute.ts";
+import { classificationOf } from "@/lib/pipeline/recompute";
 
 const RECALL_SAMPLE = 25;
 
@@ -141,7 +141,7 @@ if (seeded) {
   for (const application of applications) {
     // A message already judged not related keeps that answer wherever the
     // pipeline has since put it. Listing it inside an application block would
-    // ask the opposite question, and reading the sheet back would silently
+    // ask the opposite question, and reading the sheet back would quietly
     // flip the label to "related" because that is what the section means.
     const ids = application.messages
       .map((message) => message.gmailMessageId)
@@ -149,7 +149,7 @@ if (seeded) {
 
     // Only the ones nobody has answered yet. Listing the whole row would
     // repeat lines that already sit in a labelled block, and a repeated line
-    // now says something: that the email covers two applications (LOOP4 5.1).
+    // now says something: that the email covers two applications.
     // The block it belongs beside is named instead, so it can be moved there.
     const fresh = ids.filter((id) => !labelled.has(id));
     if (!fresh.length) continue;
@@ -308,7 +308,7 @@ lines.push("  ever measured (F7).");
 lines.push("");
 lines.push("A message that genuinely covers two applications is listed under both blocks, carrying the");
 lines.push("same chips on each line. That is the only reason to list one twice, and it is what gives");
-lines.push("`group.multi_message` a denominator (LOOP4 5.1).");
+lines.push("`group.multi_message` a denominator.");
 lines.push("");
 lines.push(
   seeded
@@ -335,7 +335,7 @@ for (const block of blocks) {
     // Seeded from the label where one exists, and from the pipeline's own
     // answer where none does, exactly as `sig:` is. The pipeline has no answer
     // for the event at all yet, so that one starts empty and is written by
-    // hand once (LOOP3 5.1).
+    // hand once.
     const stage = known?.stage !== undefined ? known.stage : stageOf(id);
     const event = known?.event !== undefined ? known.event : null;
     const outcome = known?.outcome !== undefined ? known.outcome : null;
@@ -351,7 +351,7 @@ for (const block of blocks) {
 //
 // Everything already judged not related is listed too, whatever the pipeline
 // now says about it. That is what `precision.related` is counted over, and a
-// message that quietly left the sheet when the model changed its mind would
+// message that dropped off the sheet when the model changed its mind would
 // take the label with it and shrink the metric that exists to notice.
 const notRelated = await db.emailMessage.findMany({
   where: {

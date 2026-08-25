@@ -1,5 +1,5 @@
 /**
- * Copy the live database to loop/work.db (LOOP 3).
+ * Copy the live database to loop/work.db.
  *
  * The loop never writes to the live database. Every iteration wipes and
  * rebuilds its scratch copy instead, so a bad iteration cannot damage the

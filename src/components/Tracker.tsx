@@ -16,6 +16,7 @@ import {
 } from "@/lib/view";
 import { STATUSES, type Provider, type Status } from "@/lib/constants";
 import { useDismissOnOutsideClick } from "@/lib/hooks";
+import { dayString, plural } from "@/lib/text";
 
 type SyncRun = {
   id: number;
@@ -38,7 +39,7 @@ type SyncRun = {
  */
 function syncProgress(run: SyncRun): { text: string; count: string; percent: number } {
   const emails = (done: number, total: number) =>
-    `${done} of ${total} email${total === 1 ? "" : "s"}`;
+    `${done} of ${plural(total, "email")}`;
 
   // A stage that has not said how much work it has yet sits at the start of
   // its own third rather than guessing.
@@ -83,37 +84,49 @@ type StateResponse = {
   providers: Record<Provider, { label: string; model: string }>;
   hasKey: boolean;
   readFromDate: string | null;
+  /** The earliest day the sweep will read from, worked out by the server. */
+  earliest: string;
   usageUsd: number;
   sync: SyncRun | null;
 };
 
-/** How the sync is going, asked of our own server and never of Google. */
-const fetchSyncRun = () =>
-  fetch("/api/sync").then((response) => response.json() as Promise<{ sync: SyncRun | null }>);
-
-const isoDay = (date: Date) =>
-  [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("-");
+const isoDay = (date: Date) => dayString(date, "-");
 
 /**
- * A request that failed says what failed, rather than throwing where the body
- * is parsed.
+ * Every request this file makes, so a request that failed says what failed
+ * rather than throwing where the body is parsed.
  *
  * A route that raises returns no body at all, so `response.json()` threw
  * "Unexpected end of JSON input" from inside whichever callback happened to
  * run first. That names the parser rather than the request, and points at a
  * line of this file that had nothing to do with it.
+ *
+ * Passing a body sends it as JSON and makes the request a POST, unless another
+ * method is named.
  */
-async function getJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
+async function askServer<T>(
+  url: string,
+  body?: { method?: string; json?: unknown },
+): Promise<T> {
+  const response = await fetch(
+    url,
+    body
+      ? {
+          method: body.method ?? "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body.json ?? {}),
+        }
+      : undefined,
+  );
+
   if (!response.ok) {
     throw new Error(`${url} answered ${response.status}. The server log says why.`);
   }
   return (await response.json()) as T;
 }
+
+/** How the sync is going, asked of our own server and never of Google. */
+const fetchSyncRun = () => askServer<{ sync: SyncRun | null }>("/api/sync");
 
 export default function Tracker() {
   const [data, setData] = useState<StateResponse | null>(null);
@@ -138,20 +151,42 @@ export default function Tracker() {
   const searchRef = useRef<HTMLInputElement>(null);
   const syncedOnOpen = useRef(false);
 
+  /** The three places that refresh only the sync readout, written once. */
+  const setSync = useCallback((sync: SyncRun | null) => {
+    setData((current) => (current ? { ...current, sync } : current));
+  }, []);
+
   const load = useCallback(async () => {
     const [stateResponse, applicationsResponse] = await Promise.all([
-      getJson<StateResponse>("/api/state"),
-      getJson<{ applications: ApplicationView[] }>("/api/applications"),
+      askServer<StateResponse>("/api/state"),
+      askServer<{ applications: ApplicationView[] }>("/api/applications"),
     ]);
     setData(stateResponse);
     setApplications(applicationsResponse.applications);
     setLoadError(null);
     setLoaded(true);
     return stateResponse;
+    // Nothing here reads `applications`. The rule reports it because
+    // `setApplications` is named after it, and a state setter never changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const startSync = useCallback(
+    async (force: boolean) => {
+      // A refused start needs no banner of its own. The readout is asked for
+      // its own state on the next line and shows whatever really happened.
+      await askServer("/api/sync", { json: { force } }).catch(() => null);
+      setSync((await fetchSyncRun()).sync);
+    },
+    [setSync],
+  );
 
   // The board draws from saved data immediately; syncing never blocks it.
   useEffect(() => {
+    // The state written below is not written synchronously, whatever the rule
+    // reads here: it happens once two requests have come back, long after the
+    // effect itself returned.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load().then((state) => {
       // React's development mode runs effects twice, so the sync is guarded by
       // a ref as well as by the server side lock.
@@ -160,21 +195,10 @@ export default function Tracker() {
       if (state.state === "CONNECTED") void startSync(false);
       if (!state.hasKey || state.state !== "CONNECTED") setSettingsOpen(state.state !== "RECONNECT");
     });
+    // Runs once, on open. The guard above is what makes that true in
+    // development, where React runs an effect twice on purpose.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const startSync = useCallback(
-    async (force: boolean) => {
-      await fetch("/api/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ force }),
-      });
-      const { sync } = await fetchSyncRun();
-      setData((current) => (current ? { ...current, sync } : current));
-    },
-    [],
-  );
 
   /**
    * Throw away everything the syncs built and read the mailbox again from the
@@ -193,11 +217,9 @@ export default function Tracker() {
     setApplications([]);
 
     try {
-      const response = await fetch("/api/reset", { method: "POST" });
-      if (!response.ok) throw new Error(`The reset answered ${response.status}.`);
+      await askServer("/api/reset", { json: {} });
       await load();
-      const { sync } = await fetchSyncRun();
-      setData((current) => (current ? { ...current, sync } : current));
+      setSync((await fetchSyncRun()).sync);
     } catch (error) {
       // Nothing was reloaded, so the board would sit blank for ever with no
       // word of why. Say what happened and let it be read.
@@ -206,7 +228,7 @@ export default function Tracker() {
     } finally {
       setResetting(false);
     }
-  }, [load]);
+  }, [load, setSync]);
 
   // While a sync runs, ask our own server how it is going about once a second.
   // This never contacts Google.
@@ -216,12 +238,12 @@ export default function Tracker() {
 
     const timer = setInterval(async () => {
       const { sync } = await fetchSyncRun();
-      setData((current) => (current ? { ...current, sync } : current));
+      setSync(sync);
       if (sync?.status !== "RUNNING") void load();
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [running, load]);
+  }, [running, load, setSync]);
 
   // Keyboard: slash jumps to search, Escape clears it and closes menus.
   useEffect(() => {
@@ -257,12 +279,16 @@ export default function Tracker() {
       .map((application) => ({ application, match: matchQuery(application, query) }))
       .filter(({ application, match }) => match.hit && passesFilters(application, filters));
 
+    // Looked up by id rather than searched for, so sorting a long board stays
+    // one pass over it instead of one pass for every row on it.
+    const viaEmail = new Map(matched.map((entry) => [entry.application.id, entry.match.viaEmail]));
+
     return sortApplications(
       matched.map(({ application }) => application),
       sort,
     ).map((application) => ({
       app: application,
-      viaEmail: matched.find((entry) => entry.application.id === application.id)!.match.viaEmail,
+      viaEmail: viaEmail.get(application.id)!,
     }));
   }, [onBoard, query, filters, sort]);
 
@@ -281,11 +307,9 @@ export default function Tracker() {
   const narrowed = Boolean(query) || filters.season.size > 0 || filters.year.size > 0;
 
   async function patchApplication(id: number, body: Record<string, unknown>) {
-    await fetch(`/api/applications/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    // A refused change needs no banner either: the reload below redraws the row
+    // from what the server actually holds.
+    await askServer(`/api/applications/${id}`, { method: "PATCH", json: body }).catch(() => null);
     setRowMenu(null);
     await load();
   }
@@ -297,25 +321,27 @@ export default function Tracker() {
       ? data.sync
       : null;
 
-  const settingsState: SettingsState | null = data
-    ? {
-        account: data.account ? { email: data.account.email, firstName: data.account.firstName } : null,
-        provider: data.provider,
-        providers: data.providers,
-        hasKey: data.hasKey,
-        readFromDate: data.readFromDate,
-        usageUsd: data.usageUsd,
-        earliest: isoDay(
-          (() => {
-            const floor = new Date();
-            floor.setMonth(floor.getMonth() - 12);
-            return floor;
-          })(),
-        ),
-        today: isoDay(new Date()),
-        googleConfigured: data.googleConfigured,
-      }
-    : null;
+  // Rebuilt only when the state behind it changes, rather than on every one of
+  // the once a second renders a running sync causes.
+  const settingsState: SettingsState | null = useMemo(
+    () =>
+      data
+        ? {
+            account: data.account
+              ? { email: data.account.email, firstName: data.account.firstName }
+              : null,
+            provider: data.provider,
+            providers: data.providers,
+            hasKey: data.hasKey,
+            readFromDate: data.readFromDate,
+            usageUsd: data.usageUsd,
+            earliest: data.earliest,
+            today: isoDay(new Date()),
+            googleConfigured: data.googleConfigured,
+          }
+        : null,
+    [data],
+  );
 
   const disconnected = data ? data.state !== "CONNECTED" : false;
 
@@ -581,7 +607,7 @@ export default function Tracker() {
             if (state.state === "CONNECTED") void startSync(true);
           }}
           onSignOut={async () => {
-            await fetch("/api/auth/logout", { method: "POST" });
+            await askServer("/api/auth/logout", { json: {} }).catch(() => null);
             await load();
           }}
         />

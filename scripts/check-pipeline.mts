@@ -146,7 +146,7 @@ const FIXTURES: Fixture[] = [
   // found, and the step has to run in both cases or this email is guessed at.
   { day: "2026-07-04", thread: "t39", sender: "mailer@hackerrankforwork.com", subject: "Thanks for taking the Stark Global ENG Intern Test", company: "Stark Devices", role: null, status: "IN_PROGRESS", stage: "ASSESSMENT", significant: false, title: "Assessment Completion Confirmation" },
 
-  // Invariant, rewritten at LOOP4 iteration 6: two postings at one employer are
+  // The rule: two postings at one employer are
   // both waiting on an assessment here, so the vendor's email is about both of
   // them. It used to make a third row, on the grounds that a guess was worse
   // than an extra row. Belonging is a row of its own now, so there is a third
@@ -217,7 +217,7 @@ const FIXTURES: Fixture[] = [
   // Invariant: an exam email continues an application rather than starting
   // one, and what the row is waiting on is any step the applicant was sent
   // away to do. This row is waiting on a recording rather than on a test,
-  // which is a distinction the stage vocabulary only gained in LOOP3, and the
+  // which is a distinction the stage vocabulary gained late, and the
   // vendor's paper still belongs to it.
   { day: "2026-09-11", thread: "t63", sender: "careers@genco.example", subject: "Application received", company: "Genco", role: "Olive Oil Logistics Intern", status: "APPLIED", event: "CONFIRMATION", significant: true, title: "Application Confirmation" },
   { day: "2026-09-12", thread: "t64", sender: "careers@genco.example", subject: "Recorded interview", company: "Genco", role: "Olive Oil Logistics Intern", status: "IN_PROGRESS", stage: "RECORDED_INTERVIEW", event: "INVITATION", significant: true, title: "Recorded Interview" },
@@ -702,7 +702,7 @@ expect(
 //
 // The drawer's own rule, checked directly rather than through the database,
 // because it is pure and because what it must never do is read a word out of
-// the model's freeform title (LOOP3 P1).
+// the model's freeform title.
 
 const { drawerTitle, TITLE_KEYWORD_RULES } = await import("../src/lib/drawer");
 
@@ -738,7 +738,7 @@ function titleOf(parts: {
 
 expect("no branch of the display reads a word out of the model's title", TITLE_KEYWORD_RULES.length === 0);
 
-// LOOP4 Invariant 8. An ending is a fact about the application, exactly as a
+// An ending is a fact about the application, exactly as a
 // stage is, and gets a field of the same shape. Four of these are stored
 // ACCEPTED and three are stored REJECTED, so the status alone cannot tell any
 // of them apart.
@@ -772,7 +772,7 @@ expect(
   titleOf({ status: "IN_PROGRESS", stage: "INTERVIEW", event: "CANCELLATION" }) === "Interview Cancelled",
 );
 
-// LOOP4 Decision 7. Silence is not something an email says, so staleness is
+// Silence is not something an email says, so staleness is
 // worked out from the set and never asked of the model.
 const { isStale } = await import("../src/lib/pipeline/recompute");
 const now = new Date("2026-06-01T00:00:00Z");
@@ -852,7 +852,7 @@ expect(
     titleOf({ status: "ACCEPTED", event: "UPDATE" }) === "Offer Update",
 );
 
-// LOOP4 Invariant 4. Time is evidence.
+// Time is evidence.
 expect(
   "the same posting coming round a year later is a new application",
   first.filter((row) => row.company === "Omni Consumer Products").length === 2,
@@ -881,10 +881,10 @@ expect(
     first.find((row) => row.company === "Buy n Large")?.emails.length === 3,
 );
 
-// LOOP4 Invariant 6. An email belongs to every application it is about.
+// An email belongs to every application it is about.
 //
 // Written without naming any message id, because the ids are positions in the
-// fixture list and every insertion above would silently move them.
+// fixture list, and every insertion above would move them with nothing to say so.
 const rowsFor = (company: string) => first.filter((row) => row.company === company);
 /** Emails held by more than one of these rows: what fan out actually produced. */
 const sharedAmong = (company: string) => {
@@ -937,7 +937,7 @@ expect(
 
 // ------------------------------------------------------------- membership
 //
-// LOOP4 Invariant 5. Belonging to an application is a fact about a pair, so it
+// Belonging to an application is a fact about a pair, so it
 // is stored on the pair. Nothing in the matching rules creates a second
 // membership yet, so this writes one by hand and checks the shape can hold it:
 // one email, two applications, and a different line above it in each drawer.
@@ -1062,7 +1062,7 @@ const seedAccount = (await prisma.gmailAccount.findFirstOrThrow()).id;
 
 // ------------------------------------------------------------ adjudicator
 //
-// LOOP4 Invariant 9. A tie is a question, not an answer. The model reads the
+// A tie is a question, not an answer. The model reads the
 // email; when the code has run out of evidence, the model is asked, once, with
 // the candidates in front of it.
 //
@@ -1196,7 +1196,7 @@ const seedAccount = (await prisma.gmailAccount.findFirstOrThrow()).id;
 
 // ----------------------------------------------------------------- repair
 //
-// LOOP4 Invariant 7. A grouping decision made on partial evidence is revisited
+// A grouping decision made on partial evidence is revisited
 // once when the evidence is complete, and never more than once.
 //
 // Driven against boards built here rather than through the matching rules,
@@ -1289,7 +1289,7 @@ const seedAccount = (await prisma.gmailAccount.findFirstOrThrow()).id;
 
 // ---------------------------------------------------------------- aliases
 //
-// LOOP4 Invariant 3. A rule may believe what it observed. It may not believe
+// A rule may believe what it observed. It may not believe
 // what it guessed as strongly as what it observed. An alias outlives every
 // email that made it and nothing but a rebuild removes it, so it may only come
 // from a match somebody could point at.
@@ -1318,7 +1318,7 @@ expect(
 
 // -------------------------------------------------------------- prefilter
 //
-// LOOP4 Invariant 1. The junk filter runs before the model, so anything it
+// The junk filter runs before the model, so anything it
 // drops is invisible to every metric computed over the board. It may therefore
 // only remove what is certainly not an application, and it may never contradict
 // a rule the prompt states.

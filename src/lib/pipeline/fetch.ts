@@ -3,7 +3,7 @@ import type { GmailAccount } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { authorizedClient, gmailFor } from "@/lib/gmail/client";
 import { buildQueries } from "@/lib/gmail/query";
-import { extractBody, headerValue, parseSender } from "@/lib/gmail/body";
+import { extractBody, headersOf, parseSender } from "@/lib/gmail/body";
 import { prefilter } from "@/lib/prefilter";
 import { CLASSIFIER_VERSION, GMAIL_CONCURRENCY } from "@/lib/constants";
 import { RetryableError, mapWithConcurrency, withRetry } from "@/lib/retry";
@@ -125,9 +125,11 @@ export async function sweepAndStore(
 
     const message = response.data;
     const payload = message.payload ?? undefined;
-    const from = headerValue(payload, "From");
+    // Read once and looked up three times, rather than searched three times.
+    const headers = headersOf(payload);
+    const from = headers.get("from") ?? null;
     const sender = parseSender(from);
-    const subject = headerValue(payload, "Subject");
+    const subject = headers.get("subject") ?? null;
     const bodyText = extractBody(payload);
 
     const verdict = prefilter({
@@ -140,7 +142,7 @@ export async function sweepAndStore(
       data: {
         gmailAccountId: account.id,
         gmailMessageId: messageId,
-        rfc822MessageId: headerValue(payload, "Message-ID"),
+        rfc822MessageId: headers.get("message-id") ?? null,
         threadId: message.threadId ?? null,
         senderName: sender.name,
         senderEmail: sender.email,

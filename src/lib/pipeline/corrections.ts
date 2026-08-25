@@ -1,11 +1,12 @@
 import type { Db } from "@/lib/db";
 import type { Status } from "@/lib/constants";
 import { messagesOf } from "./membership";
+import { plural, verb } from "@/lib/text";
 
 /**
  * The two corrections made by hand: hide a row, or override its status. They
  * are the only values in the application table not worked out from the emails,
- * which is why a rebuild deletes everything except these (LOOP Invariant 1).
+ * which is why a rebuild deletes everything except these.
  *
  * A correction is keyed by its anchor, the oldest message in the application
  * when it was made, so it follows that message into whichever rebuilt row now
@@ -129,7 +130,7 @@ export async function saveCorrection(
 /**
  * One line per correction that came out of a rebuild somewhere it no longer
  * obviously fits. Reported on the same path as a merge collision, so it is
- * visible rather than quietly applied.
+ * visible rather than applied without a word.
  */
 export async function correctionNotes(db: Db): Promise<string[]> {
   const resolved = await resolveCorrections(db);
@@ -143,7 +144,7 @@ export async function correctionNotes(db: Db): Promise<string[]> {
     }
     if (correction.superseded) {
       notes.push(
-        `${correction.superseded} older correction${correction.superseded === 1 ? "" : "s"} on application ${correction.applicationId} ${correction.superseded === 1 ? "is" : "are"} now inert because the rows they were made on have merged.`,
+        `${plural(correction.superseded, "older correction")} on application ${correction.applicationId} ${verb(correction.superseded, "is", "are")} now inert because the rows they were made on have merged.`,
       );
     }
   }

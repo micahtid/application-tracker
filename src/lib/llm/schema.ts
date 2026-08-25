@@ -123,8 +123,7 @@ export const FIELDS: Field[] = [
   },
 ];
 
-/** JSON Schema, as Anthropic and OpenRouter want it. */
-export function jsonSchema(): Record<string, unknown> {
+function buildJsonSchema(): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
 
   for (const field of FIELDS) {
@@ -143,8 +142,7 @@ export function jsonSchema(): Record<string, unknown> {
   };
 }
 
-/** OpenAPI style, as Gemini's responseSchema wants it. */
-export function geminiSchema(): Record<string, unknown> {
+function buildGeminiSchema(): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
 
   for (const field of FIELDS) {
@@ -163,4 +161,22 @@ export function geminiSchema(): Record<string, unknown> {
     required: FIELDS.filter((field) => !field.nullable).map((field) => field.name),
     propertyOrdering: FIELDS.map((field) => field.name),
   };
+}
+
+/**
+ * Both dialects are built once at load and handed out unchanged. `FIELDS` never
+ * changes while the app runs, so rebuilding either one for every email was the
+ * same object every time. Nothing may write to what these return.
+ */
+const JSON_SCHEMA = buildJsonSchema();
+const GEMINI_SCHEMA = buildGeminiSchema();
+
+/** JSON Schema, as Anthropic and OpenRouter want it. */
+export function jsonSchema(): Record<string, unknown> {
+  return JSON_SCHEMA;
+}
+
+/** OpenAPI style, as Gemini's responseSchema wants it. */
+export function geminiSchema(): Record<string, unknown> {
+  return GEMINI_SCHEMA;
 }

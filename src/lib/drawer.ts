@@ -42,7 +42,7 @@ export function byReceived<T extends DrawerMessage>(a: T, b: T): number {
 }
 
 /**
- * Every email an application owns appears in its drawer (LOOP2 Invariant 4).
+ * Every email an application owns appears in its drawer.
  *
  * Nothing is filtered here. A reminder and a completion notice are neither
  * milestones nor noise: they are reports on an event already on the board, and
@@ -75,7 +75,7 @@ export function drawerTree<T extends DrawerMessage>(messages: T[]): DrawerNode<T
 
 /**
  * Every branch of the display that decides something by searching the model's
- * freeform title for a word (LOOP3 P1).
+ * freeform title for a word.
  *
  * Empty, and kept empty: each of the five it once held was a guess in English
  * at a fact the model had already answered. `title.keyword_rules` counts this
@@ -84,13 +84,6 @@ export function drawerTree<T extends DrawerMessage>(messages: T[]): DrawerNode<T
  */
 export const TITLE_KEYWORD_RULES: { name: string; pattern: RegExp }[] = [];
 
-/**
- * The words a line is built from, and the whole vocabulary a drawer can say.
- *
- * A line is two halves: what the email is about, and what kind of report it
- * is. Both are answers the model gave, so no wording is read here, in any
- * language.
- */
 /**
  * The badge wording, except that a drawer line says "Technical Assessment"
  * where the badge has room only for "Assessment". Everything else matches, and
@@ -114,7 +107,7 @@ const EVENT_WORDS: Record<EmailEvent, string> = {
 
 /**
  * Rung 2 of the ladder: the email asks for nothing the vocabulary can name, so
- * the line is composed from the status and the event alone (LOOP3 Decision 7).
+ * the line is composed from the status and the event alone.
  */
 const WITHOUT_STAGE: Record<EmailEvent, string> = {
   CONFIRMATION: "Application Confirmation",
@@ -137,22 +130,15 @@ const OFFER: Partial<Record<EmailEvent, string>> = {
 /**
  * An application that has ended, when nothing says which ending it was.
  *
- * A rejection, an application the person withdrew, and a posting the employer
- * cancelled are all stored REJECTED, because all three really did end. Only the
- * first is a rejection, and a line reading "rejection" on the other two says
- * something that did not happen.
- *
- * LOOP3 made this the answer for all three, which was right for the display and
- * left the stored value still saying one word for three things. LOOP4 gave the
- * model an `outcome` to answer, so this stops being a compromise and becomes
- * what it always should have been: the fallback, said when the ending is not
- * known, and never instead of an ending that is.
+ * A rejection, a withdrawal and a cancelled posting are all stored REJECTED,
+ * and only the first is a rejection, so this never stands in for an ending the
+ * model did answer.
  */
 const CLOSED = "Application Closed";
 
 /**
  * One standard title, composed from what the model answered about the email
- * rather than from what it called it (LOOP3 Decision 1 and 7).
+ * rather than from what it called it.
  *
  * The model titles each email in that email's own words, which is how one
  * mailbox ends up with "Application Received", "Application Complete" and
@@ -180,11 +166,11 @@ export function drawerTitle(message: DrawerMessage): string {
   const title = compose(status, stage, event ?? "UPDATE", said?.outcome ?? null);
 
   /**
-   * A resend says nothing new, and says which kind of nothing (LOOP3 Decision
-   * 4). A resent receipt reminds you of nothing, so calling it a reminder
-   * would invent an obligation. A resent invitation is not literally a
-   * reminder either, but it answers the reader's question the same way: no,
-   * nothing new, and the thing above is still waiting.
+   * A resend says nothing new, and says which kind of nothing. A resent
+   * receipt reminds you of nothing, so calling it a reminder would invent an
+   * obligation. A resent invitation is not literally a reminder either, but it
+   * answers the reader's question the same way: no, nothing new, and the thing
+   * above is still waiting.
    */
   if (message.parentRelation === "REPEAT") {
     const asked = event === "INVITATION" || event === "REQUEST";
@@ -202,7 +188,7 @@ function compose(
 ): string {
   // An ending said in the email's own terms beats every phrase composed below
   // it, because those are all worked out from a status that says one word for
-  // several different endings (LOOP4 Decision 7).
+  // several different endings.
   if (outcome) return OUTCOME_LABELS[outcome];
 
   // A step that has stopped is not a decision about the applicant, so it is

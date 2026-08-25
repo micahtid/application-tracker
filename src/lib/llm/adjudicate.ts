@@ -2,7 +2,7 @@ import type { ProviderAdapter, Usage } from "./types";
 
 /**
  * When the code cannot settle a match, the model is asked once, with the
- * candidates in front of it (LOOP4 Decision 6 and Invariant 9).
+ * candidates in front of it.
  *
  * > A tie is a question, not an answer.
  *

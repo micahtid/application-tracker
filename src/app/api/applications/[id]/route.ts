@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  *
  * They are written to the corrections table rather than to the row, because a
  * rebuild deletes the row and these are the only two values that have to
- * survive it (LOOP Invariant 1).
+ * survive it.
  */
 export async function PATCH(
   request: Request,
@@ -32,7 +32,7 @@ export async function PATCH(
   if ("statusOverride" in body) {
     const value = body.statusOverride;
     if (value === null || value === "AUTO" || value === "") {
-      patch.statusOverride = null;                      // back to the calculated value
+      patch.statusOverride = null;
     } else if (typeof value === "string" && (STATUSES as readonly string[]).includes(value)) {
       patch.statusOverride = value as Status;
     } else {

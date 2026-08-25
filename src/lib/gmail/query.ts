@@ -1,4 +1,5 @@
 import { ATS_DOMAINS } from "@/lib/ats";
+import { dayString } from "@/lib/text";
 
 /**
  * Stage 1 sweeps. Two of them, combined by message id:
@@ -53,13 +54,7 @@ const KEYWORD_PHRASES = [
 ];
 
 /** Gmail wants YYYY/MM/DD, in local terms. */
-function gmailDate(date: Date): string {
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("/");
-}
+const gmailDate = (date: Date) => dayString(date, "/");
 
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];

@@ -1,6 +1,17 @@
 export const STATUSES = ["ACCEPTED", "IN_PROGRESS", "APPLIED", "REJECTED"] as const;
 export type Status = (typeof STATUSES)[number];
 
+/**
+ * Whether an application is finished, either way.
+ *
+ * Four files ask this and every one of them has to give the same answer, so
+ * they all ask here. A status added to the list above is not an ending until
+ * this function says it is.
+ */
+export function hasEnded(status: string): boolean {
+  return status === "ACCEPTED" || status === "REJECTED";
+}
+
 /** What a status is called on screen, in every place one is named. */
 export const STATUS_LABELS: Record<Status, string> = {
   ACCEPTED: "Accepted",
@@ -10,7 +21,7 @@ export const STATUS_LABELS: Record<Status, string> = {
 };
 
 /**
- * What a step asks the applicant to go and do (LOOP3 Decision 1).
+ * What a step asks the applicant to go and do.
  *
  * A partition of what the applicant has to do, not a list of what employers
  * call it: they invent names constantly and no list would keep up. A work
@@ -36,7 +47,7 @@ export const STAGE_LABELS: Record<StageDetail, string> = {
 };
 
 /**
- * What kind of report an email is (LOOP3 Decision 1).
+ * What kind of report an email is.
  *
  * Asked of the model rather than read back out of its prose: searching its
  * answer for the word "reminder" would be guessing in English at something the
@@ -50,7 +61,7 @@ export const EMAIL_EVENTS = [
   "REQUEST",
   /**
    * Something already arranged that is now not happening: an interview called
-   * off, a posting put on hold (LOOP4 Decision 7).
+   * off, a posting put on hold.
    *
    * Not a DECISION, because nothing was decided about the applicant, and
    * letting it fall to UPDATE left the row claiming a stage that had stopped.
@@ -69,22 +80,12 @@ export type EmailEvent = (typeof EMAIL_EVENTS)[number];
 export const EMAIL_EVENT_FALLBACK: EmailEvent = "UPDATE";
 
 /**
- * Which ending an application reached (LOOP4 Decision 7).
+ * Which ending an application reached, or null when it has not ended.
  *
- * Symmetric with `stage_detail`: that says which step an application in
- * progress is at, this says which ending a finished one reached. Same shape,
- * same fallback behaviour, no new concept to learn.
- *
- * It exists because `status` says one word for several different facts.
- * ACCEPTED covers an offer extended, an offer the applicant accepted, an offer
- * the applicant declined and an offer the employer took back, and two of those
- * four are the opposite of good news. REJECTED covers being turned down,
- * withdrawing, and a posting the employer cancelled. A rescinded offer shown as
- * Accepted is not merely imprecise; it is wrong about the only thing the reader
- * cares about.
- *
- * `status` keeps its four values and needs no migration. This says which of the
- * endings it was, and null says the application has not ended.
+ * `status` says one word for several different facts: ACCEPTED covers an offer
+ * extended, accepted, declined and taken back, and REJECTED covers being turned
+ * down, withdrawing, and a posting cancelled. Two of those are the opposite of
+ * good news, so the row needs this as well as the status.
  *
  *   OFFER_EXTENDED          an offer is on the table and unanswered
  *   OFFER_ACCEPTED          the applicant took it
@@ -118,8 +119,7 @@ export const OUTCOME_LABELS: Record<Outcome, string> = {
 };
 
 /**
- * How long an application may go without any mail before the board says so
- * (LOOP4 Decision 7 and V3).
+ * How long an application may go without any mail before the board says so.
  *
  * Every board of this kind fills with rows acknowledged once and never
  * mentioned again. They read APPLIED for ever and crowd out the handful that
@@ -138,8 +138,8 @@ export const OUTCOME_LABELS: Record<Outcome, string> = {
 export const STALE_AFTER_DAYS = 60;
 
 /**
- * Below this the model is telling you it was not sure what it was reading, and
- * a match built on it is built on sand (LOOP4 Decision 6).
+ * Below this the model is telling you it was not sure what it was reading, so
+ * a match built on it is not worth making.
  *
  * This is `confidence_score`'s first job since it was added: it has been
  * stored on every classification and read by nothing. Every one of the 99
@@ -150,7 +150,7 @@ export const STALE_AFTER_DAYS = 60;
 export const ADJUDICATE_CONFIDENCE_FLOOR = 0.7;
 
 /**
- * Who sent the email, as the email itself shows (LOOP3 Decision 2).
+ * Who sent the email, as the email itself shows.
  *
  *   EMPLOYER           the employer writing for itself
  *   PLATFORM           a service delivering the employer's own mail
@@ -195,33 +195,29 @@ export const CLASSIFIER_VERSION = 3;
 export const GROUPING_VERSION = 5;
 
 /**
- * How long an application that has ended may stay open to new mail (LOOP4
- * Decision 4).
+ * How long an application that has ended may stay open to new mail. Past this,
+ * only a shared thread or a shared posting number attaches anything to it.
  *
- * > An application that has reached an outcome and has been silent for longer
- * > than this is closed to new attachments, except by thread id or by a shared
- * > posting number.
- *
- * Derived from the labels rather than picked. Of the 57 labelled groups, 20
- * hold more than one email; the longest runs 11.67 days and the median runs
- * 1.01. So 90 days is more than seven times the longest thing this rule must
- * not break, and it is a quarter of the annual cycle these postings come back
- * on, which is the shortest interval at which the same title really is a new
- * posting.
- *
- * Nothing in the labels sits between twelve days and a year. That empty gap is
- * what makes 90 safe rather than merely defensible: moving it anywhere inside
- * the gap changes no answer here. It is also the honest limit of the evidence,
- * because twenty groups is a small sample and full time hiring is slower than
- * internship hiring. One constant in one file with a fixture on each side, so
- * it is cheap to move when a mailbox proves it wrong.
+ * Measured from the labelled groups here: the longest real gap inside one
+ * application runs twelve days, and nothing sits between twelve days and a
+ * year, so anywhere inside that gap gives the same answers.
  */
 export const REOPEN_GAP_DAYS = 90;
 
 /** A message that has failed this many times is left alone. */
 export const MAX_CLASSIFICATION_ATTEMPTS = 3;
 
-/** Cleaned body characters sent to the model. */
+/**
+ * Cleaned body characters sent to the model.
+ *
+ * The whole cleaned body is stored even though only this much is ever sent,
+ * because the posting number patterns read the stored text too. Measured over
+ * this mailbox on 24 August 2026: 142 messages, 19 of them quoting a posting
+ * number, and the furthest such number ends at character 484, so a cap here
+ * would be safe. It is not applied, because the entire stored corpus is 142
+ * kilobytes and capping it would save nothing while throwing away text a
+ * later pattern might want.
+ */
 export const BODY_CHAR_LIMIT = 1500;
 
 export const GMAIL_CONCURRENCY = 10;

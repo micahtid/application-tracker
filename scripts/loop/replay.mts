@@ -1,6 +1,6 @@
 /**
  * L1. Wipe what was derived, then group and recompute the whole message set
- * again, oldest first (LOOP 3, step 2).
+ * again, oldest first.
  *
  * Free and about two seconds, because it reads the emails and the cached model
  * answers already on disk and never calls Gmail or a model. Every iteration
@@ -20,14 +20,14 @@ import {
   writeJson,
   type SnapshotState,
 } from "./common.mts";
-import { decryptSecret } from "../../src/lib/crypto.ts";
-import type { Provider } from "../../src/lib/constants.ts";
-import { adjudicatorFor } from "../../src/lib/pipeline/adjudicator.ts";
-import { messagesOf } from "../../src/lib/pipeline/membership.ts";
-import type { Adjudicator } from "../../src/lib/pipeline/match.ts";
+import { decryptSecret } from "@/lib/crypto";
+import type { Provider } from "@/lib/constants";
+import { adjudicatorFor } from "@/lib/pipeline/adjudicator";
+import { messagesOf } from "@/lib/pipeline/membership";
+import type { Adjudicator } from "@/lib/pipeline/match";
 import { projectApplications } from "./projection.mts";
-import { rebuildGrouping } from "../../src/lib/pipeline/rebuild.ts";
-import { resolveCorrections } from "../../src/lib/pipeline/corrections.ts";
+import { rebuildGrouping } from "@/lib/pipeline/rebuild";
+import { resolveCorrections } from "@/lib/pipeline/corrections";
 
 const db = openWorkDb();
 
@@ -76,7 +76,7 @@ const planted = await plantProbeCorrections();
  * The replay is free, and stays free unless it is asked to pay.
  *
  * `--adjudicate <cap>` is the only way a rebuild ever calls a model, and it
- * exists so LOOP4 iteration 9 can be measured rather than assumed. Without it
+ * exists so the change can be measured rather than assumed. Without it
  * every iteration reads answers already on disk and `cost.pass_usd` reads 0,
  * which is what makes "this iteration was free" checkable rather than claimed.
  */
@@ -126,7 +126,7 @@ const corrections = await db.applicationCorrection.count();
 const resolved = await resolveCorrections(db);
 const preserved = corrections ? resolved.size / corrections : 1;
 
-// Distinct messages rather than memberships: from LOOP4 iteration 5 one
+// Distinct messages rather than memberships: one
 // email may be held by two applications, and counting the links would report
 // more attached mail than the mailbox contains.
 const attachedMessages = await db.emailMessage.count({ where: { memberships: { some: {} } } });
@@ -144,7 +144,7 @@ const result = {
   notes: [...new Set([...first.notes, ...second.notes])],
   // From the first rebuild alone. The second exists only to prove that running
   // it again changes nothing, and adding its tally to the first would report
-  // every guess twice (LOOP4 Decision 8).
+  // every guess twice.
   counters: first.counters,
   repairs: first.repairs,
   applications: firstBoard,

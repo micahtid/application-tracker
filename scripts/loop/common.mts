@@ -1,5 +1,5 @@
 /**
- * Shared plumbing for the loop harness (LOOP 3).
+ * Shared plumbing for the loop harness.
  *
  * Everything here is deterministic on purpose. A score is only worth reading
  * when the only thing that moved between two runs is the change being tested,
@@ -23,10 +23,10 @@ export const LAST_RESULT = path.join(LOOP_DIR, "last-result.json");
 export const REPORT = path.join(LOOP_DIR, "report.md");
 /** What was true of the live database at the moment the copy was taken. */
 export const SNAPSHOT_STATE = path.join(LOOP_DIR, "snapshot.json");
-/** The floor every inherited metric may not fall below (LOOP2 Gate 5). */
+/** The floor every inherited metric may not fall below. */
 export const FLOORS = path.join(LOOP_DIR, "floors.json");
 /**
- * What the sampled intake audit found (LOOP4 Decision 9). Its own file rather
+ * What the sampled intake audit found. Its own file rather
  * than a line in the replay, because it is bought rather than computed and a
  * free iteration has to be able to report the last reading without paying for
  * a new one.
@@ -67,7 +67,7 @@ export function hash32(value: string): number {
   return h >>> 0;
 }
 
-/** 60% of labelled groups tune, the other 40% held out (LOOP 3.5). */
+/** 60% of labelled groups tune, the other 40% held out. */
 export const TUNE_SHARE = 60;
 
 export type Half = "TUNE" | "HOLDOUT";
@@ -95,53 +95,51 @@ export type MessageLabel = {
    * The email whose line in the drawer this one is shown under, or null when it
    * holds a line of its own. A different question from `significant`, and both
    * are labelled, because one decides where an email is shown and the other
-   * decides whether it records a change of state (LOOP2 3.2 rule 6).
+   * decides whether it records a change of state.
    */
   parent?: string | null;
   /** REPEAT | REMINDER | UPDATE. Null exactly when `parent` is null. */
   relation?: string | null;
   /**
-   * What this email asks of the applicant, and what kind of report it is
-   * (LOOP3 5.1). Both are null on an email they do not apply to, and both are
-   * labelled from the email itself rather than from anything the pipeline
+   * What this email asks of the applicant, and what kind of report it is. Both
+   * are null on an email they do not apply to, and both are labelled from the
+   * email itself rather than from anything the pipeline
    * currently answers, which is the only thing that makes a paid pass
    * judgeable rather than a matter of opinion.
    */
   stage?: string | null;
   event?: string | null;
   /**
-   * Which ending this application reached, on the email that announced it
-   * (LOOP4 Decision 7). Null on every email that announces no ending, which is
-   * almost all of them. Labelled from the email rather than from anything the
+   * Which ending this application reached, on the email that announced it.
+   * Null on every email that announces no ending, which is almost all of them.
+   * Labelled from the email rather than from anything the
    * pipeline can currently store, because a stored value that says one word
    * for three different endings is the thing being measured.
    */
   outcome?: string | null;
   /**
-   * Every group this email belongs to, when it belongs to more than one
-   * (LOOP4 5.1). Absent on almost every message, and read only where it is
-   * set. Derived from the sheet rather than written by hand: an email listed
+   * Every group this email belongs to, when it belongs to more than one.
+   * Absent on almost every message, and read only where it is set. Derived
+   * from the sheet rather than written by hand: an email listed
    * under two blocks is one that covers two applications.
    *
    * It holds the whole pairing rather than the group id alone, because a
    * drawer parent is a fact about the pairing and not about the email: an
-   * email in two applications sits under a different line in each. That is
-   * Decision 1's own argument for the membership table, and the labels have to
-   * be able to say it before Iteration 6 can be judged.
+   * email in two applications sits under a different line in each, which is
+   * the whole argument for the membership table.
    */
   groups?: { id: string; parent: string | null; relation: string | null }[] | null;
   why?: string;
 };
 
 /**
- * The vocabulary the labels are written in, taken from the partition in
- * LOOP3 1.1 rather than from anything this mailbox happens to contain.
+ * The vocabulary the labels are written in, taken from what the hiring world
+ * does rather than from anything this mailbox happens to contain.
  *
  * It lives here rather than in `@/lib/constants` because the labels describe
  * the hiring world and the constants describe what the pipeline can currently
- * say. Iteration 2 is where the second list catches up with the first, and
- * until it does, a label the code cannot yet produce is exactly the thing
- * being measured.
+ * say. A label the code cannot yet produce is exactly the thing being
+ * measured.
  */
 export const LABEL_STAGES = [
   "ASSESSMENT",          // something marked, with right answers
@@ -162,12 +160,12 @@ export const LABEL_EVENTS = [
 ] as const;
 
 /**
- * Which ending an application reached (LOOP4 Decision 7).
+ * Which ending an application reached.
  *
  * The same partition idea as the stages: defined by what happened rather than
  * by what anybody called it. Four of these are stored ACCEPTED today and three
  * are stored REJECTED, which is why the labels have to be able to say them
- * before Iteration 8 can be judged at all.
+ * before the pipeline can be judged on them at all.
  */
 export const LABEL_OUTCOMES = [
   "OFFER_EXTENDED",         // an offer is on the table and unanswered

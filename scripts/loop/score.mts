@@ -1,6 +1,5 @@
 /**
- * Compare the rebuilt board to the labels and write the scorecard (LOOP 3.4,
- * 3.5).
+ * Compare the rebuilt board to the labels and write the scorecard.
  *
  * Predicted applications and labelled groups share no identifier, so they are
  * lined up by message overlap. Every metric is computed only over labelled
@@ -32,11 +31,11 @@ import {
   type Half,
   type SnapshotState,
 } from "./common.mts";
-import { TITLE_KEYWORD_RULES, drawerTitle, drawerTree, shownIn } from "../../src/lib/drawer.ts";
-import { classificationOf } from "../../src/lib/pipeline/recompute.ts";
-import { normalizeCompany, sameEmployer } from "../../src/lib/normalize.ts";
-import { GROUPING_VERSION, CLASSIFIER_VERSION } from "../../src/lib/constants.ts";
-import { findSplitSuspects } from "../../src/lib/pipeline/duplicates.ts";
+import { TITLE_KEYWORD_RULES, drawerTitle, drawerTree, shownIn } from "@/lib/drawer";
+import { classificationOf } from "@/lib/pipeline/recompute";
+import { normalizeCompany, sameEmployer } from "@/lib/normalize";
+import { GROUPING_VERSION, CLASSIFIER_VERSION } from "@/lib/constants";
+import { findSplitSuspects } from "@/lib/pipeline/duplicates";
 
 const MIN_TRUSTED = 20;
 const HALVES: Half[] = ["TUNE", "HOLDOUT"];
@@ -50,14 +49,14 @@ if (!applicationLabels.groups.length) {
 }
 
 /**
- * What the last replay recorded, including the counters Gate 9 requires.
+ * What the last replay recorded, including the pipeline counters.
  *
  * The counters describe things the pipeline did that no board can show
  * afterwards: a dedupe key made unique to get past a collision, an alias
  * written, a repair that fired. Every one of them is a decision the code could
- * not make honestly, so it is counted where it happens and reported here
- * (LOOP4 Decision 8). A counter nothing writes yet reads as a dash rather than
- * as a zero, because those are different claims.
+ * not make honestly, so it is counted where it happens and reported here. A
+ * counter nothing writes yet reads as a dash rather than as a zero, because
+ * those are different claims.
  */
 type Counters = Partial<{
   dedupeCollisions: number;
@@ -87,9 +86,9 @@ const counters: Counters = replay.counters ?? {};
 // ---------------------------------------------------------------- the board
 
 /**
- * The board, with each application's emails carrying the pairing's own parent
- * (LOOP4 Decision 1). One email held by two applications appears once in each,
- * under whatever line it sits below there.
+ * The board, with each application's emails carrying the pairing's own parent.
+ * One email held by two applications appears once in each, under whatever line
+ * it sits below there.
  */
 const applications = (
   await db.application.findMany({
@@ -137,10 +136,10 @@ const allMessages = await db.emailMessage.findMany({
 });
 
 /**
- * Which labelled groups each message belongs to (LOOP4 5.1).
+ * Which labelled groups each message belongs to.
  *
  * A set rather than one value, because an email that covers two postings
- * belongs to both and the whole of Decision 1 is about being able to say so. A
+ * belongs to both, and being able to say so is the whole point. A
  * message in one group, which is almost all of them, gives a set of one and
  * every metric below reads exactly as it did.
  */
@@ -205,7 +204,7 @@ const pairs: { group: string; application: (typeof applications)[number]; overla
 
 /**
  * A message labelled as belonging to more than one application is left out of
- * the alignment and out of `group.split` and `group.merge` (LOOP4 5.1).
+ * the alignment and out of `group.split` and `group.merge`.
  *
  * Those three ask which single row a message belongs in, which is the one
  * question a multi group message has no answer to. Counting it would make an
@@ -344,7 +343,7 @@ for (const group of applicationLabels.groups) {
  *
  * Read off the board rather than off `application_id`, because from Iteration
  * 5 belonging is a row of its own and a message may be held by two rows. Today
- * it is always a set of nought or one, and every metric below reads exactly as
+ * it is always a set of none or one, and every metric below reads exactly as
  * it did.
  */
 const applicationsHolding = new Map<string, Set<number>>();
@@ -372,8 +371,7 @@ function expectedApplications(id: string): Set<number> | null {
 }
 
 /**
- * group.message_accuracy, one row per labelled message, as a set comparison
- * (LOOP4 5.1).
+ * group.message_accuracy, one row per labelled message, as a set comparison.
  *
  * A whole group counts as wrong the moment one of its emails lands elsewhere,
  * so `group.exact` cannot tell a row that is one email out from a row that is
@@ -393,12 +391,12 @@ for (const id of messagesInGroups) {
 
 /**
  * group.multi_message, over the messages a label says cover more than one
- * application (LOOP4 5.2).
+ * application.
  *
  * The share of them filed against every one of their applications. Nothing but
  * the schema can move this: with one nullable column on the message there is
- * no way to file an email against two rows, so it reads 0 until Iteration 5
- * makes the answer expressible and Iteration 6 makes it happen.
+ * no way to file an email against two rows, so it reads 0 until the membership
+ * table makes the answer expressible and stage 4 makes it happen.
  */
 for (const id of messagesInGroups) {
   if (belongsToOneGroup(id)) continue;
@@ -409,8 +407,7 @@ for (const id of messagesInGroups) {
 }
 
 /**
- * fanout.precision and fanout.events, the other direction of the same question
- * (LOOP4 5.2).
+ * fanout.precision and fanout.events, the other direction of the same question.
  *
  * `group.multi_message` reads the labels and asks whether every email that
  * covers two applications reached both. These read the board and ask whether
@@ -450,7 +447,7 @@ for (const application of applications) {
 
 // sig.f1, over every labelled message the pipeline could have written a
 // milestone for. A repeat that writes no milestone is the true negative the
-// whole of Invariant 3 is about.
+// whole rule is about.
 const wroteMilestone = new Set<string>();
 for (const application of applications) {
   for (const row of application.statusHistory) wroteMilestone.add(row.message.gmailMessageId);
@@ -493,7 +490,7 @@ for (const [id, label] of Object.entries(messageLabels)) {
 }
 
 /**
- * precision.related, the other direction of the same gate (LOOP3 5.2).
+ * precision.related, the other direction of the same gate.
  *
  * `recall.related` has always counted mail wrongly thrown away and nothing
  * counted mail wrongly let in, so a change that loosens the gate could only
@@ -541,13 +538,13 @@ for (const [id, label] of Object.entries(messageLabels)) {
   if (label.event) count("event.accuracy", half, said?.emailEvent === label.event);
 
   /**
-   * outcome.accuracy, over the emails that announced an ending (LOOP4 5.2).
+   * outcome.accuracy, over the emails that announced an ending.
    *
    * Read off the stored answer the same way, and typed as an addition the
-   * classification does not carry yet: until Iteration 8 there is no field to
-   * read, so every labelled ending scores as a miss. That is the defect being
-   * measured rather than a fault in the reading, and a metric that only
-   * starts existing once it passes would never have shown V2 at all.
+   * classification does not carry yet: until there is a field to read, every
+   * labelled ending scores as a miss. That is the defect being measured rather
+   * than a fault in the reading, and a metric that only starts existing once
+   * it passes would never have shown the problem at all.
    */
   if (label.outcome) {
     const stored = (said as (typeof said & { outcome?: string | null }) | null)?.outcome ?? null;
@@ -572,7 +569,7 @@ for (const application of applications) {
  *
  * Keyed by the pairing rather than by the email, because the drawer parent is
  * a fact about the pairing: an email in two applications sits under a
- * different line in each (LOOP4 Decision 1). Today one column holds it, so
+ * different line in each. Today one column holds it, so
  * both entries carry the same value and the reading is unchanged.
  */
 const computedParent = new Map<string, string | null>();
@@ -619,12 +616,12 @@ for (const [id, label] of Object.entries(messageLabels)) {
 }
 
 /** Broken down by relation, so nesting a reminder and nesting a completion
- *  notice can be told apart even though one rule does both (LOOP2 4.2). */
+ *  notice can be told apart even though one rule does both. */
 const parentByRelation = new Map<string, Tally>();
 let hidden = 0;
 /**
  * Nested lines that read exactly as a line already shown above them in the
- * same drawer (LOOP3 5.2).
+ * same drawer.
  *
  * A drawer that says the same six words three times has told the reader
  * nothing twice. Counted over the composed titles rather than the stored ones,
@@ -716,7 +713,7 @@ const suspects = await findSplitSuspects(db);
  * so its sum is the whole history of classification and reads the same however
  * little an iteration bought. loop:snapshot records that total when it takes
  * the copy; the difference since is the only number that can mean "this
- * iteration was free" (LOOP2 2).
+ * iteration was free".
  */
 const cost = await db.llmUsage.aggregate({ _sum: { costUsd: true } });
 const snapshot = readJson<SnapshotState | null>(SNAPSHOT_STATE, null);
@@ -740,8 +737,7 @@ const falseDrops = Object.entries(messageLabels).filter(
 ).length;
 
 /**
- * repair.regressions, judged against the labels rather than against a counter
- * (LOOP4 5.2).
+ * repair.regressions, judged against the labels rather than against a counter.
  *
  * A merge is a regression when it joined two emails the labels put in different
  * applications. A split is one when it separated two the labels put together.
@@ -765,7 +761,7 @@ function countOf(name: keyof Counters): string {
 }
 
 /**
- * What the last intake audit found (LOOP4 Decision 9).
+ * What the last intake audit found.
  *
  * The one number in this project measured against the mailbox rather than
  * against the subset the sweep returned. Written by its own command, because
@@ -831,9 +827,9 @@ const rows: Row[] = [
   { metric: "group.split_suspects", tune: String(suspects.length), holdout: "—", target: "advisory" },
   { metric: "classify.failed", tune: String(failures), holdout: "—", target: "0" },
   /**
-   * Gate 9's counters (LOOP4 Decision 8). Every one of these records a
+   * The pipeline counters. Every one of these records a
    * decision the code could not make honestly, and a dash means nothing has
-   * been written to count it yet rather than that it happened nought times.
+   * been written to count it yet rather than that it happened zero times.
    */
   { metric: "fanout.events", tune: String(fannedOut.length), holdout: "—", target: "1 here, and it is a ceiling" },
   { metric: "repair.merges", tune: countOf("repairMerges"), holdout: "—", target: "advisory" },
@@ -910,7 +906,7 @@ if (parentByRelation.size) {
 
 /**
  * Gate 5, the ratchet. Every inherited metric has a floor and none of them may
- * fall below it. Written down rather than remembered, because LOOP2 changes
+ * fall below it. Written down rather than remembered, because later work
  * code that ten scored iterations already tuned, and a trade has to be argued
  * for in writing rather than noticed later.
  */
@@ -934,7 +930,7 @@ const readings: Record<string, { TUNE: number | null; HOLDOUT: number | null }> 
   "drawer.hidden": { TUNE: hidden, HOLDOUT: null },
   "drawer.duplicate_lines": { TUNE: duplicateLines, HOLDOUT: null },
   "title.keyword_rules": { TUNE: TITLE_KEYWORD_RULES.length, HOLDOUT: null },
-  // Gate 9's counters. A counter nothing writes yet reads null and is skipped
+  // The pipeline counters. A counter nothing writes yet reads null and is skipped
   // by the ratchet, which is what stops a floor being held against a number
   // that does not exist.
   "fanout.events": { TUNE: fannedOut.length, HOLDOUT: null },

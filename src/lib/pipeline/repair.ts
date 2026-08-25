@@ -1,8 +1,10 @@
 import type { Db } from "@/lib/db";
-import { REOPEN_GAP_DAYS } from "@/lib/constants";
+import { REOPEN_GAP_DAYS, hasEnded } from "@/lib/constants";
 import {
   dedupeKey,
+  pairsToCompare,
   requisitionNumbers,
+  requisitionsAgree,
   requisitionsDisagree,
   rolesMatch,
   sameEmployer,
@@ -12,25 +14,15 @@ import { messagesOf } from "./membership";
 import type { PipelineCounters } from "./counters";
 
 /**
- * LOOP4 Invariant 7. A grouping decision made on partial evidence is revisited
- * once when the evidence is complete, and never more than once.
+ * A grouping decision made on partial evidence, revisited once when the
+ * evidence is complete and never more than once.
  *
  * Stage 4 files each email against whatever exists at the moment it arrives,
- * which is correct and necessary and also greedy: two rows a later email proves
- * are one stay two, and one row a later email proves is two stays one. A
- * rebuild is no help, because it replays the same pass in the same order over
- * the same data and reproduces the same answer exactly. That is what makes it a
- * rebuild, and it is what makes it useless as a repair.
+ * so two rows a later email proves are one stay two. A rebuild replays the same
+ * pass over the same data and reproduces the same answer, so it is no help.
  *
- * This is the repair. It is the standard answer in the entity resolution
- * literature: pairwise decisions taken in arrival order accumulate errors no
- * pairwise decision can see, so the cluster is looked at again afterwards.
- *
- * **⚠ It is not iterative, and that is the whole design.** Merging two rows
- * pools their titles and their posting numbers, which can make the merged row a
- * split suspect, splitting it back, which makes the halves merge suspects
- * again. Nothing in the conditions forbids that cycle, so "run to a fixed point
- * with a small bound" is a hope rather than a termination argument. Instead:
+ * **It is not iterative, and that is the whole design.** These four rules are
+ * what makes it stop:
  *
  *   1. Read the whole board once and work out every suspect from that one
  *      snapshot. Nothing computed later sees a change made earlier.
@@ -40,9 +32,7 @@ import type { PipelineCounters } from "./counters";
  *   4. Recompute the affected rows once. Stop.
  *
  * Work a second pass would have found is counted as `repair.unsettled` and
- * reported rather than chased. Leftover work that is visible is better than a
- * fixed point that is not obviously the right board, and a non zero reading is
- * a finding about a matching rule rather than a reason to run this again.
+ * reported rather than chased.
  */
 
 /** What the pass did, in enough detail for the scorer to judge it. */
@@ -56,7 +46,7 @@ export type RepairAction = {
 export type RepairOutcome = { actions: RepairAction[]; unsettled: number; touched: number[] };
 
 /**
- * The links the repair may not undo (LOOP4 Decision 3).
+ * The links the repair may not undo.
  *
  * > A THREAD or REQUISITION link is evidence and the repair does not get to
  * > overrule evidence on the strength of a title comparison.
@@ -87,12 +77,6 @@ async function readBoard(db: Db): Promise<Snapshot[]> {
     const messages = await messagesOf(db, application.id);
     if (!messages.length) continue;
 
-    const memberships = await db.applicationMembership.findMany({
-      where: { applicationId: application.id },
-      select: { messageId: true, reason: true },
-    });
-    const reasonOf = new Map(memberships.map((row) => [row.messageId, row.reason]));
-
     const requisitions = new Set<string>();
     const detailed = messages.map((message) => {
       const own = requisitionNumbers(message.subject, message.bodyText);
@@ -101,7 +85,7 @@ async function readBoard(db: Db): Promise<Snapshot[]> {
         id: message.id,
         gmailMessageId: message.gmailMessageId,
         requisitions: own,
-        reason: reasonOf.get(message.id) ?? null,
+        reason: message.reason,
       };
     });
 
@@ -111,7 +95,7 @@ async function readBoard(db: Db): Promise<Snapshot[]> {
       companyNormalized: application.companyNormalized,
       roleTitle: application.roleTitle,
       requisitions,
-      ended: status === "ACCEPTED" || status === "REJECTED",
+      ended: hasEnded(status),
       firstAt: messages[0].receivedAt.getTime(),
       lastAt: messages[messages.length - 1].receivedAt.getTime(),
       messages: detailed,
@@ -121,15 +105,10 @@ async function readBoard(db: Db): Promise<Snapshot[]> {
   return board;
 }
 
-function sharesRequisition(left: Set<string>, right: Set<string>): boolean {
-  for (const value of left) if (right.has(value)) return true;
-  return false;
-}
-
-/** Decision 3's five conditions, all of which have to hold. */
+/** The five conditions for a merge, all of which have to hold. */
 function shouldMerge(left: Snapshot, right: Snapshot): boolean {
   if (!sameEmployer(left.companyNormalized, right.companyNormalized)) return false;
-  if (!sharesRequisition(left.requisitions, right.requisitions) && !rolesMatch(left.roleTitle, right.roleTitle)) {
+  if (!requisitionsAgree(left.requisitions, right.requisitions) && !rolesMatch(left.roleTitle, right.roleTitle)) {
     return false;
   }
   if (requisitionsDisagree(left.requisitions, right.requisitions)) return false;
@@ -137,9 +116,9 @@ function shouldMerge(left: Snapshot, right: Snapshot): boolean {
   // is nothing a merge could be putting right.
   if (left.ended && right.ended) return false;
 
-  // Invariant 4 again, between rows rather than between an email and a row: an
-  // application that ended and then went quiet for a season is finished, and
-  // whatever came later is a new one.
+  // The reopen rule again, between rows rather than between an email and a
+  // row: an application that ended and then went quiet for a season is
+  // finished, and whatever came later is a new one.
   const [earlier, later] = left.firstAt <= right.firstAt ? [left, right] : [right, left];
   const gapDays = (later.firstAt - earlier.lastAt) / 86_400_000;
   if (earlier.ended && gapDays > REOPEN_GAP_DAYS) return false;
@@ -159,7 +138,7 @@ function splitOf(row: Snapshot): { left: number[]; right: number[] } | null {
   if (numbered.length < 2) return null;
 
   const first = numbered[0].requisitions;
-  const away = numbered.filter((message) => !sharesRequisition(message.requisitions, first));
+  const away = numbered.filter((message) => !requisitionsAgree(message.requisitions, first));
   if (!away.length) return null;
 
   // Evidence the repair may not overrule stays where it is, and a split that
@@ -183,10 +162,8 @@ export async function repairGrouping(
   // Everything is worked out from this one snapshot, before anything is
   // applied, so no suspect can be an artefact of a change made in this pass.
   const merges: [number, number][] = [];
-  for (let i = 0; i < board.length; i += 1) {
-    for (let j = i + 1; j < board.length; j += 1) {
-      if (shouldMerge(board[i], board[j])) merges.push([board[i].id, board[j].id]);
-    }
+  for (const [i, j] of pairsToCompare(board.map((row) => row.companyNormalized))) {
+    if (shouldMerge(board[i], board[j])) merges.push([board[i].id, board[j].id]);
   }
 
   const splits: { id: number; left: number[]; right: number[] }[] = [];
@@ -215,11 +192,21 @@ export async function repairGrouping(
     // Every membership is repointed rather than dropped, so nothing is undone
     // and the protected reasons never come into it. A message already on the
     // left, which fan out can produce, keeps the membership it has.
-    for (const message of right.messages) {
-      await db.applicationMembership.upsert({
-        where: { applicationId_messageId: { applicationId: leftId, messageId: message.id } },
-        create: { applicationId: leftId, messageId: message.id, reason: message.reason },
-        update: {},
+    //
+    // The overlap is read off the snapshot rather than asked of the database,
+    // which lets the rest go in one write. That is safe because rule 3 above
+    // means neither side has been touched by an earlier repair in this pass,
+    // so the snapshot still describes both rows exactly.
+    const already = new Set(left.messages.map((message) => message.id));
+    const arriving = right.messages.filter((message) => !already.has(message.id));
+
+    if (arriving.length) {
+      await db.applicationMembership.createMany({
+        data: arriving.map((message) => ({
+          applicationId: leftId,
+          messageId: message.id,
+          reason: message.reason,
+        })),
       });
     }
     await db.applicationMembership.deleteMany({ where: { applicationId: rightId } });

@@ -356,12 +356,6 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .section + .section { margin-top: 44px; }
 .section[hidden] { display: none; }
 
-/* Stagger runs on the first paint only, never on later renders. */
-.board--intro .section {
-  animation: fade 0.55s var(--ease) both;
-  animation-delay: calc(var(--i) * 70ms + 240ms);
-}
-
 .section__head {
   display: flex; align-items: center; gap: 10px;
   width: 100%;
@@ -536,7 +530,7 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .email__none { padding: 4px 0 6px; font-size: 14px; color: var(--text-3); font-style: italic; }
 
 /* A line shown under an earlier one: a report on a step already on the board,
-   rather than a step of its own (LOOP2 Invariant 4). */
+   rather than a step of its own. */
 .emails--nested {
   margin: 0 0 2px 0;
   padding: 2px 0 2px 18px;

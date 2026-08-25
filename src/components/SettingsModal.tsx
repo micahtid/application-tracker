@@ -17,6 +17,15 @@ import type { Provider } from "@/lib/constants";
 
 type KeyPhase = "idle" | "checking" | "valid" | "invalid";
 
+/** The star before the label of a field that has to be filled in. */
+function Required() {
+  return (
+    <abbr className="req" title="Required">
+      *
+    </abbr>
+  );
+}
+
 export type SettingsState = {
   account: { email: string; firstName: string | null } | null;
   provider: Provider | null;
@@ -153,9 +162,7 @@ export default function SettingsModal({
       <section className="group">
         <div className="group__head">
           <span className="group__label">
-            <abbr className="req" title="Required">
-              *
-            </abbr>
+            <Required />
             Gmail Account
           </span>
         </div>
@@ -211,9 +218,7 @@ export default function SettingsModal({
       <section className="group">
         <div className="group__head">
           <label className="group__label" htmlFor="apiKey">
-            <abbr className="req" title="Required">
-              *
-            </abbr>
+            <Required />
             API Key
           </label>
         </div>
@@ -292,9 +297,7 @@ export default function SettingsModal({
       <section className="group">
         <div className="group__head">
           <label className="group__label" htmlFor="startDate">
-            <abbr className="req" title="Required">
-              *
-            </abbr>
+            <Required />
             Read Emails From
           </label>
         </div>

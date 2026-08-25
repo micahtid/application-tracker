@@ -12,7 +12,12 @@ import { useEffect, useRef } from "react";
  */
 export function useDismissOnOutsideClick(active: boolean, onDismiss: () => void): void {
   const dismiss = useRef(onDismiss);
-  dismiss.current = onDismiss;
+
+  // Written after the render rather than during it. The listener below only
+  // reads it from a click, which cannot land while a render is in progress.
+  useEffect(() => {
+    dismiss.current = onDismiss;
+  });
 
   useEffect(() => {
     if (!active) return;

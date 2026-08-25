@@ -3,8 +3,7 @@ import type { Db } from "@/lib/db";
 import type { LinkReason } from "./counters";
 
 /**
- * The only two ways anything reads which emails belong to which applications
- * (LOOP4 Decision 1).
+ * The only two ways anything reads which emails belong to which applications.
  *
  * `application_id` used to sit on the message and every read was a
  * `findMany({ where: { applicationId } })` scattered across five files. Adding
@@ -25,6 +24,8 @@ import type { LinkReason } from "./counters";
 export type MessageInApplication = EmailMessage & {
   parentMessageId: number | null;
   parentRelation: string | null;
+  /** What made the link, which the repair pass reads to decide what it may undo. */
+  reason: string | null;
 };
 
 /** Every email of an application, oldest first, as every call site wants. */
@@ -39,15 +40,16 @@ export async function messagesOf(db: Db, applicationId: number): Promise<Message
       ...membership.message,
       parentMessageId: membership.parentMessageId,
       parentRelation: membership.parentRelation,
+      reason: membership.reason,
     }))
     .sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime() || a.id - b.id);
 }
 
 /**
- * The other direction, which is new: every application an email belongs to.
+ * The other direction: every application an email belongs to.
  *
- * Nought, one, or more than one. Nought is an email nothing has claimed, one is
- * every ordinary email, and more than one is what Decision 2 creates.
+ * None, one, or more than one. None is an email nothing has claimed, one is
+ * every ordinary email, and more than one is what fan out creates.
  */
 export async function applicationsOf(db: Db, messageId: number): Promise<number[]> {
   const memberships = await db.applicationMembership.findMany({
@@ -74,7 +76,7 @@ export async function applicationForThread(db: Db, threadId: string): Promise<nu
  * Idempotent on the pair, so a rerun over an already grouped mailbox changes
  * nothing. The reason is only written when the link is created: a link that
  * already exists was made by whatever made it, and overwriting that with a
- * weaker reason would launder a guess into evidence.
+ * weaker reason would record a guess as evidence.
  */
 export async function link(
   db: Db,

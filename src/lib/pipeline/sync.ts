@@ -10,6 +10,7 @@ import { rebuildIfStale } from "./rebuild";
 import { counterNotes, mergeCounters } from "./counters";
 import { ADJUDICATE_CAP_USD, adjudicatorFor } from "./adjudicator";
 import { findSplitSuspects } from "./duplicates";
+import { plural } from "@/lib/text";
 
 /**
  * The whole pipeline, in order, with one sync at a time.
@@ -156,7 +157,7 @@ async function execute(
     if (outcome.fatal) failures.push(outcome.fatal);
     if (outcome.failed) {
       failures.push(
-        `${outcome.failed} email${outcome.failed === 1 ? "" : "s"} could not be read after three tries.`,
+        `${plural(outcome.failed, "email")} could not be read after three tries.`,
       );
     }
 
@@ -166,9 +167,9 @@ async function execute(
     const rebuilt = await rebuildIfStale(prisma);
     if (rebuilt) notes.push(`Regrouped ${rebuilt.applications} applications.`, ...rebuilt.notes);
 
-    // LOOP4 Decision 6. Asked only where the code has run out of evidence, and
-    // capped, so a matching rule that has quietly broken shows up as a bill
-    // rather than as a silently better looking board.
+    // Asked only where the code has run out of evidence, and capped, so a
+    // matching rule that has broken shows up as a bill rather than as a board
+    // that merely looks better.
     const matched = await attachClassified(
       prisma,
       adjudicatorFor(prisma, provider, apiKey, ADJUDICATE_CAP_USD),
@@ -183,17 +184,16 @@ async function execute(
     });
     const tidied = await recomputeAll(prisma, orphaned.map((row) => row.id));
 
-    // Gate 9. Anything the rules could not settle honestly is said out loud
-    // here, on the same path as a merge collision, rather than left for
-    // nobody to notice (LOOP4 Decision 8).
+    // Anything the rules could not settle honestly is said out loud here, on
+    // the same path as a merge collision, rather than left for nobody to
+    // notice.
     notes.push(...counterNotes(mergeCounters(matched.counters, recomputed, tidied)));
 
     // Advisory only. Nothing acts on it, and nothing in the board changes
-    // because of it (LOOP Invariant 6).
+    // because of it.
     const suspects = await findSplitSuspects(prisma);
     if (suspects.length) {
-      const many = suspects.length === 1 ? "" : "s";
-      notes.push(`${suspects.length} pair${many} of rows look like one application split in two.`);
+      notes.push(`${plural(suspects.length, "pair")} of rows look like one application split in two.`);
     }
 
     await prisma.gmailAccount.update({

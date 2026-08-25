@@ -1,5 +1,5 @@
 /**
- * Gate 2: no proper nouns in the diff (LOOP 4).
+ * Gate 2: no proper nouns in the diff.
  *
  * Reads every company name and sender domain out of the local database and
  * searches the added lines of the working diff for them. A hit fails the gate,
@@ -32,7 +32,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { LIVE_DB, WORK_DB, openDb } from "./common.mts";
-import { ATS_DOMAINS, ATS_VENDORS } from "../../src/lib/ats.ts";
+import { ATS_DOMAINS, ATS_VENDORS } from "@/lib/ats";
 
 const EXCLUDED = [/^LOOP\d*\.md$/, /^loop\//, /^prisma\/.*\.db/, /^PRD\.md$/, /^PLANNING\.md$/, /^README\.md$/];
 
