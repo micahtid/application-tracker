@@ -64,7 +64,7 @@ type Snapshot = {
   companyNormalized: string;
   roleTitle: string | null;
   requisitions: Set<string>;
-  /** The term the row runs in, as its emails stated it (LOOP5 Decision 6). */
+  /** The term the row runs in, as its emails stated it. */
   term: string | null;
   ended: boolean;
   firstAt: number;
@@ -118,8 +118,8 @@ function shouldMerge(left: Snapshot, right: Snapshot): boolean {
   if (requisitionsDisagree(left.requisitions, right.requisitions)) return false;
   // An employer running the same posting in two terms is running two
   // applications, which is the statement a different posting number makes and
-  // is read the same way (LOOP5 Decision 6). Without it the repair joined back
-  // up the rows stage 4 had rightly kept apart.
+  // is read the same way. Without it the repair joined back up the rows stage
+  // 4 had rightly kept apart.
   if (termsDisagree(left.term, right.term)) return false;
   // Two rows that have both ended are two applications that both ended. There
   // is nothing a merge could be putting right.

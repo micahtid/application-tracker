@@ -75,7 +75,7 @@ const TIE_ORDER: Status[] = ["ACCEPTED", "REJECTED", "IN_PROGRESS", "APPLIED"];
  * Two callers give it two sets. `recomputeApplication` gives it one row's
  * emails, which is what a row's `company_name` is. `displayCompanyNames` gives
  * it every email at one employer, which is the one name the board draws that
- * employer under (LOOP5 Decision 3). One rule, two scopes.
+ * employer under. One rule, two scopes.
  */
 export function commonestCompanyName(
   messages: { receivedAt: Date; llmClassificationRaw: string | null }[],
@@ -371,8 +371,8 @@ export async function recomputeApplication(
     companyDomain: firstStated(messages, (said) => said.companyDomain),
     roleTitle: firstStated(messages, (said) => said.roleTitle),
     // The words an email used, kept as it used them, and the bucket derived
-    // from them (LOOP5 Decision 6). The bucket is display only; matching and
-    // the identity key both read the term.
+    // from them. The bucket is display only; matching and the identity key
+    // both read the term.
     term,
     season: termBucket(term),
     year: firstStated(messages, (said) => said.year),

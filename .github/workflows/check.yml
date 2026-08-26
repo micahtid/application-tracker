@@ -1,0 +1,24 @@
+name: check
+
+# No secrets, and none can be added: a pull request from a fork does not get
+# them. `npm ci` runs `prisma generate` against the `DATABASE_URL` in the
+# committed `.env`, and `check:pipeline` builds a throwaway database. Nothing
+# here calls Gmail or a model.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build

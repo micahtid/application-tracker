@@ -17,7 +17,7 @@ export type Classification = {
   companyName: string | null;
   /**
    * The name the model gave that the code would not accept as an employer, and
-   * null when it accepted the answer or the model gave none (LOOP5 Decision 7).
+   * null when it accepted the answer or the model gave none.
    *
    * `isBlockedCompany` used to erase the answer here and say nothing, so stage
    * 4 dropped the message down a silent `continue` and no counter anywhere
@@ -37,10 +37,9 @@ export type Classification = {
    *
    * Null on an email that states no title, and null too on one whose stated
    * title names something the sending system is running rather than a posting:
-   * a message template, a test, the programme that test belongs to
-   * (LOOP5 Decision 4). A stated string used to be a stated title full stop,
-   * which is how a template name became a job name and split one application
-   * into two rows.
+   * a message template, a test, the programme that test belongs to. A stated
+   * string used to be a stated title full stop, which is how a template name
+   * became a job name and split one application into two rows.
    *
    * Null is not a loss, because `rolesMatch` treats silence as agreement, so a
    * refused title still attaches to the row whose title is real. The string
@@ -58,10 +57,9 @@ export type Classification = {
    */
   roleTitleIsPosting: boolean | null;
   /**
-   * The term this email says the posting runs in, in the words it used
-   * (LOOP5 Decision 6). Checked against no list, because a vocabulary that
-   * decides what may be recorded is how a term the code had never heard of was
-   * dropped in silence.
+   * The term this email says the posting runs in, in the words it used.
+   * Checked against no list, because a vocabulary that decides what may be
+   * recorded is how a term the code had never heard of was dropped in silence.
    */
   term: string | null;
   season: Season | null;
@@ -279,7 +277,7 @@ export function parseClassification(raw: unknown): Classification {
   const roleTitleIsPosting = role === null ? null : value.role_title_is_posting !== false;
 
   // Recorded as an answer the code could not use, rather than as an answer it
-  // never got (LOOP5 Decision 7, Gate 9).
+  // never got.
   const refused = company !== null && isBlockedCompany(company);
 
   return {

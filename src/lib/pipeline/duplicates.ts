@@ -31,9 +31,9 @@ export type SplitSuspect = {
   similarity: number;
   /**
    * True when the two titles agree, which is the strongest suspect this report
-   * can find and the one it used to throw away (LOOP5 Decision 9). Carried on
-   * the row rather than counted inside, so `suspects.assumed` reads what the
-   * report actually found instead of a copy of its reasoning.
+   * can find and the one it used to throw away. Carried on the row rather than
+   * counted inside, so `suspects.assumed` reads what the report actually found
+   * instead of a copy of its reasoning.
    */
   titlesAgree: boolean;
 };
@@ -93,15 +93,13 @@ export async function findSplitSuspects(db: Db): Promise<SplitSuspect[]> {
     if (requisitionsDisagree(requisitions[i], requisitions[j])) continue;
 
     // A different term is the same kind of answer, and read the same way: an
-    // employer running one posting in two terms is running two applications
-    // (LOOP5 Decision 6).
+    // employer running one posting in two terms is running two applications.
     if (termsDisagree(left.term, right.term)) continue;
 
     // Two rows whose titles agree at one employer are the strongest suspect
     // this report can find, not a pair already merged for some other reason.
     // Assuming the latter meant assuming the matcher had reached a conclusion
-    // it had not, so the report fell silent on the very pair it exists to find
-    // (LOOP5 Decision 9).
+    // it had not, so the report fell silent on the pair it exists to find.
     const titlesAgree = rolesMatch(left.roleTitle, right.roleTitle);
 
     const similarity = roleSimilarity(left.roleTitle, right.roleTitle);

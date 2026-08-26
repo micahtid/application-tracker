@@ -63,7 +63,7 @@ export function sameEmployer(left: string, right: string): boolean {
  * The groups a name belongs to for the purpose of finding pairs worth
  * comparing: each of its words, and the name with the spaces taken out.
  *
- * **This is the one blocking rule for the whole system** (LOOP5 Decision 1).
+ * **This is the one blocking rule for the whole system.**
  * The matcher, the repair pass and the split suspects report all narrow here.
  * Two of them used to narrow one way and the matcher another, which is how one
  * posting sat on the board twice with the alarm for it silent.
@@ -317,9 +317,9 @@ export function dedupeKey(parts: {
 }): string {
   const role = (parts.roleTitle ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   const requisition = [...(parts.requisitions ?? [])].sort().join(",");
-  // The term the emails stated rather than the bucket it is filed under
-  // (LOOP5 Decision 6). A bucket covers several terms, so two postings it
-  // cannot tell apart would share a key and read as one application.
+  // The term the emails stated rather than the bucket it is filed under. A
+  // bucket covers several terms, so two postings it cannot tell apart would
+  // share a key and read as one application.
   return [parts.companyNormalized, role, normalizeTerm(parts.term), parts.year ?? "", requisition].join("|");
 }
 

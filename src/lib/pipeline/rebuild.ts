@@ -22,7 +22,7 @@ export type RebuildOutcome = {
   applications: number;
   attached: number;
   created: number;
-  /** What stage 4 was handed, so Gate 10's balance can be checked (LOOP5). */
+  /** What stage 4 was handed, so Gate 10's balance can be checked. */
   given: number;
   notes: string[];
   /** Every decision the rules could not make honestly. */

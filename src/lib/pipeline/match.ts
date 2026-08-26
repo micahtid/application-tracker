@@ -61,9 +61,9 @@ export type MatchOutcome = {
   touched: number[];
   counters: PipelineCounters;
   /**
-   * How many messages the pass was handed (LOOP5 Gate 10). Reported here rather
-   * than counted again from the database afterwards, because the balance is a
-   * statement about what this pass did with what it was given.
+   * How many messages the pass was handed. Reported here rather than counted
+   * again from the database afterwards, because the balance is a statement
+   * about what this pass did with what it was given.
    */
   given: number;
 };
@@ -85,10 +85,9 @@ export type MatchOutcome = {
  * the loaded copy as it writes, so a name recorded early in the pass is still
  * found by a later message.
  *
- * The blocking index is loaded the same way and for the same reason
- * (LOOP5 Decision 1). It holds the rows sharing each of `groupsOf`'s keys, and
- * a row created mid pass is added to it as it is made, so the next message
- * finds it.
+ * The blocking index is loaded the same way and for the same reason. It holds
+ * the rows sharing each of `groupsOf`'s keys, and a row created mid pass is
+ * added to it as it is made, so the next message finds it.
  */
 type Pass = {
   db: Db;
@@ -170,8 +169,7 @@ function forgetApplication(pass: Pass, applicationId: number): void {
 }
 
 /**
- * Candidate rows for a company name, narrowed by the one blocking rule
- * (LOOP5 Decision 1).
+ * Candidate rows for a company name, narrowed by the one blocking rule.
  *
  * `groupsOf` is what the repair pass and the split suspects report already
  * narrow with, and it carries the property those two rest on: two names sharing
@@ -245,7 +243,7 @@ async function termsOf(pass: Pass, applicationId: number): Promise<Set<string>> 
 
 /**
  * An employer running the same posting in two terms is running two
- * applications, whatever the titles say (LOOP5 Decision 6).
+ * applications, whatever the titles say.
  *
  * The same shape as `requisitionContradicts` below, and a third caller for one
  * idea rather than a new rule: **a contradiction the employer stated excludes a
@@ -440,7 +438,7 @@ function scoreCandidate(candidate: Application, classification: Classification):
 
   // Term and year break ties only when both sides actually have them. The
   // stated term rather than the bucket it is filed under, so two postings one
-  // bucket covers still tell each other apart (LOOP5 Decision 6).
+  // bucket covers still tell each other apart.
   if (candidate.term && classification.term) {
     score += termsMatch(candidate.term, classification.term) ? 0.1 : -0.25;
   }
@@ -639,7 +637,7 @@ export async function attachClassified(
     //
     // The two ways of having no company are counted apart, because they are
     // different answers: saying nothing, and saying a name the code will not
-    // accept as an employer (LOOP5 Decisions 7 and 8, Gate 10).
+    // accept as an employer.
     if (!classification.companyName) {
       counters.skipsByReason[classification.companyRefused ? "COMPANY_REFUSED" : "NO_COMPANY"] += 1;
       continue;
@@ -669,7 +667,7 @@ export async function attachClassified(
     // word the title. Otherwise the titles have to agree and the terms must not
     // contradict: an employer running the same posting in two terms is running
     // two applications, and until the term survived being read there was
-    // nothing on the row to say so (LOOP5 Decision 6).
+    // nothing on the row to say so.
     const numbered: Application[] = [];
     const titled: Application[] = [];
     for (const candidate of candidates) {

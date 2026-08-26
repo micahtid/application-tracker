@@ -1,0 +1,45 @@
+name: Bug report
+description: Something the app does that it should not
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not paste real email content.** Redact the employer, the sender
+        and the subject, or describe the shape of the message instead.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, and what the app did.
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: input
+    id: system
+    attributes:
+      label: Which system
+      description: Operating system and Node version, from `node -v`.
+      placeholder: macOS 15, Node 22.11.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Which model provider
+      options:
+        - OpenRouter
+        - Anthropic
+        - Gemini
+        - Not relevant to this bug
+    validations:
+      required: true

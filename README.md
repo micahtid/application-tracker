@@ -13,8 +13,11 @@ whichever model provider you gave a key to.
 
 ## Running It
 
-Double click **`start.bat`**. It installs what is missing, migrates, builds, serves, and opens your
-browser. For development, run `npm run dev`.
+You need [Node](https://nodejs.org) 22 or newer. `.nvmrc` names the version, so `nvm use` picks it.
+
+On Windows, double click **`start.bat`**. Everywhere else, run **`npm run launch`**. Both run the
+same four steps: install what is missing, migrate, build, serve, and open your browser. For
+development, run `npm run dev`.
 
 The first launch takes a minute or two. Later ones open straight away.
 
@@ -99,7 +102,8 @@ Consent screen setup lives under **Google Auth Platform**. Older guides call the
    ```
 
    Moving off port 3939 means changing four places: this file, the redirect URI in step 6, the
-   `dev` and `start` scripts, and the URL `start.bat` opens. Sign in breaks the moment two disagree.
+   `dev` and `start` scripts, and the URL `scripts/launch.mjs` opens. Sign in breaks the moment two
+   disagree.
 
 8. **Sign in.** Settings > **Sign in** > pick the account > **Advanced**, then
    **Go to {your app} (unsafe)**, which means unreviewed by Google rather than unsafe to you.
