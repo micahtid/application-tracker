@@ -76,7 +76,7 @@ export async function GET() {
 
   // One employer, one name. Worked out across the whole board rather than
   // inside a row, and never written back, because `company_name` is half of
-  // what decides which row an email belongs to (LOOP5 Decision 3).
+  // what decides which row an email belongs to.
   const displayNames = displayCompanyNames(
     applications.map((application) => ({
       id: application.id,
@@ -105,9 +105,9 @@ export async function GET() {
         id: application.id,
         company: displayNames.get(application.id) ?? application.companyName,
         role: application.roleTitle,
-        // The words the emails used, and the bucket the board files them under
-        // (LOOP5 Decision 6). A reader sees the term. The filter and the sort
-        // read the bucket.
+        // The words the emails used, and the bucket the board files them
+        // under. A reader sees the term. The filter and the sort read the
+        // bucket.
         term: application.term,
         season: application.season,
         year: application.year,

@@ -168,7 +168,7 @@ export const SENDER_ROLE_FALLBACK: SenderRole = "EMPLOYER";
 
 /**
  * The buckets a stated term is sorted into for display, filtering and
- * ordering, and **nothing else** (LOOP5 Decision 6).
+ * ordering, and **nothing else**.
  *
  * This used to be a filter on what could be recorded at all: the parser ran the
  * model's answer through it and anything outside the list became null. A winter

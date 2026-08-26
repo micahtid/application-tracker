@@ -33,7 +33,6 @@ const config = [
       "out/**",
       "build/**",
       "node_modules/**",
-      "prototype/**",
       "next-env.d.ts",
     ],
   },

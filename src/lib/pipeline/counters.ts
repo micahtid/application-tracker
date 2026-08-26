@@ -68,7 +68,7 @@ export function isWitnessed(reason: LinkReason, titlesAreIdentical: boolean): bo
 }
 
 /**
- * Why a message left stage 4 without a membership (LOOP5 Decision 8).
+ * Why a message left stage 4 without a membership.
  *
  * > **Gate 10.** A message leaves stage 4 with a membership or with a counted
  * > reason, and never with neither.

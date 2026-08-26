@@ -1,11 +1,3 @@
-PLANNING.md
-PRD.md
-LOOP.md
-LOOP2.md
-LOOP3.md
-LOOP4.md
-LOOP5.md
-
 node_modules/
 .next/
 out/
@@ -21,8 +13,3 @@ prisma/*.db-journal
 .DS_Store
 Thumbs.db
 prisma/check.db*
-
-# Everything the loop harness produces. It holds real mail (LOOP 3.1).
-# Anchored, so it does not also swallow scripts/loop, which is source.
-/loop/
-

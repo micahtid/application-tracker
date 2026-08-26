@@ -69,7 +69,7 @@ const ASCENDING: SortKey = "company-asc";
  * finished row says, so the board and the sheet cannot say two different things
  * about one application. It used to hold back OFFER_EXTENDED, which left the
  * one ending the applicant still has to answer as the only one the board would
- * not name (LOOP5 Decision 5).
+ * not name.
  */
 function stageCell(application: ApplicationView): string {
   const ending = endingLabel(application);

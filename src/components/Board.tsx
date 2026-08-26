@@ -132,7 +132,7 @@ function ApplicationRow({
             {/* Which ending a finished row reached, in its own words rather
                 than left to the section heading, which has one word for several
                 endings. The sheet's Stage column reads the same rule, so the
-                two designs cannot disagree (LOOP5 Decision 5). */}
+                two designs cannot disagree. */}
             {ending ? <span className="tag tag--ending">{ending}</span> : null}
             {application.status === "IN_PROGRESS" && application.stageDetail ? (
               <span className="tag tag--stage">
@@ -147,8 +147,8 @@ function ApplicationRow({
                 Quiet
               </span>
             ) : null}
-            {/* The words the emails used, not the bucket they are filed under
-                (LOOP5 Decision 6). A row that says Winter says Winter. */}
+            {/* The words the emails used, not the bucket they are filed
+                under. A row that says Winter says Winter. */}
             {application.term ? <span className="tag">{application.term}</span> : null}
             {application.year ? <span className="tag tag--year">{application.year}</span> : null}
           </span>

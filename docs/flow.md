@@ -135,7 +135,7 @@ cleaned body. One email per request. Never a whole thread, and never the footer,
 the company is Greenhouse.
 
 **It gives back** whether this is application mail at all, the company, its domain, the
-role, the season and year, the status, whether the stage is an assessment or an interview,
+role, the term and year, the status, whether the stage is an assessment or an interview,
 whether the email is worth showing, a short title for it, a confidence number, and a
 summary.
 

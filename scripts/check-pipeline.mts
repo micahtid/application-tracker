@@ -991,7 +991,7 @@ type Seed = {
   role: string | null;
   status?: string;
   stage?: string | null;
-  /** The term the emails state, in their words (LOOP5 Decision 6). */
+  /** The term the emails state, in their words. */
   term?: string | null;
   emails: { day: string; subject: string; reason?: string }[];
 };
@@ -1297,9 +1297,9 @@ const seedAccount = (await prisma.gmailAccount.findFirstOrThrow()).id;
 // right. It used to skip any pair whose titles agree, reasoning that two rows
 // the matcher considered the same job would already have been merged; when the
 // matcher could not reach the pair, the report that would have caught it fell
-// silent (LOOP5 Decision 9). Seeded here rather than driven through matching,
-// for the same reason the repair fixtures are: after LOOP5 Decision 1 the
-// matching rules will not build this board, which is the point.
+// silent. Seeded here rather than driven through matching, for the same reason
+// the repair fixtures are: with the blocking rule in place the matching rules
+// will not build this board, which is the point.
 
 const { findSplitSuspects } = await import("../src/lib/pipeline/duplicates");
 
@@ -1403,7 +1403,7 @@ expect(
 // A stated string used to be a stated title, full stop. That is how the name of
 // a message template became the name of a job and split one application into
 // two rows. The model is now asked the general question, and a string that is
-// not a posting name is stored as no title (LOOP5 Decision 4).
+// not a posting name is stored as no title.
 
 const { termBucket } = await import("../src/lib/constants");
 const {
@@ -1492,8 +1492,8 @@ expect(
   missed.length === 0,
 );
 
-// The shape that made LOOP5 iteration 1 necessary, named rather than left to
-// the sweep, so a change that breaks it says which change it broke: a long form
+// The shape the shared key rule exists for, named rather than left to the
+// sweep, so a change that breaks it says which change it broke: a long form
 // whose leading word is not the short form's.
 expect(
   "an email naming an employer's long form reaches the row filed under its short form",
@@ -1514,10 +1514,10 @@ expect(
 
 // -------------------------------------------------------------- the term
 //
-// A vocabulary stopped being a filter on what may be recorded (LOOP5
-// Decision 6). The term an email states is kept as it states it; the buckets
-// decide which column it is filed under and nothing else, so a term no bucket
-// fits is stored and counted rather than dropped.
+// A vocabulary stopped being a filter on what may be recorded. The term an
+// email states is kept as it states it; the buckets decide which column it is
+// filed under and nothing else, so a term no bucket fits is stored and counted
+// rather than dropped.
 
 
 expect(
@@ -1611,7 +1611,7 @@ expect(
 // A name the code will not accept is an answer it could not use, not an answer
 // it never got. `isBlockedCompany` used to erase the model's answer in the
 // parser, and stage 4 then dropped the message down a bare `continue` that
-// nothing counted (LOOP5 Decisions 7 and 8).
+// nothing counted.
 
 expect(
   "a vendor named as the employer is recorded as refused rather than deleted",
@@ -1700,8 +1700,8 @@ expect(
 //
 // `status` says one word for several different facts, so an offer nobody had
 // answered read Accepted and a withdrawal the applicant made read Rejected.
-// `outcome` has been stored since LOOP4 and read by nothing. One rule now says
-// what a finished row says, and both designs read it (LOOP5 Decision 5).
+// `outcome` is stored on every row and was read by nothing. One rule now says
+// what a finished row says, and both designs read it.
 
 const { endingLabel } = await import("../src/lib/view");
 const { OUTCOMES } = await import("../src/lib/constants");
@@ -1819,7 +1819,7 @@ expect(
 );
 expect(
   "the digest rules are untouched, so the filter still does the job it is for",
-  !kept("12 new jobs for you", "jobalerts-noreply@linkedin.com") && // loop allow: linkedin.com, the digest sender list is a cache of names by design (LOOP P4) and a fixture for it has to name one
+  !kept("12 new jobs for you", "jobalerts-noreply@linkedin.com") && // the digest sender list is a cache of names by design and a fixture for it has to name one
     !kept("Your weekly job digest") &&
     !kept("Recommended jobs you may be interested in") &&
     !prefilter({ senderEmail: "alerts@indeed.com", senderDomain: "indeed.com", subject: "Anything" }).keep,

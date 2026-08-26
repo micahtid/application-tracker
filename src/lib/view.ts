@@ -27,7 +27,7 @@ export type ApplicationView = {
   /**
    * The term the emails stated, in their words, and null when none does.
    * `season` beside it is the bucket the board files that term under, which is
-   * null whenever the term fits none of them (LOOP5 Decision 6).
+   * null whenever the term fits none of them.
    */
   term: string | null;
   season: string | null;
@@ -52,15 +52,15 @@ export type ApplicationView = {
 
 /**
  * What an application that has ended says it ended as, and null while it is
- * still running (LOOP5 Decision 5).
+ * still running.
  *
  * `status` says one word for several facts. ACCEPTED covers an offer extended,
  * accepted, declined and taken back, and REJECTED covers being turned down,
  * withdrawing, and a posting cancelled. So an offer nobody had answered read
  * Accepted, the strongest word on the board, and a withdrawal read Rejected.
  *
- * Nothing new is stored to fix that. `outcome` has been written since LOOP4 and
- * read by nothing, and `OUTCOME_LABELS` already holds every word this needs. A
+ * Nothing new is stored to fix that. `outcome` is already written on every row
+ * and read by nothing, and `OUTCOME_LABELS` holds every word this needs. A
  * row that ended carrying no outcome reads Application Closed, which is what
  * the schema already says that state is for.
  *

@@ -2,7 +2,7 @@ import { normalizeCompany, pairsToCompare, sameEmployer } from "@/lib/normalize"
 import { commonestCompanyName } from "./recompute";
 
 /**
- * One employer, one name on the board (LOOP5 Decision 3).
+ * One employer, one name on the board.
  *
  * `recomputeApplication` already picks the commonest wording an employer used,
  * but it picks it **within one row**, and no step looks across rows. Three
@@ -63,10 +63,9 @@ function makeUnion() {
 /**
  * Which employer each name belongs to, as a representative name.
  *
- * Narrowed by `pairsToCompare`, which is the one blocking rule
- * (LOOP5 Decision 1). Every pair `sameEmployer` would accept shares a key, so
- * narrowing here cannot drop a pair that is one employer, and the sweep in
- * `check:pipeline` is what says so.
+ * Narrowed by `pairsToCompare`, which is the one blocking rule. Every pair
+ * `sameEmployer` would accept shares a key, so narrowing here cannot drop a
+ * pair that is one employer, and the sweep in `check:pipeline` is what says so.
  */
 function employerOfName(names: string[], aliases: AliasRow[]): (name: string) => string {
   const { find, union } = makeUnion();
@@ -77,10 +76,10 @@ function employerOfName(names: string[], aliases: AliasRow[]): (name: string) =>
   }
 
   // An alias is somebody's witnessed claim that two names with nothing in
-  // common are one firm, which is the one thing blocking cannot derive
-  // (LOOP5 Decision 2). Leaving it out here would draw an employer that trades
-  // under a second, unrelated name under both of them, on a board that had
-  // already decided they were one.
+  // common are one firm, which is the one thing blocking cannot derive.
+  // Leaving it out here would draw an employer that trades under a second,
+  // unrelated name under both of them, on a board that had already decided
+  // they were one.
   for (const alias of aliases) {
     const canonical = normalizeCompany(alias.canonicalCompanyName);
     if (alias.aliasNormalized && canonical) union(alias.aliasNormalized, canonical);
