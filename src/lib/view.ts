@@ -50,14 +50,18 @@ export type ApplicationView = {
   emails: EmailView[];
 };
 
+/** Endings that get no word on the row. Both end up in the Rejected section,
+ *  and the section heading is all the board says about them. */
+const UNSAID_ENDINGS: Outcome[] = ["REJECTED_BY_EMPLOYER", "WITHDRAWN_BY_APPLICANT"];
+
 /**
  * What an application that has ended says it ended as, and null while it is
- * still running.
+ * still running or when the ending is one of `UNSAID_ENDINGS`.
  *
  * `status` says one word for several facts. ACCEPTED covers an offer extended,
  * accepted, declined and taken back, and REJECTED covers being turned down,
  * withdrawing, and a posting cancelled. So an offer nobody had answered read
- * Accepted, the strongest word on the board, and a withdrawal read Rejected.
+ * Accepted, the strongest word on the board.
  *
  * Nothing new is stored to fix that. `outcome` is already written on every row
  * and read by nothing, and `OUTCOME_LABELS` holds every word this needs. A
@@ -72,6 +76,7 @@ export function endingLabel(application: {
   outcome: Outcome | null;
 }): string | null {
   if (!hasEnded(application.status)) return null;
+  if (application.outcome && UNSAID_ENDINGS.includes(application.outcome)) return null;
   return application.outcome ? OUTCOME_LABELS[application.outcome] : "Application Closed";
 }
 

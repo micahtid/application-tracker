@@ -1711,8 +1711,9 @@ expect(
   endingLabel({ status: "ACCEPTED", outcome: "OFFER_EXTENDED" }) === "Offer",
 );
 expect(
-  "a withdrawal says Application Withdrawn rather than Rejected",
-  endingLabel({ status: "REJECTED", outcome: "WITHDRAWN_BY_APPLICANT" }) === "Application Withdrawn",
+  "the two endings the Rejected section already covers say nothing",
+  endingLabel({ status: "REJECTED", outcome: "WITHDRAWN_BY_APPLICANT" }) === null &&
+    endingLabel({ status: "REJECTED", outcome: "REJECTED_BY_EMPLOYER" }) === null,
 );
 expect(
   "a posting that went away does not say anybody was turned down",
@@ -1729,10 +1730,10 @@ expect(
     endingLabel({ status: "IN_PROGRESS", outcome: null }) === null,
 );
 expect(
-  "every ending the vocabulary distinguishes is a word the board can say",
-  OUTCOMES.every(
-    (outcome) => endingLabel({ status: "REJECTED", outcome }) !== "Application Closed",
-  ),
+  "every ending the board does say is its own word, never Application Closed",
+  OUTCOMES.map((outcome) => endingLabel({ status: "REJECTED", outcome }))
+    .filter((label) => label !== null)
+    .every((label) => label !== "Application Closed"),
 );
 
 // --------------------------------------------------------- one employer

@@ -67,9 +67,8 @@ const ASCENDING: SortKey = "company-asc";
  *
  * The ending comes from `endingLabel`, which is the one rule for what a
  * finished row says, so the board and the sheet cannot say two different things
- * about one application. It used to hold back OFFER_EXTENDED, which left the
- * one ending the applicant still has to answer as the only one the board would
- * not name.
+ * about one application. It returns null for the endings the Rejected section
+ * already covers, and this column is empty on those rows too.
  */
 function stageCell(application: ApplicationView): string {
   const ending = endingLabel(application);
