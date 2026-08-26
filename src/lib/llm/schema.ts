@@ -41,19 +41,25 @@ export const FIELDS: Field[] = [
     description: "The role applied for, as written in the email. Null when it is not stated.",
   },
   {
-    name: "season",
+    name: "role_title_is_posting",
+    type: "boolean",
+    nullable: true,
+    description:
+      "Whether role_title above is the name of the posting the person applied to, or a label belonging to the system that sent the email. True when it names the posting. False when it is the sending system's own furniture: the name of a message template, of a test or questionnaire, of a recruiting programme the test belongs to, or any other label that identifies what the sender is running rather than what the person applied for. Null when role_title is null. Take off any marker the system has stuck on, such as a bracketed prefix, a stage word, a reference number or a term, and ask what is left: if that names a job somebody could apply to, answer true, whoever sent the email. Answer false only when nothing under the markers names a job at all.",
+  },
+  {
+    name: "term",
     type: "string",
     nullable: true,
-    enum: SEASONS,
     description:
-      "The term the internship runs, only when the email says so. Never guessed from the date the email was sent.",
+      "The term the posting runs in, in the words the email uses, and only when the email says so. Copy the words rather than translating them into a season: Summer, Winter, Spring and Fall are common, and so are Q1, a placement year, an academic term and the words another language uses for any of these. Write the term alone and leave the year out of it, because the year has its own field. Null when the email names no term. Never guessed from the date the email was sent.",
   },
   {
     name: "year",
     type: "integer",
     nullable: true,
     description:
-      "The year of that term, only when the email says so. Never guessed from the date the email was sent.",
+      "The year of that term, only when this email says so. Never guessed from the date the email was sent, and never taken from another posting: two postings at one employer routinely run in different years.",
   },
   {
     name: "status",

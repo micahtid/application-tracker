@@ -17,6 +17,7 @@ import {
   type Outcome,
   type StageDetail,
   type Status,
+  termBucket,
 } from "@/lib/constants";
 
 /**
@@ -64,30 +65,46 @@ export function classificationOf(message: { llmClassificationRaw: string | null 
 const TIE_ORDER: Status[] = ["ACCEPTED", "REJECTED", "IN_PROGRESS", "APPLIED"];
 
 /**
- * The name the employer used most often across this application's emails.
+ * The name the employer used most often across a set of emails.
  *
  * One employer writes itself several ways, so the oldest email is no more
  * authoritative than any other and the commonest wording wins. Ties go to the
- * earliest, so the answer depends only on the set of emails and never on the
- * order they were processed in.
+ * earliest email and a dead heat to the lower name, so the answer depends only
+ * on the set of emails and never on the order they came back in.
+ *
+ * Two callers give it two sets. `recomputeApplication` gives it one row's
+ * emails, which is what a row's `company_name` is. `displayCompanyNames` gives
+ * it every email at one employer, which is the one name the board draws that
+ * employer under (LOOP5 Decision 3). One rule, two scopes.
  */
-function commonestCompanyName(messages: EmailMessage[]): string | null {
+export function commonestCompanyName(
+  messages: { receivedAt: Date; llmClassificationRaw: string | null }[],
+): string | null {
   const counts = new Map<string, { count: number; first: number }>();
 
-  messages.forEach((message, index) => {
+  for (const message of messages) {
     const name = classificationOf(message)?.companyName;
-    if (!name) return;
+    if (!name) continue;
+    const at = message.receivedAt.getTime();
     const seen = counts.get(name);
-    if (seen) seen.count += 1;
-    else counts.set(name, { count: 1, first: index });
-  });
+    if (seen) {
+      seen.count += 1;
+      seen.first = Math.min(seen.first, at);
+    } else {
+      counts.set(name, { count: 1, first: at });
+    }
+  }
 
   let best: string | null = null;
   let bestCount = 0;
   let bestFirst = Number.POSITIVE_INFINITY;
 
   for (const [name, seen] of counts) {
-    if (seen.count > bestCount || (seen.count === bestCount && seen.first < bestFirst)) {
+    const better =
+      seen.count > bestCount ||
+      (seen.count === bestCount && seen.first < bestFirst) ||
+      (seen.count === bestCount && seen.first === bestFirst && name < (best ?? ""));
+    if (better) {
       best = name;
       bestCount = seen.count;
       bestFirst = seen.first;
@@ -343,6 +360,8 @@ export async function recomputeApplication(
 
   const { status, stageDetail, outcome } = headState(messages);
 
+  const term = firstStated(messages, (said) => said.term);
+
   const atsVendor =
     messages.map((message) => vendorForDomain(message.senderDomain)).find(Boolean) ?? null;
 
@@ -351,7 +370,11 @@ export async function recomputeApplication(
     companyNormalized,
     companyDomain: firstStated(messages, (said) => said.companyDomain),
     roleTitle: firstStated(messages, (said) => said.roleTitle),
-    season: firstStated(messages, (said) => said.season),
+    // The words an email used, kept as it used them, and the bucket derived
+    // from them (LOOP5 Decision 6). The bucket is display only; matching and
+    // the identity key both read the term.
+    term,
+    season: termBucket(term),
     year: firstStated(messages, (said) => said.year),
     status,
     stageDetail,
@@ -370,7 +393,7 @@ export async function recomputeApplication(
   const key = dedupeKey({
     companyNormalized,
     roleTitle: data.roleTitle,
-    season: data.season,
+    term: data.term,
     year: data.year,
     requisitions,
   });

@@ -22,6 +22,8 @@ export type RebuildOutcome = {
   applications: number;
   attached: number;
   created: number;
+  /** What stage 4 was handed, so Gate 10's balance can be checked (LOOP5). */
+  given: number;
   notes: string[];
   /** Every decision the rules could not make honestly. */
   counters: PipelineCounters;
@@ -68,6 +70,7 @@ export async function rebuildGrouping(
     applications,
     attached: matched.attached,
     created: matched.created,
+    given: matched.given,
     notes: [...(await correctionNotes(db)), ...counterNotes(counters)],
     counters,
     repairs: repaired.actions,

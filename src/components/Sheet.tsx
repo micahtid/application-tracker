@@ -5,6 +5,7 @@ import EmailList from "./EmailList";
 import Highlight from "./Highlight";
 import RowMenu from "./RowMenu";
 import {
+  endingLabel,
   formatDate,
   STATUS_MODIFIERS,
   type ApplicationView,
@@ -12,7 +13,7 @@ import {
   type RowHandlers,
   type SortKey,
 } from "@/lib/view";
-import { OUTCOME_LABELS, STAGE_LABELS, STATUS_LABELS } from "@/lib/constants";
+import { STAGE_LABELS, STATUS_LABELS } from "@/lib/constants";
 
 /**
  * The second design: one flat grid, the way most people track applications
@@ -63,11 +64,16 @@ const ASCENDING: SortKey = "company-asc";
  * so a step and an ending share a column rather than each taking one that is
  * empty on almost every row. An ending wins, because a step still in flight
  * when the answer came stopped being the news.
+ *
+ * The ending comes from `endingLabel`, which is the one rule for what a
+ * finished row says, so the board and the sheet cannot say two different things
+ * about one application. It used to hold back OFFER_EXTENDED, which left the
+ * one ending the applicant still has to answer as the only one the board would
+ * not name (LOOP5 Decision 5).
  */
 function stageCell(application: ApplicationView): string {
-  if (application.outcome && application.outcome !== "OFFER_EXTENDED") {
-    return OUTCOME_LABELS[application.outcome];
-  }
+  const ending = endingLabel(application);
+  if (ending) return ending;
   if (application.status === "IN_PROGRESS" && application.stageDetail) {
     return STAGE_LABELS[application.stageDetail];
   }
@@ -236,7 +242,7 @@ function SheetRow({
         </td>
 
         <td>{stage}</td>
-        <td>{application.season ?? ""}</td>
+        <td>{application.term ?? ""}</td>
         <td>{application.year ?? ""}</td>
         <td>{application.emails.length}</td>
         <td className="sheet__date">{formatDate(application.firstEmailAt)}</td>

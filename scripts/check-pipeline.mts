@@ -991,6 +991,8 @@ type Seed = {
   role: string | null;
   status?: string;
   stage?: string | null;
+  /** The term the emails state, in their words (LOOP5 Decision 6). */
+  term?: string | null;
   emails: { day: string; subject: string; reason?: string }[];
 };
 
@@ -1004,6 +1006,7 @@ async function seedApplication(account: number, seed: Seed): Promise<number> {
       companyName: seed.company,
       companyNormalized: seed.company.toLowerCase(),
       roleTitle: seed.role,
+      term: seed.term ?? null,
       dedupeKey: `seed:${seedCount}`,
       status: seed.status ?? "APPLIED",
     },
@@ -1029,6 +1032,7 @@ async function seedApplication(account: number, seed: Seed): Promise<number> {
           is_application_related: true,
           company_name: seed.company,
           role_title: seed.role,
+          term: seed.term ?? null,
           status: seed.status ?? "APPLIED",
           stage_detail: seed.stage ?? null,
           is_significant: true,
@@ -1287,6 +1291,84 @@ const seedAccount = (await prisma.gmailAccount.findFirstOrThrow()).id;
   await clearSeeds();
 }
 
+// ------------------------------------------------------- split suspects
+//
+// The alarm that exists to doubt the matcher may not assume the matcher was
+// right. It used to skip any pair whose titles agree, reasoning that two rows
+// the matcher considered the same job would already have been merged; when the
+// matcher could not reach the pair, the report that would have caught it fell
+// silent (LOOP5 Decision 9). Seeded here rather than driven through matching,
+// for the same reason the repair fixtures are: after LOOP5 Decision 1 the
+// matching rules will not build this board, which is the point.
+
+const { findSplitSuspects } = await import("../src/lib/pipeline/duplicates");
+
+{
+  await seedApplication(seedAccount, {
+    company: "Ambrose Freight",
+    role: "Systems Intern",
+    emails: [{ day: "2026-01-01", subject: "Application received" }],
+  });
+  await seedApplication(seedAccount, {
+    company: "Ambrose Freight",
+    role: "Systems Intern",
+    emails: [{ day: "2026-01-03", subject: "Application received" }],
+  });
+
+  // Filtered to the seeded employer, because the seeds sit on top of the
+  // fixture board rather than replacing it.
+  const found = (await findSplitSuspects(prisma)).filter((row) => row.company === "ambrose freight");
+  expect(
+    "two rows at one employer whose titles agree are reported, not assumed away",
+    found.length === 1 && found[0].titlesAgree === true,
+  );
+  await clearSeeds();
+}
+
+{
+  // The other half of the same rule: narrowing still narrows. Two employers
+  // that share no word are never compared, however alike their titles read.
+  await seedApplication(seedAccount, {
+    company: "Ambrose Freight",
+    role: "Systems Intern",
+    emails: [{ day: "2026-01-01", subject: "Application received" }],
+  });
+  await seedApplication(seedAccount, {
+    company: "Pellworth Rail",
+    role: "Systems Intern",
+    emails: [{ day: "2026-01-03", subject: "Application received" }],
+  });
+
+  const across = await findSplitSuspects(prisma);
+  expect(
+    "two employers are never a split suspect, however alike their titles read",
+    !across.some((row) => row.company === "ambrose freight" || row.company === "pellworth rail"),
+  );
+  await clearSeeds();
+}
+
+{
+  // Different posting numbers is the employer saying these are two
+  // applications. That is an answer and not a suspect, titles or no titles.
+  await seedApplication(seedAccount, {
+    company: "Ambrose Freight",
+    role: "Systems Intern",
+    emails: [{ day: "2026-01-01", subject: "Application received, job number 660001" }],
+  });
+  await seedApplication(seedAccount, {
+    company: "Ambrose Freight",
+    role: "Systems Intern",
+    emails: [{ day: "2026-01-03", subject: "Application received, job number 660002" }],
+  });
+
+  const numbered = await findSplitSuspects(prisma);
+  expect(
+    "two posting numbers still answer the question, so no suspect is reported",
+    !numbered.some((row) => row.company === "ambrose freight"),
+  );
+  await clearSeeds();
+}
+
 // ---------------------------------------------------------------- aliases
 //
 // A rule may believe what it observed. It may not believe
@@ -1314,6 +1396,402 @@ expect(
 expect(
   "an exam vendor's paper writes no alias, however it was filed",
   !aliases.some((alias) => alias.aliasNormalized.includes("engineering test")),
+);
+
+// ------------------------------------------------------------- the title
+//
+// A stated string used to be a stated title, full stop. That is how the name of
+// a message template became the name of a job and split one application into
+// two rows. The model is now asked the general question, and a string that is
+// not a posting name is stored as no title (LOOP5 Decision 4).
+
+const { termBucket } = await import("../src/lib/constants");
+const {
+  dedupeKey: keyOf,
+  groupsOf,
+  normalizeCompany,
+  normalizeTerm,
+  rolesMatch,
+  sameEmployer,
+  termsMatch,
+} = await import("../src/lib/normalize");
+const { parseClassification } = await import("../src/lib/llm/types");
+
+const read = (answer: Record<string, unknown>) =>
+  parseClassification({ is_application_related: true, status: "APPLIED", ...answer });
+
+expect(
+  "a title the model says names the posting is kept",
+  read({ role_title: "Engineering Intern", role_title_is_posting: true }).roleTitle ===
+    "Engineering Intern",
+);
+expect(
+  "a title the model says belongs to the sending system is stored as no title",
+  read({ role_title: "US Intern Template", role_title_is_posting: false }).roleTitle === null,
+);
+expect(
+  "and the refusal is recorded rather than left to be inferred from the silence",
+  read({ role_title: "US Intern Template", role_title_is_posting: false }).roleTitleIsPosting ===
+    false &&
+    read({ role_title: null, role_title_is_posting: null }).roleTitleIsPosting === null,
+);
+expect(
+  "an answer written before the question existed keeps its title, because silence is not a refusal",
+  read({ role_title: "Engineering Intern" }).roleTitle === "Engineering Intern" &&
+    read({ role_title: "Engineering Intern" }).roleTitleIsPosting === true,
+);
+expect(
+  "a refused title still attaches, because silence is agreement to the title comparison",
+  rolesMatch(null, "Engineering Intern") && rolesMatch("Engineering Intern", null),
+);
+
+// --------------------------------------------------------------- blocking
+//
+// Every narrowing step in this system runs through `groupsOf`, and every one
+// of them rests on one property:
+//
+//   Every pair `sameEmployer` would accept is a pair retrieval returned.
+//
+// It used to be claimed in a comment above the retrieval that did not have it,
+// which is how one posting sat on the board as two rows with the alarm for it
+// silent. So it is swept rather than asserted in prose.
+
+/**
+ * The names to sweep: shapes rather than a mailbox, so the check travels.
+ *
+ * Every shape a real employer writes itself in, written in names nobody has:
+ * a short form and a long one, a long one that leads with a different word
+ * from the short one, a run together spelling, a connector in the middle, a
+ * leading "the", and two firms that share a word without sharing an employer.
+ */
+const SWEEP = [
+  "harrow", "north harrow", "the north harrow company", "harrow worldwide",
+  "penroseholt", "penrose holt", "penrose holt and co",
+  "acme", "global acme", "acme global systems", "acmeglobal",
+  "guild of masons", "guildofmasons", "guild", "masons",
+  "x", "x y", "y x", "x y z", "xyz", "zyx",
+  "meridian", "meridian holdings", "meridianholdings",
+  "orb", "starwake", "star wake", "vantage one", "vantageone", "one vantage",
+].map(normalizeCompany);
+
+const shareAKey = (left: string, right: string) => {
+  const keys = new Set(groupsOf(left));
+  return groupsOf(right).some((key) => keys.has(key));
+};
+
+const missed: string[] = [];
+for (const left of SWEEP) {
+  for (const right of SWEEP) {
+    if (left === right) continue;
+    if (sameEmployer(left, right) && !shareAKey(left, right)) missed.push(`${left} / ${right}`);
+  }
+}
+
+expect(
+  `retrieval returns every pair sameEmployer accepts${missed.length ? `, missed ${missed.join(", ")}` : ""}`,
+  missed.length === 0,
+);
+
+// The shape that made LOOP5 iteration 1 necessary, named rather than left to
+// the sweep, so a change that breaks it says which change it broke: a long form
+// whose leading word is not the short form's.
+expect(
+  "an email naming an employer's long form reaches the row filed under its short form",
+  shareAKey("north harrow", "harrow") && sameEmployer("north harrow", "harrow"),
+);
+expect(
+  "and it reaches it in both directions, which a prefix lookup never did",
+  shareAKey("harrow", "north harrow"),
+);
+expect(
+  "a run together spelling is a key of its own name, so no alias has to stand in for it",
+  shareAKey("penroseholt", "penrose holt") && shareAKey("vantageone", "vantage one"),
+);
+expect(
+  "narrowing still narrows: two employers sharing no word are never compared",
+  !shareAKey("harrow", "starwake") && !shareAKey("orb", "meridian"),
+);
+
+// -------------------------------------------------------------- the term
+//
+// A vocabulary stopped being a filter on what may be recorded (LOOP5
+// Decision 6). The term an email states is kept as it states it; the buckets
+// decide which column it is filed under and nothing else, so a term no bucket
+// fits is stored and counted rather than dropped.
+
+
+expect(
+  "a term the buckets cannot hold is kept rather than dropped",
+  read({ term: "Michaelmas" }).term === "Michaelmas" && read({ term: "Michaelmas" }).season === null,
+);
+expect(
+  "and one they can is kept too, with the bucket derived beside it",
+  read({ term: "Winter" }).term === "Winter" && read({ term: "Winter" }).season === "Winter",
+);
+expect(
+  "a term naming two seasons files under the first the list names, so the answer never drifts",
+  termBucket("Winter/Spring") === "Spring" && termBucket("Spring/Winter") === "Spring",
+);
+expect(
+  "an answer written before the field was renamed still says what it said",
+  read({ season: "Summer" }).term === "Summer" && read({ season: "Summer" }).season === "Summer",
+);
+expect(
+  "the year is a field of its own, so it is not read out of the term",
+  normalizeTerm("Winter 2027") === "winter" && normalizeTerm(" WINTER ") === "winter",
+);
+expect(
+  "two postings the buckets cannot tell apart still hold different identity keys",
+  keyOf({ companyNormalized: "acme", roleTitle: "Intern", term: "Michaelmas", year: 2027 }) !==
+    keyOf({ companyNormalized: "acme", roleTitle: "Intern", term: "Hilary", year: 2027 }),
+);
+expect(
+  "and matching compares the stated terms rather than the bucket",
+  !termsMatch("Winter", "Summer") &&
+    termsMatch("Winter 2027", "winter") &&
+    termsMatch(null, "Winter"),
+);
+
+{
+  // One posting name, two terms. Before the term survived being read there was
+  // nothing on either row to tell them apart, so the second confirmation walked
+  // onto the first row and two applications became one.
+  await seedApplication(seedAccount, {
+    company: "Fenchurch Optics",
+    role: "Software Engineer Intern",
+    term: "Summer",
+    emails: [{ day: "2026-01-01", subject: "Thank you for applying" }],
+  });
+  await seedApplication(seedAccount, {
+    company: "Fenchurch Optics",
+    role: "Software Engineer Intern",
+    term: "Winter",
+    emails: [{ day: "2026-01-02", subject: "Thank you for applying" }],
+  });
+
+  const counters = emptyCounters();
+  await repairGrouping(prisma, counters);
+  expect(
+    "one posting name in two terms is two applications, and the repair leaves them apart",
+    counters.repairMerges === 0,
+  );
+  await clearSeeds();
+}
+
+{
+  // The other direction, so the rule is a contradiction rather than a
+  // requirement: silence contradicts nothing, and two rows one of which names
+  // no term still merge on their titles.
+  await seedApplication(seedAccount, {
+    company: "Fenchurch Optics",
+    role: "Software Engineer Intern",
+    term: "Summer",
+    emails: [{ day: "2026-01-01", subject: "Thank you for applying" }],
+  });
+  await seedApplication(seedAccount, {
+    company: "Fenchurch Optics",
+    role: "Software Engineer Intern",
+    emails: [{ day: "2026-01-02", subject: "Thank you for applying" }],
+  });
+
+  const counters = emptyCounters();
+  await repairGrouping(prisma, counters);
+  expect(
+    "a row that names no term contradicts nothing, so silence is still not a disagreement",
+    counters.repairMerges === 1,
+  );
+  await clearSeeds();
+}
+
+// ----------------------------------------------------- nothing in silence
+//
+// > Gate 10. A message leaves stage 4 with a membership or with a counted
+// > reason, and never with neither.
+//
+// A name the code will not accept is an answer it could not use, not an answer
+// it never got. `isBlockedCompany` used to erase the model's answer in the
+// parser, and stage 4 then dropped the message down a bare `continue` that
+// nothing counted (LOOP5 Decisions 7 and 8).
+
+expect(
+  "a vendor named as the employer is recorded as refused rather than deleted",
+  read({ company_name: "Workday" }).companyName === null &&
+    read({ company_name: "Workday" }).companyRefused === "Workday",
+);
+expect(
+  "an email that names nobody is a different answer from one whose name was refused",
+  read({ company_name: null }).companyRefused === null &&
+    read({ company_name: null }).companyName === null,
+);
+expect(
+  "a name the code accepts is untouched, and carries no refusal",
+  read({ company_name: "Larkspur Analytics" }).companyName === "Larkspur Analytics" &&
+    read({ company_name: "Larkspur Analytics" }).companyRefused === null,
+);
+
+{
+  // Three messages stage 4 cannot file and one it can. Before this the first
+  // two went down the same silent branch and nothing anywhere counted either.
+  const unfilable = [
+    { id: "gate10-refused", company: "Workday", role: "Software Development Engineer Intern" },
+    { id: "gate10-nameless", company: null, role: null },
+    { id: "gate10-empty", company: "   ...   ", role: null },
+    { id: "gate10-real", company: "Larkspur Analytics", role: "Data Intern" },
+  ];
+
+  for (const [index, seed] of unfilable.entries()) {
+    await prisma.emailMessage.create({
+      data: {
+        gmailAccountId: seedAccount,
+        gmailMessageId: seed.id,
+        threadId: seed.id,
+        senderEmail: "careers@seed.example",
+        senderDomain: "seed.example",
+        subject: `Gate 10 fixture ${index}`,
+        bodyText: `Gate 10 fixture ${index}`,
+        receivedAt: new Date(`2026-03-0${index + 1}T12:00:00Z`),
+        classificationStatus: "OK",
+        classifierVersion: CLASSIFIER_VERSION,
+        isApplicationRelated: true,
+        isSignificant: true,
+        emailTitle: "Seed",
+        llmClassificationRaw: JSON.stringify({
+          is_application_related: true,
+          company_name: seed.company,
+          role_title: seed.role,
+          status: "APPLIED",
+          is_significant: true,
+          email_title: "Seed",
+          confidence_score: 0.9,
+        }),
+      },
+    });
+  }
+
+  const outcome = await attachClassified(prisma);
+  const skips = outcome.counters.skipsByReason;
+  const skipped = Object.values(skips).reduce((sum, n) => sum + n, 0);
+
+  expect(
+    `stage 4 balances: ${outcome.attached} attached plus ${skipped} counted against ${outcome.given} given`,
+    outcome.given >= 4 && outcome.attached + skipped === outcome.given,
+  );
+  expect(
+    "a refused name and a missing one are counted apart, because they are different answers",
+    skips.COMPANY_REFUSED >= 1 && skips.NO_COMPANY >= 1,
+  );
+  expect(
+    "a name that normalises away to nothing is counted as its own reason",
+    skips.COMPANY_UNREADABLE >= 1,
+  );
+  expect(
+    "and the one message that could be filed was filed rather than counted",
+    outcome.attached >= 1,
+  );
+
+  await prisma.applicationMembership.deleteMany({
+    where: { message: { gmailMessageId: { startsWith: "gate10-" } } },
+  });
+  await prisma.emailMessage.deleteMany({ where: { gmailMessageId: { startsWith: "gate10-" } } });
+  await prisma.application.deleteMany({ where: { companyNormalized: "larkspur analytics" } });
+}
+
+// ------------------------------------------------------------ the ending
+//
+// `status` says one word for several different facts, so an offer nobody had
+// answered read Accepted and a withdrawal the applicant made read Rejected.
+// `outcome` has been stored since LOOP4 and read by nothing. One rule now says
+// what a finished row says, and both designs read it (LOOP5 Decision 5).
+
+const { endingLabel } = await import("../src/lib/view");
+const { OUTCOMES } = await import("../src/lib/constants");
+
+expect(
+  "an offer nobody has answered says Offer rather than Accepted",
+  endingLabel({ status: "ACCEPTED", outcome: "OFFER_EXTENDED" }) === "Offer",
+);
+expect(
+  "a withdrawal says Application Withdrawn rather than Rejected",
+  endingLabel({ status: "REJECTED", outcome: "WITHDRAWN_BY_APPLICANT" }) === "Application Withdrawn",
+);
+expect(
+  "a posting that went away does not say anybody was turned down",
+  endingLabel({ status: "REJECTED", outcome: "POSTING_CANCELLED" }) === "Posting Cancelled",
+);
+expect(
+  "a row that ended and no email said how reads Application Closed",
+  endingLabel({ status: "REJECTED", outcome: null }) === "Application Closed" &&
+    endingLabel({ status: "ACCEPTED", outcome: null }) === "Application Closed",
+);
+expect(
+  "a row that has not ended says nothing, so status keeps sectioning the board",
+  endingLabel({ status: "APPLIED", outcome: null }) === null &&
+    endingLabel({ status: "IN_PROGRESS", outcome: null }) === null,
+);
+expect(
+  "every ending the vocabulary distinguishes is a word the board can say",
+  OUTCOMES.every(
+    (outcome) => endingLabel({ status: "REJECTED", outcome }) !== "Application Closed",
+  ),
+);
+
+// --------------------------------------------------------- one employer
+//
+// Three postings at one employer is three rows and one name. The rule that
+// picks the name is the commonest wording rule that already ran inside a row,
+// given every email at the employer instead of every email of one row, and it
+// is a projection: writing it back would rewrite `company_normalized`, which is
+// half of what decides which row an email belongs to.
+
+const { displayCompanyNames } = await import("../src/lib/pipeline/employers");
+
+const said = (company: string, day: string) => ({
+  receivedAt: new Date(`${day}T00:00:00Z`),
+  llmClassificationRaw: JSON.stringify({ is_application_related: true, company_name: company, status: "APPLIED" }),
+});
+
+const spelled = displayCompanyNames([
+  { id: 1, companyName: "Northwind Trading", companyNormalized: "northwind trading", messages: [said("Northwind Trading", "2026-01-02")] },
+  { id: 2, companyName: "NorthwindTrading", companyNormalized: "northwindtrading", messages: [said("NorthwindTrading", "2026-01-03"), said("NorthwindTrading", "2026-01-04")] },
+  { id: 3, companyName: "Southport Rail", companyNormalized: "southport rail", messages: [said("Southport Rail", "2026-01-05")] },
+]);
+
+expect(
+  "three postings at one employer wear one name, and the commonest wording is it",
+  spelled.get(1) === "NorthwindTrading" && spelled.get(2) === "NorthwindTrading",
+);
+expect(
+  "a different employer keeps its own name",
+  spelled.get(3) === "Southport Rail",
+);
+
+const tied = displayCompanyNames([
+  { id: 1, companyName: "Eastgate Foods", companyNormalized: "eastgate foods", messages: [said("Eastgate Foods", "2026-01-02")] },
+  { id: 2, companyName: "EastgateFoods", companyNormalized: "eastgatefoods", messages: [said("EastgateFoods", "2026-01-09")] },
+]);
+expect(
+  "a dead heat goes to the earliest email, so the answer never depends on row order",
+  tied.get(1) === "Eastgate Foods" && tied.get(2) === "Eastgate Foods",
+);
+
+const aliased = displayCompanyNames(
+  [
+    { id: 1, companyName: "Meridian", companyNormalized: "meridian", messages: [said("Meridian", "2026-01-02")] },
+    { id: 2, companyName: "Halcyon Group", companyNormalized: "halcyon", messages: [said("Halcyon Group", "2026-01-03")] },
+  ],
+  [{ aliasNormalized: "halcyon", canonicalCompanyName: "Meridian" }],
+);
+expect(
+  "two names with nothing in common still wear one, when an alias witnessed it",
+  aliased.get(1) === aliased.get(2),
+);
+
+const silent = displayCompanyNames([
+  { id: 1, companyName: "Quiet Works", companyNormalized: "quiet works", messages: [] },
+]);
+expect(
+  "a row whose emails name nobody keeps the name it already had",
+  silent.get(1) === "Quiet Works",
 );
 
 // -------------------------------------------------------------- prefilter

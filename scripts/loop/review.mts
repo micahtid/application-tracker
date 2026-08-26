@@ -34,8 +34,13 @@ function clean(value: string | null | undefined): string {
   return (value ?? "").replace(/[|\r\n]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function field(value: string | number | null): string {
-  return value === null || value === "" ? "-" : String(value);
+function field(value: string | number | null | undefined): string {
+  return value === null || value === undefined || value === "" ? "-" : String(value);
+}
+
+/** `-` for a question this group does not apply to, which is not the same as no. */
+function bool(value: boolean | null | undefined): string {
+  return value === null || value === undefined ? "-" : value ? "yes" : "no";
 }
 
 const applications = (
@@ -99,16 +104,42 @@ function groupIdFor(messages: string[]): string {
   return `g:${messages[0]}`;
 }
 
-type Block = {
-  id: string;
-  company: string | null;
-  role: string | null;
-  season: string | null;
-  year: number | null;
-  status: string | null;
-  messages: string[];
-  note: string | null;
-};
+/**
+ * A block is a group label plus the one line the sheet adds for a person to
+ * read. Written as the label type rather than as a copy of its fields, so a
+ * question added to the labels reaches the sheet without anybody remembering
+ * to widen this.
+ */
+type Block = GroupLabel & { note: string | null };
+
+/**
+ * What the four LOOP5 questions read as on a group nobody has answered yet.
+ *
+ * Every one of them is seeded with what the system currently assumes, so that
+ * correcting the sheet is correcting an assumption rather than filling in a
+ * blank. `posting` is the sharpest of them: seeding it `yes` states today's
+ * assumption that a stated title is a posting title, which is exactly what
+ * defect B1 says is false.
+ */
+function seedQuestions(source: {
+  companyName: string | null;
+}): Pick<GroupLabel, "employer" | "real" | "realWhy"> {
+  return { employer: source.companyName, real: true, realWhy: null };
+}
+
+/**
+ * What the pipeline currently believes an email says about its title and its
+ * term, offered as the starting point for the two message level questions.
+ *
+ * `posting` seeds `yes` wherever a title was stated, which states today's
+ * assumption out loud: a stated string is a stated posting title. Defect B1 is
+ * that this assumption is false, so seeding it is what makes correcting the
+ * sheet an act of contradicting the system rather than of filling in a blank.
+ */
+function saidAbout(id: string): { posting: boolean | null; term: string | null } {
+  const said = classificationOf(messagesById.get(id) ?? { llmClassificationRaw: null });
+  return { posting: said?.roleTitle ? true : null, term: said?.season ?? null };
+}
 
 const blocks: Block[] = [];
 
@@ -130,6 +161,10 @@ if (seeded) {
     );
 
     blocks.push({
+      // The seed first and the label second, so a question this group has
+      // already answered keeps its answer and one it has never been asked
+      // arrives with today's assumption rather than blank.
+      ...seedQuestions({ companyName: group.company }),
       ...group,
       note:
         landed.size > 1
@@ -156,6 +191,7 @@ if (seeded) {
 
     const beside = [...new Set(ids.filter((id) => labelled.has(id)).map((id) => groupOfLabelled.get(id)))];
     blocks.push({
+      ...seedQuestions(application),
       id: groupIdFor(fresh),
       company: application.companyName,
       role: application.roleTitle,
@@ -172,6 +208,7 @@ if (seeded) {
   for (const application of applications) {
     const ids = application.messages.map((message) => message.gmailMessageId);
     blocks.push({
+      ...seedQuestions(application),
       id: groupIdFor(ids),
       company: application.companyName,
       role: application.roleTitle,
@@ -254,6 +291,7 @@ for (const orphan of orphans) {
   if (seeded && labels.messages[id]) continue;
   const said = classificationOf(messagesById.get(id) ?? { llmClassificationRaw: null });
   blocks.push({
+    ...seedQuestions({ companyName: said?.companyName ?? null }),
     id: groupIdFor([id]),
     company: said?.companyName ?? null,
     role: said?.roleTitle ?? null,
@@ -302,6 +340,22 @@ lines.push(`  ${LABEL_OUTCOMES.join(", ")}.`);
 lines.push("- **`rel:`** rides on indented lines only, and says which kind of report it is:");
 lines.push("  `REPEAT` for the same notice sent again, `REMINDER` for a nudge about it, `UPDATE`");
 lines.push("  for anything else. It is a chip in the drawer and nothing else depends on it.");
+lines.push("- **`employer:`** is which employer this application was made to. Two blocks are one");
+lines.push("  employer exactly when this field reads the same word for word on both. `company:` is");
+lines.push("  what this block's own mail calls them, which is routinely two spellings for one");
+lines.push("  employer; this is the answer to whether those two spellings are the same firm.");
+lines.push("- **`real:`** is whether this block is a real application at all. Where it is `no`, write");
+lines.push("  why after a `|`. Deleting the block would say the same thing and teach nothing, so a");
+lines.push("  block that should not be on the board is answered here rather than removed.");
+lines.push("- **`posting:`** rides on the message line and asks whether the title *this email*");
+lines.push("  states is the name of the posting applied to, rather than a label belonging to the");
+lines.push("  system that sent the mail. `-` means the email states no title at all, which is a");
+lines.push("  different answer from `no`. It is a question about the email and not about the block:");
+lines.push("  one email of an application can state the posting while another states a template.");
+lines.push("- **`term:`** rides on the message line too, and is which term this email says the");
+lines.push("  posting runs in, **in the words the email used**. Not one of the seasons the code");
+lines.push("  knows: a term the code cannot hold is the thing being measured, so writing it in the");
+lines.push("  code's vocabulary would hide it. `-` means the email states no term.");
 lines.push("- **Recall**: in the last two sections, flip `related:no` to `related:yes` for anything");
 lines.push("  that really was about an application you submitted. That is the only way recall is");
 lines.push("  ever measured (F7).");
@@ -323,10 +377,12 @@ for (const block of blocks) {
   lines.push(`### ${block.id}`);
   if (block.note) lines.push(`note: ${block.note}`);
   lines.push(`- company: ${field(block.company)}`);
+  lines.push(`- employer: ${field(block.employer)}`);
   lines.push(`- role: ${field(block.role)}`);
   lines.push(`- season: ${field(block.season)}`);
   lines.push(`- year: ${field(block.year)}`);
   lines.push(`- status: ${field(block.status)}`);
+  lines.push(`- real: ${bool(block.real)}${block.realWhy ? ` | ${clean(block.realWhy)}` : ""}`);
   for (const [id, parent] of treeOf(block.messages)) {
     const message = messagesById.get(id);
     const known = labels.messages[id];
@@ -339,8 +395,11 @@ for (const block of blocks) {
     const stage = known?.stage !== undefined ? known.stage : stageOf(id);
     const event = known?.event !== undefined ? known.event : null;
     const outcome = known?.outcome !== undefined ? known.outcome : null;
+    const said = saidAbout(id);
+    const posting = known?.posting !== undefined ? known.posting : said.posting;
+    const term = known?.term !== undefined ? known.term : said.term;
     lines.push(
-      `${parent ? "  " : ""}- ${id} | sig:${significant ? "yes" : "no "} | stage:${field(stage ?? null)} | event:${field(event ?? null)} | outcome:${field(outcome ?? null)} |${relation} ${message ? message.receivedAt.toISOString().slice(0, 10) : "?"} | ${clean(message?.senderDomain)} | ${clean(message?.subject)}`,
+      `${parent ? "  " : ""}- ${id} | sig:${significant ? "yes" : "no "} | stage:${field(stage ?? null)} | event:${field(event ?? null)} | outcome:${field(outcome ?? null)} | posting:${bool(posting)} | term:${field(term ?? null)} |${relation} ${message ? message.receivedAt.toISOString().slice(0, 10) : "?"} | ${clean(message?.senderDomain)} | ${clean(message?.subject)}`,
     );
   }
   lines.push("");

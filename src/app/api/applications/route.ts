@@ -8,6 +8,7 @@ import {
 } from "@/lib/drawer";
 import { gmailLink } from "@/lib/links";
 import { NO_CORRECTION, resolveCorrections } from "@/lib/pipeline/corrections";
+import { displayCompanyNames } from "@/lib/pipeline/employers";
 import { isStale } from "@/lib/pipeline/recompute";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +38,7 @@ function emailView(node: DrawerNode<DrawerMessage>, accountEmail: string | null)
 export async function GET() {
   const now = new Date();
 
-  const [applications, account, corrections] = await Promise.all([
+  const [applications, account, corrections, aliases] = await Promise.all([
     prisma.application.findMany({
       orderBy: { latestEmailAt: "desc" },
       include: {
@@ -70,7 +71,21 @@ export async function GET() {
     // The corrections live in their own table, keyed by the message they were
     // made against, so a rebuild cannot delete them.
     resolveCorrections(prisma),
+    prisma.companyAlias.findMany({ select: { aliasNormalized: true, canonicalCompanyName: true } }),
   ]);
+
+  // One employer, one name. Worked out across the whole board rather than
+  // inside a row, and never written back, because `company_name` is half of
+  // what decides which row an email belongs to (LOOP5 Decision 3).
+  const displayNames = displayCompanyNames(
+    applications.map((application) => ({
+      id: application.id,
+      companyName: application.companyName,
+      companyNormalized: application.companyNormalized,
+      messages: application.memberships.map((membership) => membership.message),
+    })),
+    aliases,
+  );
 
   return NextResponse.json({
     applications: applications.map((application) => {
@@ -88,8 +103,12 @@ export async function GET() {
 
       return {
         id: application.id,
-        company: application.companyName,
+        company: displayNames.get(application.id) ?? application.companyName,
         role: application.roleTitle,
+        // The words the emails used, and the bucket the board files them under
+        // (LOOP5 Decision 6). A reader sees the term. The filter and the sort
+        // read the bucket.
+        term: application.term,
         season: application.season,
         year: application.year,
         // The override, when set, beats the calculated status.

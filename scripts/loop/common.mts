@@ -118,6 +118,28 @@ export type MessageLabel = {
    */
   outcome?: string | null;
   /**
+   * Whether the title this email states is the name of the posting applied to,
+   * rather than a label belonging to the system that sent the mail (LOOP5 5.1,
+   * defect B1). Null when the email states no title at all, which is a
+   * different answer from "the title it states is not a posting name".
+   *
+   * Labelled on the email rather than on the group because that is where the
+   * defect lives: one email of an application states the name of the template
+   * it was rendered from and another states the posting, and a single answer
+   * per group could not say that. It is also the question Decision 4 puts to the model,
+   * so the label and the prompt ask the same thing of the same thing.
+   */
+  posting?: boolean | null;
+  /**
+   * The term this email says the posting runs in, **in the words the email
+   * used** (LOOP5 5.1, defect C3).
+   *
+   * Deliberately not one of `SEASONS`. The whole of C3 is that a term the
+   * vocabulary cannot hold is dropped in silence, and a label written in that
+   * same vocabulary could never say so.
+   */
+  term?: string | null;
+  /**
    * Every group this email belongs to, when it belongs to more than one.
    * Absent on almost every message, and read only where it is set. Derived
    * from the sheet rather than written by hand: an email listed
@@ -188,6 +210,24 @@ export type GroupLabel = {
   season: string | null;
   year: number | null;
   status: string | null;
+  /**
+   * Which employer this group's application was made to, written the same way
+   * on every group that shares it (LOOP5 5.1).
+   *
+   * `company` is what one group's mail calls the employer, and two groups at
+   * one employer routinely spell it two ways. This says they are one employer,
+   * and it says it once rather than once per pair: two groups are one employer
+   * exactly when this field reads the same on both. Nothing in the pipeline
+   * may read it, because it is the answer family A is scored against.
+   */
+  employer?: string | null;
+  /**
+   * Whether this group is a real application. Null on nothing: every group is
+   * either an application or it is not, and where it is not the reason is
+   * written out in `realWhy` rather than left to be guessed at.
+   */
+  real?: boolean | null;
+  realWhy?: string | null;
 };
 
 export type ApplicationLabels = { revision: string; groups: GroupLabel[] };

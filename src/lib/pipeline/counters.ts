@@ -67,8 +67,43 @@ export function isWitnessed(reason: LinkReason, titlesAreIdentical: boolean): bo
   return WITNESSED_REASONS.includes(reason);
 }
 
+/**
+ * Why a message left stage 4 without a membership (LOOP5 Decision 8).
+ *
+ * > **Gate 10.** A message leaves stage 4 with a membership or with a counted
+ * > reason, and never with neither.
+ *
+ * Every `continue` in the matching loop that ends a message's turn without
+ * attaching it names one of these. One of them used to be a bare `continue`
+ * with a correct comment above it and no number anywhere, and mail went down it
+ * and vanished.
+ *
+ *   NOT_APPLICATION_MAIL  the stored answer no longer calls it application mail
+ *   NO_COMPANY            the model named no employer at all
+ *   COMPANY_REFUSED       it named one the code will not accept as an employer
+ *   COMPANY_UNREADABLE    it named one that normalises away to nothing
+ */
+export const SKIP_REASONS = [
+  "NOT_APPLICATION_MAIL",
+  "NO_COMPANY",
+  "COMPANY_REFUSED",
+  "COMPANY_UNREADABLE",
+] as const;
+
+export type SkipReason = (typeof SKIP_REASONS)[number];
+
+/** What each reason says out loud when a pass cannot balance. */
+export const SKIP_WORDS: Record<SkipReason, string> = {
+  NOT_APPLICATION_MAIL: "the stored answer no longer calls them application mail",
+  NO_COMPANY: "no employer was named",
+  COMPANY_REFUSED: "the employer named could not be accepted as one",
+  COMPANY_UNREADABLE: "the employer named left nothing to match on",
+};
+
 export type PipelineCounters = {
   linksByReason: Record<LinkReason, number>;
+  /** Messages that left stage 4 with a reason rather than with a membership. */
+  skipsByReason: Record<SkipReason, number>;
   /** Times the score's top two candidates were exactly level and row id decided. */
   scoreTies: number;
   aliasesWritten: number;
@@ -95,6 +130,10 @@ export function emptyCounters(): PipelineCounters {
       LinkReason,
       number
     >,
+    skipsByReason: Object.fromEntries(SKIP_REASONS.map((reason) => [reason, 0])) as Record<
+      SkipReason,
+      number
+    >,
     scoreTies: 0,
     aliasesWritten: 0,
     aliasesGuessed: 0,
@@ -114,8 +153,9 @@ export function mergeCounters(...parts: PipelineCounters[]): PipelineCounters {
   const total = emptyCounters();
   for (const part of parts) {
     for (const reason of LINK_REASONS) total.linksByReason[reason] += part.linksByReason[reason];
+    for (const reason of SKIP_REASONS) total.skipsByReason[reason] += part.skipsByReason[reason];
     for (const key of Object.keys(total) as (keyof PipelineCounters)[]) {
-      if (key === "linksByReason") continue;
+      if (key === "linksByReason" || key === "skipsByReason") continue;
       total[key] += part[key];
     }
   }
@@ -131,6 +171,18 @@ export function mergeCounters(...parts: PipelineCounters[]): PipelineCounters {
  */
 export function counterNotes(counters: PipelineCounters): string[] {
   const notes: string[] = [];
+
+  // Gate 10, said out loud. A pass that could not give every message a home
+  // says which branch the difference went down, rather than leaving it to be
+  // found by reading the parser.
+  for (const reason of SKIP_REASONS) {
+    const n = counters.skipsByReason[reason];
+    if (n) {
+      notes.push(
+        `${plural(n, "email")} reached no application because ${SKIP_WORDS[reason]}.`,
+      );
+    }
+  }
 
   if (counters.dedupeCollisions) {
     notes.push(

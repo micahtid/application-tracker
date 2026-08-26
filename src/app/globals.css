@@ -1017,6 +1017,14 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   background: color-mix(in srgb, var(--amber) 13%, transparent);
   font-weight: 600;
 }
+/* Which ending a finished row reached. Drawn in the section's own colour, so
+   an offer and a rejection are told apart by the word rather than by a hue the
+   row is already wearing. */
+.tag--ending {
+  color: var(--text-2);
+  background: var(--hover);
+  font-weight: 600;
+}
 .tag--override {
   display: inline-flex; align-items: center; gap: 5px;
   color: var(--blue);

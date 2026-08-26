@@ -159,7 +159,17 @@ model Application {
   companyDomain    String?   @map("company_domain")
   roleTitle        String?   @map("role_title")
   dedupeKey        String    @unique @map("dedupe_key")
-  /// Summer | Spring | Fall
+  /// The term the posting runs in, in the words the emails used, and null when
+  /// no email states one (LOOP5 Decision 6). Checked against no list, because a
+  /// vocabulary that decides what may be recorded is how a term the code had
+  /// never heard of was dropped in silence. Matching compares this rather than
+  /// the bucket below.
+  term             String?
+  /// Summer | Spring | Fall | Winter, or null when the stated term fits none of
+  /// them. Derived from `term` on every recalculation and never authored. It
+  /// decides which column the board files a row under and nothing else: no
+  /// grouping rule reads it, which is what stops a list of words deciding an
+  /// answer (Gate 8).
   season           String?
   year             Int?
   /// ACCEPTED | IN_PROGRESS | APPLIED | REJECTED

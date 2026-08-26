@@ -4,7 +4,7 @@ import { Ban, Check, ChevronDown, ChevronRight, CircleCheck, Clock, List } from 
 import EmailList from "./EmailList";
 import Highlight from "./Highlight";
 import RowMenu from "./RowMenu";
-import { SECTIONS, type ApplicationView, type Row, type RowHandlers } from "@/lib/view";
+import { SECTIONS, endingLabel, type ApplicationView, type Row, type RowHandlers } from "@/lib/view";
 import { STAGE_LABELS, STATUSES, STATUS_LABELS, type Status } from "@/lib/constants";
 
 const SECTION_ICONS: Record<Status, React.ElementType> = {
@@ -95,6 +95,8 @@ function ApplicationRow({
   open: boolean;
   menuOpen: boolean;
 }) {
+  const ending = endingLabel(application);
+
   return (
     <li
       className={`item${open ? " open" : ""}${application.isHidden ? " item--hidden" : ""}`}
@@ -127,6 +129,11 @@ function ApplicationRow({
                 {STATUS_LABELS[application.statusOverride]}
               </span>
             ) : null}
+            {/* Which ending a finished row reached, in its own words rather
+                than left to the section heading, which has one word for several
+                endings. The sheet's Stage column reads the same rule, so the
+                two designs cannot disagree (LOOP5 Decision 5). */}
+            {ending ? <span className="tag tag--ending">{ending}</span> : null}
             {application.status === "IN_PROGRESS" && application.stageDetail ? (
               <span className="tag tag--stage">
                 {STAGE_LABELS[application.stageDetail]}
@@ -140,7 +147,9 @@ function ApplicationRow({
                 Quiet
               </span>
             ) : null}
-            {application.season ? <span className="tag">{application.season}</span> : null}
+            {/* The words the emails used, not the bucket they are filed under
+                (LOOP5 Decision 6). A row that says Winter says Winter. */}
+            {application.term ? <span className="tag">{application.term}</span> : null}
             {application.year ? <span className="tag tag--year">{application.year}</span> : null}
           </span>
         </button>

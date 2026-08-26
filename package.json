@@ -24,7 +24,8 @@
     "loop:score": "tsx scripts/loop/score.mts",
     "loop:diff": "tsx scripts/loop/diff.mts",
     "loop:intake-audit": "tsx --env-file=.env.local scripts/loop/intake-audit.mts",
-    "loop:ratchet": "tsx scripts/loop/ratchet.mts"
+    "loop:ratchet": "tsx scripts/loop/ratchet.mts",
+    "loop:refusals": "tsx scripts/loop/refusals.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.118.0",

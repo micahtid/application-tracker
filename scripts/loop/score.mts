@@ -33,8 +33,20 @@ import {
 } from "./common.mts";
 import { TITLE_KEYWORD_RULES, drawerTitle, drawerTree, shownIn } from "@/lib/drawer";
 import { classificationOf } from "@/lib/pipeline/recompute";
-import { normalizeCompany, sameEmployer } from "@/lib/normalize";
-import { GROUPING_VERSION, CLASSIFIER_VERSION } from "@/lib/constants";
+import { groupsOf, normalizeCompany, normalizeTerm, sameEmployer } from "@/lib/normalize";
+import {
+  GROUPING_VERSION,
+  CLASSIFIER_VERSION,
+  OUTCOME_LABELS,
+  termBucket,
+  STATUS_LABELS,
+  hasEnded,
+  type Outcome,
+  type Status,
+} from "@/lib/constants";
+import { isBlockedCompany } from "@/lib/ats";
+import { endingLabel } from "@/lib/view";
+import { displayCompanyNames } from "@/lib/pipeline/employers";
 import { findSplitSuspects } from "@/lib/pipeline/duplicates";
 
 const MIN_TRUSTED = 20;
@@ -71,6 +83,8 @@ type Counters = Partial<{
   repairRegressions: number;
   adjudicateCalls: number;
   adjudicateCostUsd: number;
+  /** Messages stage 4 let go of with a counted reason, by reason (Gate 10). */
+  skipsByReason: Record<string, number>;
 }>;
 
 const replay = readJson<{
@@ -78,6 +92,10 @@ const replay = readJson<{
   correctionsPreserved?: number;
   applications?: unknown[];
   counters?: Counters;
+  /** Gate 10's three numbers, reported by the pass rather than counted again. */
+  stage4Given?: number;
+  stage4Attached?: number;
+  stage4Skipped?: number;
   repairs?: { kind: "MERGE" | "SPLIT"; left: string[]; right: string[] }[];
 }>(LAST_RESULT, {});
 
@@ -283,6 +301,11 @@ const metrics: Record<string, Record<Half, Tally>> = {
   "prefilter.false_drop": empty(),
   "tree.parent_accuracy": empty(),
   "tree.top_level_precision": empty(),
+  // The LOOP5 additions that are ratios. The rest are counts and are reported
+  // as numbers rather than as shares.
+  "outcome.shown": empty(),
+  "term.kept": empty(),
+  "admit.precision": empty(),
 };
 
 /**
@@ -678,6 +701,408 @@ for (const pair of labelledPairs) {
   parentByRelation.set(relation, tally);
 }
 
+const suspects = await findSplitSuspects(db);
+
+// ------------------------------------------------------- the LOOP5 questions
+//
+// Twelve readings, each named for the defect it exists to catch. None of them
+// existed before LOOP5 iteration 0, and three of that loop's four defect
+// families had no number at all until they did.
+//
+// Three of the twelve read a rule that lives inside `src/`. Iteration 0 could
+// not, because it may not touch `src/` and a baseline taken against a changed
+// system is not a baseline, so each was written out here as a copy and named as
+// one. All three now call the shared rule instead, and each says below which
+// iteration made that possible.
+
+const groupById = new Map(applicationLabels.groups.map((group) => [group.id, group]));
+
+/** The employer a labelled group was applied to, or null where nobody said. */
+function employerOf(groupId: string | undefined): string | null {
+  if (!groupId) return null;
+  return groupById.get(groupId)?.employer ?? null;
+}
+
+/**
+ * The employers a board row belongs to, read through the groups whose mail it
+ * holds. Almost always none or one; two means the row has merged two
+ * employers, which `identity.one_name` is not the metric for.
+ */
+const employersOfApplication = new Map<number, Set<string>>();
+for (const application of applications) {
+  const employers = new Set<string>();
+  for (const message of application.messages) {
+    for (const group of groupsOfMessage.get(message.gmailMessageId) ?? []) {
+      const employer = employerOf(group);
+      if (employer) employers.add(employer);
+    }
+  }
+  employersOfApplication.set(application.id, employers);
+}
+
+// ---- identity.reachable
+
+/**
+ * Every company name this mailbox has produced, and which employers the labels
+ * place each one at.
+ *
+ * Read from the stored classifications as well as from the board, because the
+ * pair that matters is the pair of spellings two emails used, and a merge on
+ * the board leaves only one of them standing.
+ */
+const employersOfName = new Map<string, Set<string>>();
+function noteName(name: string | null | undefined, employer: string | null): void {
+  const normalized = normalizeCompany(name ?? "");
+  if (!normalized) return;
+  const at = employersOfName.get(normalized) ?? new Set<string>();
+  if (employer) at.add(employer);
+  employersOfName.set(normalized, at);
+}
+
+for (const application of applications) {
+  const employers = employersOfApplication.get(application.id) ?? new Set();
+  noteName(application.companyName, employers.size === 1 ? [...employers][0] : null);
+}
+for (const [id, message] of storedMessages) {
+  const said = classificationOf(message);
+  noteName(said?.companyName, employerOf(groupOfMessage(id)));
+}
+
+const aliasRows = await db.companyAlias.findMany({
+  select: { aliasNormalized: true, canonicalCompanyName: true },
+});
+
+/**
+ * Whether an email naming `incoming` would have the row named `stored`
+ * returned to it by the matcher.
+ *
+ * Iteration 1 made `groupsOf` the one blocking rule, so this asks that rule
+ * directly and what the metric reads is what the matcher does. Before that it
+ * was a copy of `candidatesFor`'s two indexed lookups.
+ *
+ * The alias table is consulted the same way the matcher consults it, because
+ * two names sharing no key can still be one employer if somebody witnessed it.
+ */
+function retrievalReaches(incoming: string, stored: string): boolean {
+  if (!incoming || !stored) return false;
+
+  const keys = new Set(groupsOf(incoming));
+  if (groupsOf(stored).some((key) => keys.has(key))) return true;
+
+  for (const row of aliasRows) {
+    const canonical = normalizeCompany(row.canonicalCompanyName);
+    if (row.aliasNormalized === incoming && canonical === stored) return true;
+    if (canonical === incoming && row.aliasNormalized === stored) return true;
+  }
+  return false;
+}
+
+/**
+ * identity.reachable, over every pair of spellings that is one employer.
+ *
+ * A pair counts when the pipeline's own comparison accepts it, or when the
+ * labels place both spellings at one employer. Those are the two ways two
+ * names can be one firm, and the second is the only one that can see an
+ * employer trading under a second, unrelated name.
+ *
+ * Retrieval is asked in both directions, because which name is incoming and
+ * which is stored depends on nothing but which email arrived first.
+ */
+const names = [...employersOfName.keys()].sort();
+let reachablePairs = 0;
+const unreachable: [string, string][] = [];
+
+for (let i = 0; i < names.length; i += 1) {
+  for (let j = i + 1; j < names.length; j += 1) {
+    const left = names[i];
+    const right = names[j];
+    const labelledOne = [...(employersOfName.get(left) ?? [])].some((employer) =>
+      employersOfName.get(right)?.has(employer),
+    );
+    if (!sameEmployer(left, right) && !labelledOne) continue;
+
+    if (retrievalReaches(left, right) || retrievalReaches(right, left)) reachablePairs += 1;
+    else unreachable.push([left, right]);
+  }
+}
+
+const reachableTotal = reachablePairs + unreachable.length;
+const identityReachable = reachableTotal ? reachablePairs / reachableTotal : null;
+
+// ---- identity.one_name
+
+/**
+ * identity.one_name, the employers the board draws under more than one name.
+ *
+ * Counted over employers rather than over rows, because three rows spelling
+ * one employer two ways is one defect and not three.
+ */
+const displayNames = displayCompanyNames(
+  applications.map((application) => ({
+    id: application.id,
+    companyName: application.companyName,
+    companyNormalized: application.companyNormalized,
+    messages: application.messages,
+  })),
+  aliasRows,
+);
+
+const namesOfEmployer = new Map<string, Set<string>>();
+for (const application of applications) {
+  for (const employer of employersOfApplication.get(application.id) ?? []) {
+    const spellings = namesOfEmployer.get(employer) ?? new Set<string>();
+    // The name a person actually reads, which from LOOP5 Decision 3 is a
+    // projection rather than the stored `company_name`.
+    spellings.add(displayNames.get(application.id) ?? application.companyName);
+    namesOfEmployer.set(employer, spellings);
+  }
+}
+const twoNamed = [...namesOfEmployer.entries()].filter(([, spellings]) => spellings.size > 1);
+
+// ---- title.placeholder and title.lost
+
+/**
+ * The title an email states, **before** the parser decides whether to keep it.
+ *
+ * Read out of the raw answer rather than off the classification, because from
+ * LOOP5 Decision 4 a title the model says is not a posting name never reaches
+ * `roleTitle` at all. `title.lost` exists to catch that deletion going too far,
+ * and it can only do that if it can still see what was deleted.
+ */
+function statedTitle(id: string): string | null {
+  const raw = storedMessages.get(id)?.llmClassificationRaw;
+  if (!raw) return null;
+  try {
+    const said = JSON.parse(raw) as { role_title?: unknown };
+    return typeof said.role_title === "string" && said.role_title.trim() ? said.role_title.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+const sameTitle = (left: string | null, right: string | null) =>
+  (left ?? "").trim().toLowerCase() === (right ?? "").trim().toLowerCase();
+
+/**
+ * title.placeholder, over the rows whose stored title came only from emails
+ * the labels say do not name a posting.
+ *
+ * Read that way round rather than from a list of placeholder words, because a
+ * list of words is what Gate 8 forbids and what the next mailbox renders in
+ * another language.
+ */
+const placeholderRows: string[] = [];
+
+for (const application of applications) {
+  if (!application.roleTitle) continue;
+  const saying = application.messages
+    .map((message) => ({
+      title: statedTitle(message.gmailMessageId),
+      posting: messageLabels[message.gmailMessageId]?.posting ?? null,
+    }))
+    .filter((message) => sameTitle(message.title, application.roleTitle));
+
+  // Only where somebody has answered. An unlabelled email says nothing about
+  // whether the title on the row is a posting name.
+  const answered = saying.filter((message) => message.posting !== null);
+  if (answered.length && answered.every((message) => message.posting === false)) {
+    placeholderRows.push(`${application.companyName} · ${application.roleTitle}`);
+  }
+}
+
+/**
+ * title.lost, over **emails** rather than over rows.
+ *
+ * Iteration 0 counted rows that carry no title where some email of theirs
+ * states one, and Iteration 4 proved that too weak to do the job it exists
+ * for. A row keeps its title from any email that states it, so a real posting
+ * name refused on one email of five leaves the row looking untouched. The
+ * damage lands somewhere else entirely: a refused title is silence, silence
+ * agrees with every title, and the email walks onto whichever row the score
+ * happens to pick. That is how two postings at one employer became one row
+ * while this metric read 0.
+ *
+ * So it counts what actually went wrong: an email whose stated title the
+ * labels call a posting name and the pipeline refused. It is the counterweight
+ * that stops Decision 4 being scored by how much it deletes, and it can only
+ * be that if it is read where the deleting happens.
+ */
+const lostTitles: string[] = [];
+for (const [id, label] of Object.entries(messageLabels)) {
+  if (label.posting !== true) continue;
+  const stated = statedTitle(id);
+  if (!stated) continue;
+  const kept = classificationOf(storedMessages.get(id) ?? { llmClassificationRaw: null })?.roleTitle;
+  if (!kept) lostTitles.push(`\`${id}\` · ${stated}`);
+}
+
+// ---- outcome.shown
+
+/**
+ * The word the board prints on a finished row.
+ *
+ * Iteration 5 gave this rule a home in `src/lib/view.ts`, where the board and
+ * the sheet both read it, so this calls the same function they do. Before that
+ * the board printed `STATUS_LABELS[status]` and this was a copy of it.
+ */
+function wordOnScreen(row: { status: string; outcome: string | null }): string {
+  return (
+    endingLabel({ status: row.status as Status, outcome: row.outcome as Outcome | null }) ??
+    STATUS_LABELS[row.status as Status] ??
+    row.status
+  );
+}
+
+/** The ending a labelled group reached, from its newest email that names one. */
+function labelledOutcome(group: { messages: string[] }): Outcome | null {
+  let latest: Outcome | null = null;
+  for (const id of group.messages) {
+    const outcome = messageLabels[id]?.outcome;
+    if (outcome) latest = outcome as Outcome;
+  }
+  return latest;
+}
+
+for (const group of applicationLabels.groups) {
+  const aligned = groupToApplication.get(group.id);
+  const ending = labelledOutcome(group);
+  if (!aligned || !ending) continue;
+  if (!hasEnded(aligned.application.status)) continue;
+  count(
+    "outcome.shown",
+    halfOfGroup.get(group.id)!,
+    wordOnScreen(aligned.application) === OUTCOME_LABELS[ending],
+  );
+}
+
+// ---- term.kept and term.unbucketed
+
+/**
+ * term.kept, over the emails the labels say state a term.
+ *
+ * The row keeps a term when what it stores reads the same as what the email
+ * said. An email that reached no row at all kept nothing, and is counted as
+ * the miss it is rather than left out of the denominator.
+ */
+const statedTerms = new Set<string>();
+for (const [id, label] of Object.entries(messageLabels)) {
+  if (!label.term) continue;
+  statedTerms.add(label.term);
+  const group = groupOfMessage(id);
+  if (!group) continue;
+  const held = [...(applicationsHolding.get(id) ?? [])]
+    .map((applicationId) => applications.find((row) => row.id === applicationId))
+    .filter((row) => row !== undefined);
+  // Compared as terms rather than as buckets, and with the year taken off both
+  // sides, because the year is a separate field with a rule of its own
+  // (LOOP5 Decision 6).
+  const wanted = normalizeTerm(label.term);
+  const kept = held.some((row) => Boolean(row.term) && normalizeTerm(row.term) === wanted);
+  count("term.kept", halfOfGroup.get(group)!, kept);
+}
+
+/**
+ * term.unbucketed, the stated terms the vocabulary cannot hold.
+ *
+ * Advisory and watched rather than a target. It is meant to be above 0 in a
+ * mailbox whose terms this vocabulary was not drawn from, and every one it
+ * names is a term that is dropped in silence today.
+ */
+const unbucketed = [...statedTerms].filter((term) => termBucket(term) === null).sort();
+
+// ---- admit.precision and admit.unattached
+
+for (const group of applicationLabels.groups) {
+  const aligned = groupToApplication.get(group.id);
+  if (!aligned || group.real === null || group.real === undefined) continue;
+  count("admit.precision", halfOfGroup.get(group.id)!, group.real === true);
+}
+
+const unattached = allMessages.filter(
+  (message) => message.isApplicationRelated && !message.memberships.length,
+);
+
+// ---- stage4.balanced
+
+/**
+ * Gate 10's balance: memberships written plus reasons counted, against the
+ * messages stage 4 was handed.
+ *
+ * Read from the pass that did the work where it reports it, and from the
+ * database where it does not. Iteration 0 had only the second reading, because
+ * nothing counted a reason and the shortfall was the hole itself. From
+ * Iteration 7 the pass reports all three numbers and this reads them, which is
+ * the difference between measuring the pass and measuring the board it left
+ * behind.
+ */
+const messagesGiven =
+  replay.stage4Given ??
+  (await db.emailMessage.count({
+    where: {
+      classificationStatus: "OK",
+      classifierVersion: CLASSIFIER_VERSION,
+      isApplicationRelated: true,
+    },
+  }));
+const membershipsWritten =
+  replay.stage4Attached ??
+  (await db.emailMessage.count({
+    where: {
+      classificationStatus: "OK",
+      classifierVersion: CLASSIFIER_VERSION,
+      isApplicationRelated: true,
+      memberships: { some: {} },
+    },
+  }));
+const reasonsCounted =
+  replay.stage4Skipped ??
+  Object.values(counters.skipsByReason ?? {}).reduce((sum, n) => sum + n, 0);
+const stage4Balanced = messagesGiven
+  ? (membershipsWritten + reasonsCounted) / messagesGiven
+  : null;
+
+// ---- identity.unnamed
+
+/**
+ * The names the code refused to accept as an employer, counted by name.
+ *
+ * Advisory and watched. Every one of these is an answer the model gave and the
+ * parser deleted, and until Decision 7 lands nothing anywhere records that it
+ * happened.
+ */
+const refusedNames = new Map<string, number>();
+for (const [, message] of storedMessages) {
+  if (!message.llmClassificationRaw) continue;
+  let said: unknown;
+  try {
+    said = JSON.parse(message.llmClassificationRaw);
+  } catch {
+    continue;
+  }
+  const name = (said as { company_name?: unknown })?.company_name;
+  if (typeof name !== "string" || !name.trim()) continue;
+  if (!isBlockedCompany(name)) continue;
+  refusedNames.set(name.trim(), (refusedNames.get(name.trim()) ?? 0) + 1);
+}
+const refusedTotal = [...refusedNames.values()].reduce((total, n) => total + n, 0);
+
+// ---- suspects.assumed
+
+/**
+ * suspects.assumed, read from the report rather than from a copy of it.
+ *
+ * Iteration 3 removed the skip, so the pairs the report used to throw away are
+ * pairs it now returns, each carrying `titlesAgree`. The number is what the
+ * report found, not what the harness believes it would have done.
+ */
+const assumedPairs = suspects
+  .filter((suspect) => suspect.titlesAgree)
+  .map(
+    (suspect) =>
+      `${suspect.company} · ${suspect.roles[0] ?? "(no role)"} / ${suspect.roles[1] ?? "(no role)"}`,
+  );
+const suspectsAssumed = assumedPairs.length;
+
 // ---------------------------------------------------------------- reporting
 
 function ratio(tally: Tally): number | null {
@@ -705,7 +1130,6 @@ const labelledMessages = Object.keys(messageLabels).length;
 const groupedLabels = new Set(applicationLabels.groups.flatMap((group) => group.messages)).size;
 
 const failures = await db.emailMessage.count({ where: { classificationStatus: "FAILED" } });
-const suspects = await findSplitSuspects(db);
 /**
  * What this loop has spent, rather than what the mailbox has ever spent.
  *
@@ -869,6 +1293,46 @@ const rows: Row[] = [
     target: "0 from iteration 2",
   },
   { metric: "drawer.top_level", tune: spread(topLevelSpread), holdout: "—", target: "no row above the states it reached" },
+  /**
+   * The LOOP5 readings. Each is named for the defect it exists to catch, and
+   * three of the four families below had no number at all before this.
+   */
+  {
+    metric: "identity.reachable",
+    tune: show(identityReachable, reachableTotal),
+    holdout: "—",
+    target: "1.0",
+  },
+  { metric: "identity.one_name", tune: String(twoNamed.length), holdout: "—", target: "0" },
+  { metric: "title.placeholder", tune: String(placeholderRows.length), holdout: "—", target: "0" },
+  { metric: "title.lost", tune: String(lostTitles.length), holdout: "—", target: "0" },
+  ...(
+    [
+      ["outcome.shown", "1.0"],
+      ["term.kept", "1.0"],
+      ["admit.precision", "1.0"],
+    ] as const
+  ).map(([metric, target]) => ({
+    metric,
+    tune: show(ratio(metrics[metric].TUNE), metrics[metric].TUNE.total),
+    holdout: show(ratio(metrics[metric].HOLDOUT), metrics[metric].HOLDOUT.total),
+    target,
+  })),
+  {
+    metric: "term.unbucketed",
+    tune: String(unbucketed.length),
+    holdout: "—",
+    target: "advisory, watched",
+  },
+  {
+    metric: "stage4.balanced",
+    tune: stage4Balanced === null ? "—" : stage4Balanced.toFixed(3),
+    holdout: "—",
+    target: "1.0",
+  },
+  { metric: "admit.unattached", tune: String(unattached.length), holdout: "—", target: "0" },
+  { metric: "identity.unnamed", tune: String(refusedTotal), holdout: "—", target: "advisory, watched" },
+  { metric: "suspects.assumed", tune: String(suspectsAssumed), holdout: "—", target: "advisory" },
 ];
 
 /** `37×1 10×2 3×3`: how many rows show how many top level lines. */
@@ -944,6 +1408,18 @@ const readings: Record<string, { TUNE: number | null; HOLDOUT: number | null }> 
   "link.scored": { TUNE: counters.linksByReason?.SCORE ?? null, HOLDOUT: null },
   "adjudicate.calls": { TUNE: counters.adjudicateCalls ?? null, HOLDOUT: null },
   "intake.audit_recall": { TUNE: audit?.recall ?? null, HOLDOUT: null },
+  // The LOOP5 readings. Each gains a floor the first pass that reads it, which
+  // is the same rule the repair and adjudicate counters were added under: a
+  // floor held against a number that does not exist is not a ratchet.
+  "identity.reachable": { TUNE: identityReachable, HOLDOUT: null },
+  "identity.one_name": { TUNE: twoNamed.length, HOLDOUT: null },
+  "title.placeholder": { TUNE: placeholderRows.length, HOLDOUT: null },
+  "title.lost": { TUNE: lostTitles.length, HOLDOUT: null },
+  "term.unbucketed": { TUNE: unbucketed.length, HOLDOUT: null },
+  "stage4.balanced": { TUNE: stage4Balanced, HOLDOUT: null },
+  "admit.unattached": { TUNE: unattached.length, HOLDOUT: null },
+  "identity.unnamed": { TUNE: refusedTotal, HOLDOUT: null },
+  "suspects.assumed": { TUNE: suspectsAssumed, HOLDOUT: null },
 };
 
 const falls: string[] = [];
@@ -983,10 +1459,46 @@ if (suspects.length) {
   lines.push("Advisory. Nothing acts on these; they are the pairs a rule change would next reach.");
   lines.push("");
   for (const suspect of suspects) {
-    lines.push(`- **${suspect.company}**, titles score ${suspect.similarity.toFixed(2)}`);
+    // A pair whose titles agree is the strongest suspect there is, and it is
+    // the pair this report used to throw away (LOOP5 Decision 9).
+    const strength = suspect.titlesAgree
+      ? "**their titles agree**, which after LOOP5 Decision 1 should not happen"
+      : `titles score ${suspect.similarity.toFixed(2)}`;
+    lines.push(`- **${suspect.company}**, ${strength}`);
     lines.push(`  - ${suspect.roles[0] ?? "(no role)"}`);
     lines.push(`  - ${suspect.roles[1] ?? "(no role)"}`);
   }
+  lines.push("");
+}
+
+/**
+ * The LOOP5 readings that are worth naming rather than counting.
+ *
+ * A count says how big a defect is. These say which rows and which words it is
+ * made of, which is what the next iteration actually has to act on.
+ */
+const named: [string, string[]][] = [
+  ["Pairs that are one employer and never meet", unreachable.map(([a, b]) => `\`${a}\` and \`${b}\``)],
+  ["Employers the board draws under two names", twoNamed.map(([employer, spellings]) => `**${employer}**: ${[...spellings].join(", ")}`)],
+  ["Rows whose title is not a posting name", placeholderRows],
+  ["Emails whose posting name was refused", lostTitles],
+  ["Stated terms the vocabulary cannot hold", unbucketed.map((term) => `\`${term}\``)],
+  ["Names the code refused as an employer", [...refusedNames.entries()].sort().map(([name, n]) => `\`${name}\` ×${n}`)],
+  ["Related mail in no application", unattached.map((message) => `\`${message.gmailMessageId}\``)],
+  ["Pairs the split report skips because their titles agree", assumedPairs],
+];
+
+lines.push("## What the LOOP5 readings are made of");
+lines.push("");
+for (const [heading, items] of named) {
+  if (!items.length) continue;
+  lines.push(`**${heading}** (${items.length})`);
+  lines.push("");
+  for (const item of items) lines.push(`- ${item}`);
+  lines.push("");
+}
+if (named.every(([, items]) => !items.length)) {
+  lines.push("Nothing to name. Every LOOP5 reading is at its target.");
   lines.push("");
 }
 
@@ -1056,7 +1568,16 @@ const record = {
     parentByRelation: Object.fromEntries(parentByRelation),
     fanoutEvents: fannedOut.length,
     ...counters,
+    identityOneName: twoNamed.length,
+    titlePlaceholder: placeholderRows.length,
+    titleLost: lostTitles.length,
+    termUnbucketed: unbucketed.length,
+    admitUnattached: unattached.length,
+    identityUnnamed: refusedTotal,
+    suspectsAssumed,
   },
+  identityReachable,
+  stage4Balanced,
   intakeAuditRecall: audit?.recall ?? null,
   stable: replay.stable ?? null,
   correctionsPreserved: replay.correctionsPreserved ?? null,

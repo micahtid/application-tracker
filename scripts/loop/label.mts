@@ -51,7 +51,7 @@ let current: GroupLabel | null = null;
 /** The line an indented line below it belongs to. Cleared by every new group. */
 let lastTopLevel: string | null = null;
 
-const FIELD = /^-\s*(company|role|season|year|status)\s*:\s*(.*)$/i;
+const FIELD = /^-\s*(company|employer|role|season|year|status|real)\s*:\s*(.*)$/i;
 const GROUPED = /^-\s*([0-9a-f]{6,32})\s*\|(.*)$/i;
 const SAMPLED = /^-\s*([0-9a-f]{6,32})\s*\|\s*related\s*:\s*(yes|no)\b\s*\|(.*)$/i;
 
@@ -64,7 +64,13 @@ const SAMPLED = /^-\s*([0-9a-f]{6,32})\s*\|\s*related\s*:\s*(yes|no)\b\s*\|(.*)$
  * combination has to be rewritten each time, and the failure when it is not is
  * a line read as unparseable prose with nothing to say so.
  */
-const CHIP = /^\s*(sig|stage|event|outcome|rel)\s*:\s*([A-Za-z_-]*)\s*$/;
+/**
+ * The value is anything up to the next pipe rather than a word, because
+ * `term:` carries the email's own wording and that runs to "Winter 2027" or
+ * "Q1 placement". The scan still stops at the first part that is not a chip,
+ * so the date and the subject are unreachable from here.
+ */
+const CHIP = /^\s*(sig|stage|event|outcome|rel|posting|term)\s*:\s*([^|]*?)\s*$/;
 
 function chipsOf(tail: string): { chips: Map<string, string>; unknown: string | null } {
   const chips = new Map<string, string>();
@@ -98,6 +104,19 @@ function value(raw: string): string | null {
   return trimmed === "" || trimmed === "-" ? null : trimmed;
 }
 
+/**
+ * `yes`, `no`, or `-` for a question this block does not apply to. Anything
+ * else is undefined, which the caller reports rather than guesses at: a
+ * misspelt answer read as `no` is a silent wrong label.
+ */
+function yesNo(raw: string | null): boolean | null | undefined {
+  if (raw === null) return null;
+  const lower = raw.trim().toLowerCase();
+  if (lower === "yes") return true;
+  if (lower === "no") return false;
+  return undefined;
+}
+
 function closeGroup(): void {
   lastTopLevel = null;
   if (!current) return;
@@ -123,7 +142,21 @@ lines.forEach((line, index) => {
     closeGroup();
     const id = trimmed.replace(/^###\s+/, "").trim();
     if (!id) problems.push(`line ${at}: a group heading with no id`);
-    current = { id, messages: [], company: null, role: null, season: null, year: null, status: null };
+    // Every question starts unanswered rather than assumed. A sheet that never
+    // asked one reads null here, and the metrics that need it skip the block
+    // instead of counting a default as an answer.
+    current = {
+      id,
+      messages: [],
+      company: null,
+      employer: null,
+      role: null,
+      season: null,
+      year: null,
+      status: null,
+      real: null,
+      realWhy: null,
+    };
     return;
   }
 
@@ -137,9 +170,25 @@ lines.forEach((line, index) => {
       const parsed = value(raw);
       switch (name.toLowerCase()) {
         case "company": current.company = parsed; break;
+        case "employer": current.employer = parsed; break;
         case "role": current.role = parsed; break;
         case "season": current.season = parsed; break;
         case "status": current.status = parsed ? parsed.toUpperCase() : null; break;
+        case "real": {
+          // The reason rides after a pipe, so a `no` always arrives with the
+          // sentence that justifies it rather than as a bare verdict.
+          const [verdict, ...rest] = (parsed ?? "").split("|");
+          const answer = yesNo(value(verdict ?? ""));
+          const why = value(rest.join("|"));
+          if (answer === undefined) problems.push(`line ${at}: real: must be yes or no, not "${parsed}"`);
+          else if (answer === false && !why) {
+            problems.push(`line ${at}: real: no needs a reason after a "|". A block ruled off the board without one teaches the next loop nothing`);
+          } else {
+            current.real = answer;
+            current.realWhy = why;
+          }
+          break;
+        }
         case "year": {
           if (parsed === null) current.year = null;
           else if (/^\d{4}$/.test(parsed)) current.year = Number(parsed);
@@ -185,6 +234,16 @@ lines.forEach((line, index) => {
       return;
     }
 
+    const posting = yesNo(value(chips.get("posting") ?? "-"));
+    if (posting === undefined) {
+      problems.push(`line ${at}: posting: must be yes, no or -, not "${chips.get("posting")}"`);
+      return;
+    }
+    // Read as written and checked against no list. A term the code cannot hold
+    // is the whole of defect C3, so a label the code recognises is exactly the
+    // label that could not have caught it.
+    const term = value(chips.get("term") ?? "-");
+
     // A message listed under a second block says it covers two applications.
     // What it says about the email itself has to be the same in both places,
     // because there is only one email and only one answer to those questions.
@@ -199,10 +258,12 @@ lines.forEach((line, index) => {
         first.significant === (sig.toLowerCase() === "yes") &&
         (first.stage ?? null) === (stage ?? null) &&
         (first.event ?? null) === (event ?? null) &&
-        (first.outcome ?? null) === (outcome ?? null);
+        (first.outcome ?? null) === (outcome ?? null) &&
+        (first.posting ?? null) === posting &&
+        (first.term ?? null) === term;
       if (!same) {
         problems.push(
-          `line ${at}: message ${id} is in ${already.join(" and ")} as well as ${current.id}, but the two lines disagree about the email itself. Where it sits in each drawer may differ; sig, stage, event and outcome may not`,
+          `line ${at}: message ${id} is in ${already.join(" and ")} as well as ${current.id}, but the two lines disagree about the email itself. Where it sits in each drawer may differ; sig, stage, event, outcome, posting and term may not`,
         );
         return;
       }
@@ -248,6 +309,8 @@ lines.forEach((line, index) => {
         stage: stage ?? null,
         event: event ?? null,
         outcome: outcome ?? null,
+        posting,
+        term,
       };
     }
     return;
@@ -270,6 +333,8 @@ lines.forEach((line, index) => {
     stage: null,
     event: null,
     outcome: null,
+    posting: null,
+    term: null,
     why: section === "prefilter" ? "dropped by the prefilter" : "judged not related",
   };
 });
@@ -284,6 +349,14 @@ for (const [id, memberships] of membershipsOf) {
 
 const ids = new Set(groups.map((group) => group.id));
 if (ids.size !== groups.length) problems.push("two groups share an id");
+
+// A group missing either of these leaves a metric with a hole it cannot see,
+// so it is an error rather than a gap: `identity.reachable` and
+// `identity.one_name` read the employer, and `admit.precision` reads real.
+for (const group of groups) {
+  if (!group.employer) problems.push(`${group.id}: has no employer:`);
+  if (group.real === null) problems.push(`${group.id}: does not answer real:`);
+}
 
 if (problems.length) {
   console.error(`${problems.length} problem${problems.length === 1 ? "" : "s"} in ${REVIEW_SHEET}:`);
@@ -315,4 +388,12 @@ console.log(
   `  ${Object.values(messages).filter((label) => label.stage).length} carry a stage, ${Object.values(messages).filter((label) => label.event).length} carry an event, ${Object.values(messages).filter((label) => label.outcome).length} carry an outcome`,
 );
 console.log(`  ${multi} belong to more than one application`);
+console.log(
+  `  ${new Set(groups.map((group) => group.employer)).size} distinct employers over ${groups.length} groups, ` +
+    `${groups.filter((group) => group.real === false).length} groups are not applications`,
+);
+console.log(
+  `  ${Object.values(messages).filter((label) => label.posting === false).length} stated titles are not posting names, ` +
+    `${Object.values(messages).filter((label) => label.term).length} emails state a term`,
+);
 console.log(`  ${relatedSampled} of the sampled not related messages were marked related after all`);

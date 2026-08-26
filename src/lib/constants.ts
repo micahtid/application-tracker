@@ -166,8 +166,43 @@ export type SenderRole = (typeof SENDER_ROLES)[number];
 /** The fallback, and the safe one: an unknown sender behaves as the employer. */
 export const SENDER_ROLE_FALLBACK: SenderRole = "EMPLOYER";
 
-export const SEASONS = ["Summer", "Spring", "Fall"] as const;
+/**
+ * The buckets a stated term is sorted into for display, filtering and
+ * ordering, and **nothing else** (LOOP5 Decision 6).
+ *
+ * This used to be a filter on what could be recorded at all: the parser ran the
+ * model's answer through it and anything outside the list became null. A winter
+ * posting therefore carried no term, two rows at one employer had nothing to
+ * tell them apart, and they merged. The model was asked a question whose answer
+ * had nowhere to go, and the answer went nowhere without a word, which is a
+ * Gate 9 failure in the shape of a constant.
+ *
+ * What an email says is now kept as it says it, in `term`. This list only
+ * decides which column a kept term is filed under, and a term it cannot file is
+ * kept and counted rather than dropped. **No grouping rule reads it**, which is
+ * what keeps Gate 8: matching compares the stated terms, so a mailbox that says
+ * Q1, Michaelmas or a placement year groups exactly as well as this one does.
+ *
+ * Adding Winter alone would have fixed two rows and nothing anywhere else,
+ * which is why it is not the decision. It is in the list because it is a term
+ * of the year, and the list is no longer where the loss happened.
+ */
+export const SEASONS = ["Summer", "Spring", "Fall", "Winter"] as const;
 export type Season = (typeof SEASONS)[number];
+
+/**
+ * Which bucket a stated term falls in, or null when none of them fits.
+ *
+ * The first bucket the term names, in the order they are written above, so a
+ * posting that runs "Winter/Spring" files under Spring and the answer never
+ * depends on anything but the term. Null is a real answer here rather than a
+ * loss: the term is still stored, still shown and still compared.
+ */
+export function termBucket(term: string | null | undefined): Season | null {
+  const said = (term ?? "").toLowerCase();
+  if (!said) return null;
+  return SEASONS.find((season) => said.includes(season.toLowerCase())) ?? null;
+}
 
 export const PROVIDERS = ["OPENROUTER", "ANTHROPIC", "GEMINI"] as const;
 export type Provider = (typeof PROVIDERS)[number];
@@ -182,7 +217,7 @@ export const SYNC_COOLDOWN_MS = 5 * 60 * 1000;
  * One number covering the whole local pipeline: the prefilter rules, the prompt,
  * and the chosen model. Raise it to re-read every cached email on the next sync.
  */
-export const CLASSIFIER_VERSION = 3;
+export const CLASSIFIER_VERSION = 5;
 
 /**
  * The other half of the same idea, covering everything after classification:
@@ -192,7 +227,7 @@ export const CLASSIFIER_VERSION = 3;
  * Raising this costs nothing, because it re-reads answers already on disk.
  * Raising CLASSIFIER_VERSION costs a pass over the mailbox.
  */
-export const GROUPING_VERSION = 5;
+export const GROUPING_VERSION = 6;
 
 /**
  * How long an application that has ended may stay open to new mail. Past this,

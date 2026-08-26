@@ -8,6 +8,7 @@ import {
   roleSimilarity,
   rolesMatch,
   sameEmployer,
+  termsDisagree,
 } from "@/lib/normalize";
 
 /**
@@ -28,6 +29,13 @@ export type SplitSuspect = {
   company: string;
   roles: [string | null, string | null];
   similarity: number;
+  /**
+   * True when the two titles agree, which is the strongest suspect this report
+   * can find and the one it used to throw away (LOOP5 Decision 9). Carried on
+   * the row rather than counted inside, so `suspects.assumed` reads what the
+   * report actually found instead of a copy of its reasoning.
+   */
+  titlesAgree: boolean;
 };
 
 /** How many applications' emails are held in memory at once. */
@@ -84,12 +92,20 @@ export async function findSplitSuspects(db: Db): Promise<SplitSuspect[]> {
     // applications. That is not a suspect, it is an answer.
     if (requisitionsDisagree(requisitions[i], requisitions[j])) continue;
 
-    // Already considered the same job, so they would have been merged for
-    // some other reason. Nothing to report.
-    if (rolesMatch(left.roleTitle, right.roleTitle)) continue;
+    // A different term is the same kind of answer, and read the same way: an
+    // employer running one posting in two terms is running two applications
+    // (LOOP5 Decision 6).
+    if (termsDisagree(left.term, right.term)) continue;
+
+    // Two rows whose titles agree at one employer are the strongest suspect
+    // this report can find, not a pair already merged for some other reason.
+    // Assuming the latter meant assuming the matcher had reached a conclusion
+    // it had not, so the report fell silent on the very pair it exists to find
+    // (LOOP5 Decision 9).
+    const titlesAgree = rolesMatch(left.roleTitle, right.roleTitle);
 
     const similarity = roleSimilarity(left.roleTitle, right.roleTitle);
-    if (similarity < ROLE_MATCH_THRESHOLD) continue;
+    if (!titlesAgree && similarity < ROLE_MATCH_THRESHOLD) continue;
 
     suspects.push({
       left: left.id,
@@ -97,6 +113,7 @@ export async function findSplitSuspects(db: Db): Promise<SplitSuspect[]> {
       company: normalizeCompany(left.companyName),
       roles: [left.roleTitle, right.roleTitle],
       similarity,
+      titlesAgree,
     });
   }
 

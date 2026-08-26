@@ -1,4 +1,12 @@
-import { STATUSES, STATUS_LABELS, type Outcome, type StageDetail, type Status } from "@/lib/constants";
+import {
+  OUTCOME_LABELS,
+  STATUSES,
+  STATUS_LABELS,
+  hasEnded,
+  type Outcome,
+  type StageDetail,
+  type Status,
+} from "@/lib/constants";
 
 /** The board's shape, as the browser sees it. */
 export type EmailView = {
@@ -16,6 +24,12 @@ export type ApplicationView = {
   id: number;
   company: string;
   role: string | null;
+  /**
+   * The term the emails stated, in their words, and null when none does.
+   * `season` beside it is the bucket the board files that term under, which is
+   * null whenever the term fits none of them (LOOP5 Decision 6).
+   */
+  term: string | null;
   season: string | null;
   year: number | null;
   status: Status;
@@ -35,6 +49,31 @@ export type ApplicationView = {
   atsVendor: string | null;
   emails: EmailView[];
 };
+
+/**
+ * What an application that has ended says it ended as, and null while it is
+ * still running (LOOP5 Decision 5).
+ *
+ * `status` says one word for several facts. ACCEPTED covers an offer extended,
+ * accepted, declined and taken back, and REJECTED covers being turned down,
+ * withdrawing, and a posting cancelled. So an offer nobody had answered read
+ * Accepted, the strongest word on the board, and a withdrawal read Rejected.
+ *
+ * Nothing new is stored to fix that. `outcome` has been written since LOOP4 and
+ * read by nothing, and `OUTCOME_LABELS` already holds every word this needs. A
+ * row that ended carrying no outcome reads Application Closed, which is what
+ * the schema already says that state is for.
+ *
+ * `status` keeps its own job of ordering and sectioning, because four buckets
+ * is what a board needs and seven endings is not a set of columns.
+ */
+export function endingLabel(application: {
+  status: Status;
+  outcome: Outcome | null;
+}): string | null {
+  if (!hasEnded(application.status)) return null;
+  return application.outcome ? OUTCOME_LABELS[application.outcome] : "Application Closed";
+}
 
 /** Board order, written out rather than derived, so it cannot move by accident. */
 export const SECTIONS: { key: Status; label: string; modifier: string }[] = [
@@ -102,7 +141,9 @@ export function matchQuery(application: ApplicationView, query: string) {
   if (!query) return { hit: true, viaEmail: false };
   const needle = query.toLowerCase();
 
-  const header = [application.company, application.role, application.season, application.year]
+  // The term as the emails stated it, because that is the word on screen and
+  // the word a reader will type. The bucket is a filter rather than a label.
+  const header = [application.company, application.role, application.term, application.year]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();

@@ -1,0 +1,12 @@
+-- LOOP5 Decision 6. The term an email states is stored as it states it, and the
+-- season becomes the bucket it is filed under for display.
+--
+-- `season` used to be the only place a term could go, and it was checked
+-- against a list of three words, so a winter posting carried no term at all and
+-- two rows at one employer had nothing to tell them apart. The term is now kept
+-- as written and the bucket is derived from it on every recalculation.
+--
+-- Nothing is backfilled. `term` is derived from the emails like every other
+-- field on this table, so the next recalculation fills it in, and a value
+-- copied across here would be a stored guess about mail nobody has re-read.
+ALTER TABLE "applications" ADD COLUMN "term" TEXT;

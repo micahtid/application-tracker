@@ -9,8 +9,9 @@ import {
 import {
   ROLE_MATCH_THRESHOLD,
   dedupeKey,
-  namePrefixes,
+  groupsOf,
   normalizeCompany,
+  normalizeTerm,
   requisitionNumbers,
   requisitionsAgree,
   requisitionsDisagree,
@@ -18,6 +19,7 @@ import {
   rolesIdentical,
   rolesMatch,
   sameEmployer,
+  termsMatch,
 } from "@/lib/normalize";
 import { isAssessmentVendor } from "@/lib/ats";
 import { classificationOf, headState } from "./recompute";
@@ -58,6 +60,12 @@ export type MatchOutcome = {
   created: number;
   touched: number[];
   counters: PipelineCounters;
+  /**
+   * How many messages the pass was handed (LOOP5 Gate 10). Reported here rather
+   * than counted again from the database afterwards, because the balance is a
+   * statement about what this pass did with what it was given.
+   */
+  given: number;
 };
 
 /**
@@ -76,15 +84,24 @@ export type MatchOutcome = {
  * The alias table is loaded once for the same reason. `rememberAlias` adds to
  * the loaded copy as it writes, so a name recorded early in the pass is still
  * found by a later message.
+ *
+ * The blocking index is loaded the same way and for the same reason
+ * (LOOP5 Decision 1). It holds the rows sharing each of `groupsOf`'s keys, and
+ * a row created mid pass is added to it as it is made, so the next message
+ * finds it.
  */
 type Pass = {
   db: Db;
   messages: Map<number, MessageInApplication[]>;
   requisitions: Map<number, Set<string>>;
+  /** Every term stated by any email on an application, normalised. */
+  terms: Map<number, Set<string>>;
   /** Alias name to the canonical name it stands for, exactly as stored. */
   aliasOf: Map<string, string>;
   /** Normalised canonical name to every alias name pointing at it. */
   aliasesTo: Map<string, string[]>;
+  /** Blocking key to every application whose company name carries it. */
+  byGroup: Map<string, Set<number>>;
 };
 
 async function startPass(db: Db): Promise<Pass> {
@@ -92,8 +109,10 @@ async function startPass(db: Db): Promise<Pass> {
     db,
     messages: new Map(),
     requisitions: new Map(),
+    terms: new Map(),
     aliasOf: new Map(),
     aliasesTo: new Map(),
+    byGroup: new Map(),
   };
 
   const rows = await db.companyAlias.findMany({
@@ -101,7 +120,21 @@ async function startPass(db: Db): Promise<Pass> {
   });
   for (const row of rows) indexAlias(pass, row.aliasNormalized, row.canonicalCompanyName);
 
+  const applications = await db.application.findMany({
+    select: { id: true, companyNormalized: true },
+  });
+  for (const row of applications) indexCompany(pass, row.id, row.companyNormalized);
+
   return pass;
+}
+
+/** Puts an application under every blocking key its company name carries. */
+function indexCompany(pass: Pass, applicationId: number, companyNormalized: string): void {
+  for (const key of groupsOf(companyNormalized)) {
+    const sharing = pass.byGroup.get(key);
+    if (sharing) sharing.add(applicationId);
+    else pass.byGroup.set(key, new Set([applicationId]));
+  }
 }
 
 /**
@@ -133,17 +166,28 @@ async function messagesIn(pass: Pass, applicationId: number): Promise<MessageInA
 function forgetApplication(pass: Pass, applicationId: number): void {
   pass.messages.delete(applicationId);
   pass.requisitions.delete(applicationId);
+  pass.terms.delete(applicationId);
 }
 
 /**
- * Candidate rows for a company name, from the aliases and from the name itself.
- * Both database lookups stay on the `company_normalized` index: an equality
- * lookup over every leading prefix of the incoming name catches a shorter
- * stored name, and a prefix match on the first token catches a shorter
- * incoming one. The aliases come from the pass rather than from the table.
+ * Candidate rows for a company name, narrowed by the one blocking rule
+ * (LOOP5 Decision 1).
+ *
+ * `groupsOf` is what the repair pass and the split suspects report already
+ * narrow with, and it carries the property those two rest on: two names sharing
+ * no key can never be one employer, so nothing `sameEmployer` would accept is
+ * dropped here.
+ *
+ * What this replaced could not say that. It looked up every leading run of the
+ * incoming name's words and scanned for stored names beginning with its first
+ * word, which reaches a longer stored name from a shorter incoming one and
+ * never the other way about, so an email naming an employer's long form never
+ * found the row filed under its short form.
+ *
+ * An alias is an explicit statement that two names are one employer, so its
+ * rows are gathered too and taken at their word.
  */
 async function candidatesFor(pass: Pass, normalized: string): Promise<Application[]> {
-  const names = new Set([normalized, ...namePrefixes(normalized)]);
   const aliased = new Set<string>();
 
   const canonical = pass.aliasOf.get(normalized);
@@ -151,20 +195,19 @@ async function candidatesFor(pass: Pass, normalized: string): Promise<Applicatio
 
   for (const alias of pass.aliasesTo.get(normalized) ?? []) aliased.add(alias);
 
-  const firstToken = normalized.split(" ")[0] ?? normalized;
+  const ids = new Set<number>();
+  for (const name of [normalized, ...aliased]) {
+    for (const key of groupsOf(name)) {
+      for (const id of pass.byGroup.get(key) ?? []) ids.add(id);
+    }
+  }
+  if (!ids.size) return [];
 
-  const [byName, byPrefix] = await Promise.all([
-    pass.db.application.findMany({ where: { companyNormalized: { in: [...names, ...aliased] } } }),
-    pass.db.application.findMany({ where: { companyNormalized: { startsWith: firstToken } } }),
-  ]);
+  const found = await pass.db.application.findMany({ where: { id: { in: [...ids] } } });
 
-  const found = new Map<number, Application>();
-  for (const row of [...byName, ...byPrefix]) found.set(row.id, row);
-
-  // The indexed lookups do the narrowing, so the loose comparison below never
-  // runs at scale. An alias is an explicit statement that two names are one
-  // employer, so it is taken at its word.
-  return [...found.values()].filter(
+  // The blocking does the narrowing, so the loose comparison below never runs
+  // at scale.
+  return found.filter(
     (row) => aliased.has(row.companyNormalized) || sameEmployer(normalized, row.companyNormalized),
   );
 }
@@ -176,6 +219,51 @@ async function candidatesFor(pass: Pass, normalized: string): Promise<Applicatio
  */
 function rolesDisagree(role: string | null, classification: Classification): boolean {
   return !rolesMatch(role, classification.roleTitle);
+}
+
+/**
+ * Every term stated by any email already on an application, read the same way
+ * its posting numbers are and kept beside them for the length of the pass.
+ *
+ * From the emails rather than from the `term` column, for the reason
+ * `requisitionsOf` reads them that way: stage 5 writes that column and has not
+ * run, so mid pass it still holds whatever the row's first email said.
+ */
+async function termsOf(pass: Pass, applicationId: number): Promise<Set<string>> {
+  const held = pass.terms.get(applicationId);
+  if (held) return held;
+
+  const all = new Set<string>();
+  for (const message of await messagesIn(pass, applicationId)) {
+    const said = classificationOf(message)?.term;
+    if (said) all.add(normalizeTerm(said));
+  }
+
+  pass.terms.set(applicationId, all);
+  return all;
+}
+
+/**
+ * An employer running the same posting in two terms is running two
+ * applications, whatever the titles say (LOOP5 Decision 6).
+ *
+ * The same shape as `requisitionContradicts` below, and a third caller for one
+ * idea rather than a new rule: **a contradiction the employer stated excludes a
+ * candidate, and silence contradicts nothing.**
+ *
+ * It reads the stated term rather than the bucket it is filed under, which is
+ * what keeps a list of season words out of a grouping answer: a mailbox whose
+ * terms no bucket fits groups exactly as well as this one.
+ */
+async function termContradicts(
+  pass: Pass,
+  applicationId: number,
+  classification: Classification,
+): Promise<boolean> {
+  if (!classification.term) return false;
+  const stated = await termsOf(pass, applicationId);
+  if (!stated.size) return false;
+  return !stated.has(normalizeTerm(classification.term));
 }
 
 /** True when both sides quote a posting number and they quote the same one. */
@@ -350,9 +438,11 @@ function scoreCandidate(candidate: Application, classification: Classification):
   const bothRolesKnown = Boolean(candidate.roleTitle && classification.roleTitle);
   let score = bothRolesKnown ? roleSimilarity(candidate.roleTitle, classification.roleTitle) : 0.5;
 
-  // Season and year break ties only when both sides actually have them.
-  if (candidate.season && classification.season) {
-    score += candidate.season === classification.season ? 0.1 : -0.25;
+  // Term and year break ties only when both sides actually have them. The
+  // stated term rather than the bucket it is filed under, so two postings one
+  // bucket covers still tell each other apart (LOOP5 Decision 6).
+  if (candidate.term && classification.term) {
+    score += termsMatch(candidate.term, classification.term) ? 0.1 : -0.25;
   }
   if (candidate.year && classification.year) {
     score += candidate.year === classification.year ? 0.1 : -0.25;
@@ -372,7 +462,7 @@ async function createApplication(
   const key = dedupeKey({
     companyNormalized,
     roleTitle: classification.roleTitle,
-    season: classification.season,
+    term: classification.term,
     year: classification.year,
     requisitions: requisitionNumbers(message.subject, message.bodyText),
   });
@@ -387,21 +477,14 @@ async function createApplication(
   if (collision) counters.dedupeCollisions += 1;
   const distinctKey = collision ? `${key}#${message.gmailMessageId}` : key;
 
-  // An employer written as two words here may be one word in the next email,
-  // and a prefix lookup cannot see across a space that is not there. Recording
-  // the run together form as an alias lets the later email find this row.
-  const joined = companyNormalized.replace(/ /g, "");
-  if (joined !== companyNormalized) {
-    await rememberAlias(pass, joined, companyName, "NEW", true, counters);
-  }
-
-  return pass.db.application.create({
+  const created = await pass.db.application.create({
     data: {
       companyName,
       companyNormalized,
       companyDomain: classification.companyDomain,
       roleTitle: classification.roleTitle,
       dedupeKey: distinctKey,
+      term: classification.term,
       season: classification.season,
       year: classification.year,
       status: classification.status,
@@ -411,6 +494,12 @@ async function createApplication(
       confidence: classification.confidenceScore,
     },
   });
+
+  // Into the blocking index before the next message is read, for the same
+  // reason the pass is serial at all: two emails from one employer must be
+  // able to find each other's row.
+  indexCompany(pass, created.id, companyNormalized);
+  return created;
 }
 
 async function attach(
@@ -499,7 +588,10 @@ export async function attachClassified(
   // same company cannot race each other into two applications.
   for (const message of messages) {
     const classification = classificationOf(message);
-    if (!classification || !classification.isApplicationRelated) continue;
+    if (!classification || !classification.isApplicationRelated) {
+      counters.skipsByReason.NOT_APPLICATION_MAIL += 1;
+      continue;
+    }
 
     const incomingRequisitions = requisitionNumbers(message.subject, message.bodyText);
 
@@ -519,6 +611,7 @@ export async function attachClassified(
         const contradicted =
           application &&
           (rolesDisagree(application.roleTitle, classification) ||
+            (await termContradicts(pass, application.id, classification)) ||
             (await requisitionContradicts(pass, application.id, incomingRequisitions)));
 
         if (!contradicted) {
@@ -543,10 +636,20 @@ export async function attachClassified(
 
     // A message with no company creates no application: company is the anchor
     // for matching, so a nameless row could never be matched to anything.
-    if (!classification.companyName) continue;
+    //
+    // The two ways of having no company are counted apart, because they are
+    // different answers: saying nothing, and saying a name the code will not
+    // accept as an employer (LOOP5 Decisions 7 and 8, Gate 10).
+    if (!classification.companyName) {
+      counters.skipsByReason[classification.companyRefused ? "COMPANY_REFUSED" : "NO_COMPANY"] += 1;
+      continue;
+    }
 
     const normalized = normalizeCompany(classification.companyName);
-    if (!normalized) continue;
+    if (!normalized) {
+      counters.skipsByReason.COMPANY_UNREADABLE += 1;
+      continue;
+    }
 
     // 2 and 3. Indexed equality lookup, then a loose role comparison inside
     //          that candidate set only.
@@ -563,12 +666,20 @@ export async function attachClassified(
     }
 
     // A shared posting number settles it, however differently the two emails
-    // word the title. Otherwise the titles have to agree.
+    // word the title. Otherwise the titles have to agree and the terms must not
+    // contradict: an employer running the same posting in two terms is running
+    // two applications, and until the term survived being read there was
+    // nothing on the row to say so (LOOP5 Decision 6).
     const numbered: Application[] = [];
     const titled: Application[] = [];
     for (const candidate of candidates) {
       if (await requisitionAgrees(pass, candidate.id, incomingRequisitions)) numbered.push(candidate);
-      else if (!rolesDisagree(candidate.roleTitle, classification)) titled.push(candidate);
+      else if (
+        !rolesDisagree(candidate.roleTitle, classification) &&
+        !(await termContradicts(pass, candidate.id, classification))
+      ) {
+        titled.push(candidate);
+      }
     }
 
     const usable = numbered.length ? numbered : titled;
@@ -720,5 +831,5 @@ export async function attachClassified(
     attached += 1;
   }
 
-  return { attached, created, touched: [...touched], counters };
+  return { attached, created, touched: [...touched], counters, given: messages.length };
 }

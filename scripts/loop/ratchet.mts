@@ -20,6 +20,9 @@ type Record_ = {
   iteration: string;
   metrics: Record<string, Reading>;
   counts: Record<string, unknown>;
+  /** The LOOP5 ratios that are swept over the board rather than over a label. */
+  identityReachable: number | null;
+  stage4Balanced: number | null;
 };
 type Floor = { TUNE?: number; HOLDOUT?: number; direction?: "up" | "down" };
 
@@ -48,6 +51,19 @@ for (const [metric, halves] of Object.entries(last.metrics)) {
   }
 }
 
+/**
+ * The two LOOP5 ratios that are not computed against a label, and so are
+ * recorded beside the metric table rather than inside it. They ratchet exactly
+ * as the others do.
+ */
+for (const [metric, value] of [
+  ["identity.reachable", last.identityReachable],
+  ["stage4.balanced", last.stage4Balanced],
+] as const) {
+  if (typeof value !== "number") continue;
+  raise(metric, "TUNE", round(value), (a, b) => a > b);
+}
+
 /** The counts, where a floor is a ceiling: fewer is better and more is a fall. */
 const counts = last.counts as Record<string, { TUNE?: number; HOLDOUT?: number } | number>;
 const CEILINGS: Record<string, { TUNE?: number; HOLDOUT?: number } | undefined> = {
@@ -60,6 +76,13 @@ const CEILINGS: Record<string, { TUNE?: number; HOLDOUT?: number } | undefined> 
   "drawer.hidden": { TUNE: counts.drawerHidden as number },
   "classify.failed": { TUNE: counts.failures as number },
   "prefilter.false_drop": { TUNE: counts.falseDrops as number },
+  // The LOOP5 counts. term.unbucketed, identity.unnamed and suspects.assumed
+  // are deliberately absent: all three are advisory and watched, and a ceiling
+  // on a number that is meant to move is not a ratchet.
+  "identity.one_name": { TUNE: counts.identityOneName as number },
+  "title.placeholder": { TUNE: counts.titlePlaceholder as number },
+  "title.lost": { TUNE: counts.titleLost as number },
+  "admit.unattached": { TUNE: counts.admitUnattached as number },
 };
 
 for (const [metric, value] of Object.entries(CEILINGS)) {

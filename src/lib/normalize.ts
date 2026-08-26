@@ -63,15 +63,27 @@ export function sameEmployer(left: string, right: string): boolean {
  * The groups a name belongs to for the purpose of finding pairs worth
  * comparing: each of its words, and the name with the spaces taken out.
  *
+ * **This is the one blocking rule for the whole system** (LOOP5 Decision 1).
+ * The matcher, the repair pass and the split suspects report all narrow here.
+ * Two of them used to narrow one way and the matcher another, which is how one
+ * posting sat on the board twice with the alarm for it silent.
+ *
+ * The property that makes narrowing safe:
+ *
+ * > Every pair `sameEmployer` would accept is a pair retrieval returned.
+ *
  * `sameEmployer` is true only when one name's words are all present in the
  * other, or when the two are equal once spaces are removed. Either way the two
  * names share at least one of these groups, so two names sharing none of them
- * can never be the same employer.
+ * can never be the same employer. `check:pipeline` asserts it rather than
+ * leaving it as a claim in a comment.
  *
  * Grouping on the first word alone would not be safe. "acme" and "global acme"
- * are one employer to `sameEmployer` and their first words differ.
+ * are one employer to `sameEmployer` and their first words differ. Nor would a
+ * leading run of words: "walt disney" begins with "walt" and the employer it
+ * has to reach is stored as "disney".
  */
-function groupsOf(normalized: string): string[] {
+export function groupsOf(normalized: string): string[] {
   const tokens = normalized.split(" ").filter(Boolean);
   return [...new Set([...tokens, normalized.replace(/ /g, "")])];
 }
@@ -106,12 +118,6 @@ export function pairsToCompare(names: string[]): [number, number][] {
     for (const other of [...later].sort((a, b) => a - b)) pairs.push([index, other]);
   });
   return pairs;
-}
-
-/** Every leading run of tokens: "a b c" gives "a", "a b", "a b c". */
-export function namePrefixes(normalized: string): string[] {
-  const tokens = normalized.split(" ").filter(Boolean);
-  return tokens.map((_, index) => tokens.slice(0, index + 1).join(" "));
 }
 
 const ROLE_NOISE = new Set([
@@ -305,11 +311,51 @@ export function requisitionsDisagree(left: Set<string>, right: Set<string>): boo
 export function dedupeKey(parts: {
   companyNormalized: string;
   roleTitle: string | null;
-  season: string | null;
+  term: string | null;
   year: number | null;
   requisitions?: Iterable<string>;
 }): string {
   const role = (parts.roleTitle ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   const requisition = [...(parts.requisitions ?? [])].sort().join(",");
-  return [parts.companyNormalized, role, parts.season ?? "", parts.year ?? "", requisition].join("|");
+  // The term the emails stated rather than the bucket it is filed under
+  // (LOOP5 Decision 6). A bucket covers several terms, so two postings it
+  // cannot tell apart would share a key and read as one application.
+  return [parts.companyNormalized, role, normalizeTerm(parts.term), parts.year ?? "", requisition].join("|");
+}
+
+/**
+ * A stated term reduced to what it says, so "Winter 2027", "winter" and
+ * " Winter " are one term. The year is stripped because it has its own field
+ * and its own rule.
+ */
+export function normalizeTerm(term: string | null | undefined): string {
+  return (term ?? "")
+    .toLowerCase()
+    .replace(/\b\d{4}\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/**
+ * Whether two stated terms name the same term. Silence is not disagreement, for
+ * the same reason it is not in `rolesMatch`: most mail names no term at all.
+ */
+export function termsMatch(left: string | null, right: string | null): boolean {
+  if (!left || !right) return true;
+  const a = normalizeTerm(left);
+  const b = normalizeTerm(right);
+  if (!a || !b) return true;
+  return a === b;
+}
+
+/**
+ * True when both sides name a term and they name different ones.
+ *
+ * Written in terms of the agreement above, the way `requisitionsDisagree` is,
+ * so how two terms compare is decided in one place and the three callers that
+ * ask cannot drift apart on the answer.
+ */
+export function termsDisagree(left: string | null, right: string | null): boolean {
+  if (!left || !right) return false;
+  return !termsMatch(left, right);
 }

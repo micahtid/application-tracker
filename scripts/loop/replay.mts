@@ -141,6 +141,14 @@ const result = {
   applicationsCreated: first.created,
   attachedMessages,
   relatedMessages,
+  /**
+   * Gate 10's balance, from the pass that did the work. Memberships written
+   * plus reasons counted, against the messages stage 4 was handed. Anything
+   * below 1 is mail the pipeline let go of, and the counters name the branch.
+   */
+  stage4Given: first.given,
+  stage4Attached: first.attached,
+  stage4Skipped: Object.values(first.counters.skipsByReason).reduce((sum, n) => sum + n, 0),
   notes: [...new Set([...first.notes, ...second.notes])],
   // From the first rebuild alone. The second exists only to prove that running
   // it again changes nothing, and adding its tally to the first would report

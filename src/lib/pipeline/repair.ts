@@ -8,6 +8,7 @@ import {
   requisitionsDisagree,
   rolesMatch,
   sameEmployer,
+  termsDisagree,
 } from "@/lib/normalize";
 import { headState } from "./recompute";
 import { messagesOf } from "./membership";
@@ -63,6 +64,8 @@ type Snapshot = {
   companyNormalized: string;
   roleTitle: string | null;
   requisitions: Set<string>;
+  /** The term the row runs in, as its emails stated it (LOOP5 Decision 6). */
+  term: string | null;
   ended: boolean;
   firstAt: number;
   lastAt: number;
@@ -95,6 +98,7 @@ async function readBoard(db: Db): Promise<Snapshot[]> {
       companyNormalized: application.companyNormalized,
       roleTitle: application.roleTitle,
       requisitions,
+      term: application.term,
       ended: hasEnded(status),
       firstAt: messages[0].receivedAt.getTime(),
       lastAt: messages[messages.length - 1].receivedAt.getTime(),
@@ -105,13 +109,18 @@ async function readBoard(db: Db): Promise<Snapshot[]> {
   return board;
 }
 
-/** The five conditions for a merge, all of which have to hold. */
+/** The six conditions for a merge, all of which have to hold. */
 function shouldMerge(left: Snapshot, right: Snapshot): boolean {
   if (!sameEmployer(left.companyNormalized, right.companyNormalized)) return false;
   if (!requisitionsAgree(left.requisitions, right.requisitions) && !rolesMatch(left.roleTitle, right.roleTitle)) {
     return false;
   }
   if (requisitionsDisagree(left.requisitions, right.requisitions)) return false;
+  // An employer running the same posting in two terms is running two
+  // applications, which is the statement a different posting number makes and
+  // is read the same way (LOOP5 Decision 6). Without it the repair joined back
+  // up the rows stage 4 had rightly kept apart.
+  if (termsDisagree(left.term, right.term)) return false;
   // Two rows that have both ended are two applications that both ended. There
   // is nothing a merge could be putting right.
   if (left.ended && right.ended) return false;
@@ -238,7 +247,7 @@ export async function repairGrouping(
       data: {
         companyName: row.companyNormalized,
         companyNormalized: row.companyNormalized,
-        dedupeKey: `${dedupeKey({ companyNormalized: row.companyNormalized, roleTitle: null, season: null, year: null })}#split:${split.right[0]}`,
+        dedupeKey: `${dedupeKey({ companyNormalized: row.companyNormalized, roleTitle: null, term: null, year: null })}#split:${split.right[0]}`,
       },
     });
 
