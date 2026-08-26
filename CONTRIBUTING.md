@@ -50,8 +50,8 @@ invented for this reason.
 
 ## Two Things That Look Wrong And Are Not
 
-- **`AGENTS.md` is generated.** `next dev` writes it and rewrites it. Do not hand edit it, and do not
-  be surprised when it comes back in your diff.
+- **`AGENTS.md` is generated.** `next dev` writes it and rewrites it. Do not hand edit it, and do
+  not be surprised when it comes back in your diff.
 - **`eslint.config.mjs` writes out `eslint-config-next/core-web-vitals` rather than importing it.**
   The file says why at the top. It becomes one import again once `typescript-eslint` supports
   TypeScript 7.
