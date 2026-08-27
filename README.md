@@ -50,13 +50,10 @@ Consent screen setup lives under **Google Auth Platform**. Older guides call the
 1. **Create the project.** [Google Cloud Console](https://console.cloud.google.com/) > project
    picker > **New project**. Name it anything.
 
-   Check the picker now shows it. Configuring the wrong project is the usual way this goes sideways.
+   Check the picker now shows it.
 
 2. **Enable the Gmail API.**
    ☰ > **APIs & Services** > **Library** > **Gmail API** > **Enable**.
-
-   Skip this and sign in still works, while every sync fails with
-   `Gmail API has not been used in project`.
 
 3. **Set up the consent screen.**
    ☰ > **Google Auth Platform** > **Branding** > **Get started**.
@@ -81,7 +78,7 @@ Consent screen setup lives under **Google Auth Platform**. Older guides call the
 
    Publishing submits nothing for review. The app stays unverified, which costs one "Google hasn't
    verified this app" screen and a cap of 100 users. Verifying a restricted scope means a third
-   party security assessment, which costs months and real money.
+   party security assessment, which takes months and costs money.
 
 6. **Create the client.** **Clients** > **Create client** > **Web application**. Under
    **Authorized redirect URIs** paste this exactly, then copy the ID and secret:
@@ -146,7 +143,7 @@ cost, as OpenRouter does, that figure replaces the estimate.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Sign in fails with `redirect_uri_mismatch`. | The console URI does not exactly match the one the app sent. | Redo step 6. The culprit is usually `localhost` instead of `127.0.0.1`, a trailing slash, or the wrong port. |
+| Sign in fails with `redirect_uri_mismatch`. | The console URI does not exactly match the one the app sent. | Redo step 6. Usually `localhost` instead of `127.0.0.1`, a trailing slash, or the wrong port. |
 | Sign in fails with `invalid_client`, or says the OAuth client was not found. | The ID or secret is wrong, or belongs to another project. | Re-copy both from the Clients page, then restart the app. |
 | Sign in fails with `access_denied`. | You closed the consent screen, or you are not a test user on an app still in Testing. | Publish the app in step 5, or add yourself under **Audience > Test users**. |
 | A sync fails with `Gmail API has not been used in project …`. | The API was never enabled. | Redo step 2, then wait a minute. |
@@ -155,5 +152,5 @@ cost, as OpenRouter does, that figure replaces the estimate.
 | Settings says to add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to `.env.local`. | `.env.local` changed while the server was running, or its values are empty. | Save the file and restart the app. |
 
 To revoke access entirely, use your
-[Google account's third party access page](https://myaccount.google.com/connections). It holds
-nothing you cannot take back.
+[Google account's third party access page](https://myaccount.google.com/connections). Revoking
+access there is reversible.

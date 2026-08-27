@@ -94,8 +94,8 @@ download or money.
 └───────────────────────────────────────────────────────┘
 ```
 
-Steps 4 to 11 happen once for every email. Step 8 has about ten emails in the air at a
-time, because waiting on the model one at a time would be slow. Step 10 is the opposite:
+Steps 4 to 11 happen once for every email. Step 8 sends about ten emails at a time,
+because waiting on the model one at a time would be slow. Step 10 is the opposite:
 it runs strictly one email at a time, oldest first, so that two emails from the same
 company can never create the same application twice.
 
