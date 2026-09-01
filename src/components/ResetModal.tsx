@@ -22,7 +22,7 @@ export default function ResetModal({
       onClose={busy ? () => {} : onCancel}
       footer={
         <>
-          <button className="btn btn--ghost" type="button" disabled={busy} onClick={onCancel}>
+          <button className="btn btn--text" type="button" disabled={busy} onClick={onCancel}>
             Cancel
           </button>
           <button className="btn btn--danger" type="button" disabled={busy} onClick={onConfirm}>

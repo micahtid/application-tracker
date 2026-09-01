@@ -6,9 +6,12 @@ import { STATUSES, STATUS_LABELS, type Status } from "@/lib/constants";
 import type { ApplicationView } from "@/lib/view";
 
 /**
- * What a row can be told to do, and the button that opens it. Both designs
- * put it at the right hand end of a row, and neither knows which one it is
- * sitting in: the popover is the same popover the toolbar uses.
+ * What a row can be told to do, and the button that opens it.
+ *
+ * The reading pane puts it beside the company name and the sheet puts it at
+ * the end of a line, and neither knows which one it is sitting in: the popover
+ * is the same popover the sort menu uses. Where it hides itself until the row
+ * is under the pointer is decided by the pane around it, in globals.css.
  */
 export default function RowMenu({
   application,
@@ -24,9 +27,9 @@ export default function RowMenu({
   onSetStatus: (application: ApplicationView, status: Status | null) => void;
 }) {
   return (
-    <div className="item__menu-wrap">
+    <div className="rowmenu">
       <button
-        className="item__menu-btn"
+        className="rowmenu__btn"
         type="button"
         aria-haspopup="true"
         aria-expanded={open}
@@ -46,11 +49,7 @@ export default function RowMenu({
             role="menuitem"
             onClick={() => onHide(application, !application.isHidden)}
           >
-            {application.isHidden ? (
-              <Eye className="lucide" style={{ opacity: 1 }} />
-            ) : (
-              <EyeOff className="lucide" style={{ opacity: 1 }} />
-            )}
+            {application.isHidden ? <Eye className="lucide" /> : <EyeOff className="lucide" />}
             {application.isHidden ? "Show on the Board" : "Hide This Row"}
           </button>
 

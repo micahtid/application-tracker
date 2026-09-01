@@ -1,11 +1,30 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Whether the body has anything hidden above it or below it.
+ *
+ * Material 3 draws the two hairlines around a dialog's body only while there
+ * is something out of sight past them, so a dialog that fits shows neither
+ * line and reads as one plain surface. Nothing but measurement can answer
+ * that, because it depends on the content, the window and where it has been
+ * scrolled to.
+ *
+ * The one pixel of slack absorbs the fractional scroll heights a zoomed page
+ * reports, which would otherwise leave the bottom line drawn for ever.
+ */
+function cutEdges(body: HTMLElement): { top: boolean; bottom: boolean } {
+  return {
+    top: body.scrollTop > 1,
+    bottom: body.scrollTop + body.clientHeight < body.scrollHeight - 1,
+  };
+}
 
 /**
  * The panel every dialog is built out of, so none of them carries its own copy
@@ -36,6 +55,34 @@ export default function Dialog({
 }) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [cut, setCut] = useState({ top: false, bottom: false });
+
+  // Measured on open, on every scroll, and whenever the body changes size,
+  // which it does here as the key field gains and loses the line under it.
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!body) return;
+
+    const measure = () =>
+      setCut((current) => {
+        const next = cutEdges(body);
+        // Compared before it is written, because a resize observer fires on
+        // every frame of an animating panel and each write is a render.
+        return next.top === current.top && next.bottom === current.bottom ? current : next;
+      });
+
+    measure();
+    body.addEventListener("scroll", measure, { passive: true });
+    const watcher = new ResizeObserver(measure);
+    watcher.observe(body);
+    for (const child of body.children) watcher.observe(child);
+
+    return () => {
+      body.removeEventListener("scroll", measure);
+      watcher.disconnect();
+    };
+  }, []);
 
   // The page re renders about once a second while a sync runs, each time with
   // a fresh onClose. Read through a ref so the setup below runs once, on open.
@@ -106,7 +153,9 @@ export default function Dialog({
       <div className="modal__scrim" onClick={onClose} />
 
       <div
-        className={`modal__panel${wide ? "" : " modal__panel--sm"}`}
+        className={`modal__panel${wide ? "" : " modal__panel--sm"}${
+          cut.top ? " is-cut-top" : ""
+        }${cut.bottom ? " is-cut-bottom" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -126,7 +175,9 @@ export default function Dialog({
           </button>
         </header>
 
-        <div className="modal__body">{children}</div>
+        <div className="modal__body" ref={bodyRef}>
+          {children}
+        </div>
 
         {footer ? <footer className="modal__foot">{footer}</footer> : null}
       </div>

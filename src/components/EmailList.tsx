@@ -17,10 +17,14 @@ function EmailAnchor({
   return (
     <a href={email.href} target="_blank" rel="noopener noreferrer">
       <Icon className="lucide" />
-      <span className="email__title">
-        <Highlight text={email.title} query={query} />
+      {/* The subject and its date are two sizes on one line, so they share a
+          baseline rather than being centred against each other. */}
+      <span className="textline">
+        <span className="email__title">
+          <Highlight text={email.title} query={query} />
+        </span>
+        <span className="email__date">{formatDate(email.date)}</span>
       </span>
-      <span className="email__date">{formatDate(email.date)}</span>
     </a>
   );
 }
@@ -54,9 +58,9 @@ function EmailLine({ email, query }: { email: EmailView; query: string }) {
 /**
  * Every email an application owns, as one drawer shows them.
  *
- * Both designs open the same drawer under a row, so the list lives here rather
- * than once inside each of them. Only the box around it differs: the board
- * grows the row, the sheet grows a cell that spans the table.
+ * Both designs draw the same list, so it lives here rather than once inside
+ * each of them. Only the box around it differs: the reading pane gives it a
+ * column of its own, and the sheet a cell that spans the table.
  */
 export default function EmailList({
   emails,

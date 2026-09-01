@@ -5,8 +5,9 @@ import { Check } from "lucide-react";
 /**
  * One choosable line in a popover menu.
  *
- * Four menus draw this same button with the same tick beside it, and differ
- * only in what the tick means, what it says, and what a click does.
+ * The sort menu over the list and the status list in a row menu draw this same
+ * button with the same tick beside it, and differ only in what the tick means,
+ * what it says, and what a click does.
  */
 export default function MenuItem({
   role,

@@ -149,7 +149,7 @@ export default function SettingsModal({
       footer={
         <>
           {blockedReason ? <p className="modal__reason">{blockedReason}</p> : null}
-          <button className="btn btn--ghost" type="button" onClick={onClose}>
+          <button className="btn btn--text" type="button" onClick={onClose}>
             Cancel
           </button>
           <button className="btn btn--primary" type="button" disabled={!canSave} onClick={save}>
@@ -192,7 +192,7 @@ export default function SettingsModal({
             // spelled out rather than left as an icon to decode. Logging
             // out stays an icon: you already know where you are.
             <a
-              className="btn btn--compact"
+              className="btn"
               href="/api/auth/google/start"
               title={settings.googleConfigured ? "Sign In" : "Add a Google client first"}
               aria-disabled={!settings.googleConfigured}

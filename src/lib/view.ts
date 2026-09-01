@@ -1,5 +1,6 @@
 import {
   OUTCOME_LABELS,
+  STAGE_LABELS,
   STATUSES,
   STATUS_LABELS,
   hasEnded,
@@ -80,6 +81,42 @@ export function endingLabel(application: {
   return application.outcome ? OUTCOME_LABELS[application.outcome] : "Application Closed";
 }
 
+/**
+ * The step a running application has reached, and null when it has reached
+ * none or has already ended.
+ *
+ * The reading pane's badge and the sheet's Stage column both ask here, so the
+ * two designs cannot end up saying different things about one row.
+ */
+export function stageLabel(application: {
+  status: Status;
+  stageDetail: StageDetail | null;
+}): string | null {
+  if (application.status !== "IN_PROGRESS" || !application.stageDetail) return null;
+  return STAGE_LABELS[application.stageDetail];
+}
+
+/**
+ * The term a row states with its year beside it, and null when it states
+ * neither. The words the emails used rather than the bucket they are filed
+ * under, so a row that says Winter says Winter.
+ */
+export function termLabel(application: {
+  term: string | null;
+  year: number | null;
+}): string | null {
+  if (application.term) {
+    return application.year ? `${application.term} ${application.year}` : application.term;
+  }
+  return application.year ? String(application.year) : null;
+}
+
+/**
+ * Why a row is marked quiet, said the same way in both designs: the reading
+ * pane hangs it off the Quiet tag and the sheet off the date the tag is about.
+ */
+export const STALE_NOTE = "Nothing has arrived on this application for a while";
+
 /** Board order, written out rather than derived, so it cannot move by accident. */
 export const SECTIONS: { key: Status; label: string; modifier: string }[] = [
   { key: "ACCEPTED", label: STATUS_LABELS.ACCEPTED, modifier: "accepted" },
@@ -103,10 +140,20 @@ export const SORTS = [
 
 export type SortKey = (typeof SORTS)[number]["key"];
 
+/** What the sort button says it is sorting by. A lookup, so a sort added
+ *  above cannot leave the button naming one that is no longer there. */
+export const SORT_LABELS = Object.fromEntries(
+  SORTS.map((sort) => [sort.key, sort.label]),
+) as Record<SortKey, string>;
+
 /**
- * Which design the rows are drawn in. Nothing else differs between the two:
- * the search, the sort, the filters and the row menu are all the same, and a
- * row left open in one is still open in the other.
+ * Which design the rows are drawn in. The search, the filters, the sorts and
+ * the row menu are the same in both, and a status set by hand in one is set by
+ * hand in the other.
+ *
+ * `board` is the split view: the four status sections as a list on the left,
+ * and whichever row is picked read out in the pane on the right. `sheet` is
+ * the same rows as one flat grid, with a drawer under each line that is open.
  */
 export const DESIGNS = ["board", "sheet"] as const;
 export type Design = (typeof DESIGNS)[number];
@@ -114,15 +161,33 @@ export type Design = (typeof DESIGNS)[number];
 /** One line on screen, and whether the search reached it through an email. */
 export type Row = { app: ApplicationView; viaEmail: boolean };
 
-/** Everything a row needs from whichever design is drawing it. */
-export type RowHandlers = {
-  query: string;
-  open: Set<number>;
+/**
+ * The two things the rail narrows the board by, and what is ticked under each.
+ * A row has to answer to every group that has anything ticked in it.
+ */
+export type FilterKey = "season" | "year";
+export type Filters = Record<FilterKey, Set<string>>;
+
+/**
+ * What a row can be told to do, wherever its menu is drawn. The reading pane
+ * puts it beside the company name and the sheet puts it at the end of a line,
+ * and neither knows which one it is sitting in.
+ */
+export type RowActions = {
   menuFor: number | null;
-  onToggleRow: (id: number) => void;
   onToggleMenu: (id: number | null) => void;
   onHide: (application: ApplicationView, hidden: boolean) => void;
   onSetStatus: (application: ApplicationView, status: Status | null) => void;
+};
+
+/**
+ * Which rows have their emails opened out under them. The sheet's alone: the
+ * split view reads one row at a time in a pane of its own, so it tracks the
+ * row that is picked instead of a set of open ones.
+ */
+export type RowDrawers = {
+  open: Set<number>;
+  onToggleRow: (id: number) => void;
 };
 
 /** A set with the value removed if it was there, added if it was not. */
@@ -140,6 +205,33 @@ export function formatDate(value: string | null): string {
     month: "short",
     day: "numeric",
   }).format(new Date(value));
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Whole days from a stored date until now, and null when there is no date.
+ *
+ * Read at the moment it is drawn rather than stored, for the same reason
+ * `isStale` is: an application does not get older because something happened
+ * to it, and a stored answer would be wrong the day after it was written.
+ */
+export function daysSince(value: string | null): number | null {
+  if (!value) return null;
+  return Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / DAY_MS));
+}
+
+/**
+ * How long ago a row last heard anything, in the few characters a list line
+ * has room for: days up to a month, then weeks. Past a month the exact day has
+ * stopped being the thing anyone is reading it for.
+ */
+export function formatAge(value: string | null): string {
+  const days = daysSince(value);
+  if (days === null) return "";
+  if (days === 0) return "Today";
+  if (days < 31) return `${days}d`;
+  return `${Math.round(days / 7)}w`;
 }
 
 export function matchQuery(application: ApplicationView, query: string) {
@@ -165,10 +257,7 @@ export function matchQuery(application: ApplicationView, query: string) {
   return { hit: inHeader || inEmails, viaEmail: inEmails && !inHeader };
 }
 
-export function passesFilters(
-  application: ApplicationView,
-  filters: { season: Set<string>; year: Set<string> },
-): boolean {
+export function passesFilters(application: ApplicationView, filters: Filters): boolean {
   const seasonOk = !filters.season.size || (application.season && filters.season.has(application.season));
   const yearOk = !filters.year.size || (application.year && filters.year.has(String(application.year)));
   return Boolean(seasonOk && yearOk);

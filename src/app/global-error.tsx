@@ -14,7 +14,7 @@ export default function GlobalError({ error, reset }: { error: Error; reset: () 
     <html lang="en" data-theme="light" suppressHydrationWarning>
       <body>
         <main className="app">
-          <div className="page">
+          <div className="blank-page">
             <div className="blank">
               <p className="blank__title">Something Went Wrong</p>
               <p className="blank__text">

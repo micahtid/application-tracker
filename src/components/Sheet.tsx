@@ -1,28 +1,44 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Check, ChevronRight } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
+} from "lucide-react";
 import EmailList from "./EmailList";
 import Highlight from "./Highlight";
+import NoResults from "./NoResults";
+import PaneHead from "./PaneHead";
 import RowMenu from "./RowMenu";
 import {
+  STALE_NOTE,
+  STATUS_MODIFIERS,
   endingLabel,
   formatDate,
-  STATUS_MODIFIERS,
+  stageLabel,
   type ApplicationView,
   type Row,
-  type RowHandlers,
+  type RowActions,
+  type RowDrawers,
   type SortKey,
 } from "@/lib/view";
-import { STAGE_LABELS, STATUS_LABELS } from "@/lib/constants";
+import { STATUS_LABELS } from "@/lib/constants";
 
 /**
  * The second design: one flat grid, the way most people track applications
  * before they find an app for it.
  *
- * The board groups by status and puts everything else in a drawer. A sheet
- * does the opposite: every row is one line and every fact has a column, so a
- * status is a cell like any other. The button in the masthead swaps between
- * them, and the styling lives under .sheet in globals.css.
+ * The split view groups by status and reads one row at a time in a pane of its
+ * own. A sheet does the opposite: every row is one line and every fact has a
+ * column, so a status is a cell like any other and the mail opens out under
+ * the line rather than beside it.
+ *
+ * The button in the app bar swaps between them, and the styling lives under
+ * .sheet in globals.css. Everything around the grid is shared: the same app
+ * bar, the same filter rail, the same pane head, the same row menu.
  *
  * No cell can be edited. A cell here is a fact read out of an email, and
  * typing over one would put a fact on screen that no email supports. The row
@@ -65,67 +81,91 @@ const ASCENDING: SortKey = "company-asc";
  * empty on almost every row. An ending wins, because a step still in flight
  * when the answer came stopped being the news.
  *
- * The ending comes from `endingLabel`, which is the one rule for what a
- * finished row says, so the board and the sheet cannot say two different things
- * about one application. It returns null for the endings the Rejected section
- * already covers, and this column is empty on those rows too.
+ * Both halves come from `@/lib/view`, which is where the reading pane asks for
+ * them too, so the two designs cannot say two different things about one row.
+ * `endingLabel` returns null for the endings the Rejected section already
+ * covers, and this column is empty on those rows too.
  */
 function stageCell(application: ApplicationView): string {
-  const ending = endingLabel(application);
-  if (ending) return ending;
-  if (application.status === "IN_PROGRESS" && application.stageDetail) {
-    return STAGE_LABELS[application.stageDetail];
-  }
-  return "";
+  return endingLabel(application) ?? stageLabel(application) ?? "";
 }
 
 export default function Sheet({
   rows,
+  total,
+  query,
+  narrowed,
+  loaded,
   sort,
   onSort,
   open,
-  ...handlers
-}: RowHandlers & {
-  rows: Row[];
-  sort: SortKey;
-  onSort: (value: SortKey) => void;
-}) {
-  // Otherwise a grid of headings with nothing under them, sitting above the
-  // line that already says nothing is tracked yet.
-  if (!rows.length) return null;
-
+  onToggleRow,
+  onToggleAll,
+  ...actions
+}: RowActions &
+  RowDrawers & {
+    rows: Row[];
+    /** How many the board holds in all, for the count over the grid. */
+    total: number;
+    query: string;
+    narrowed: boolean;
+    loaded: boolean;
+    sort: SortKey;
+    onSort: (value: SortKey) => void;
+    /** Opens every drawer at once, or shuts every one that is open. */
+    onToggleAll: () => void;
+  }) {
   return (
-    <div className="sheet">
-      <div className="sheet__scroll">
-        <table className="sheet__grid">
-          <thead>
-            <tr>
-              <th className="sheet__gutter" scope="col">
-                <span className="sr-only">Row</span>
-              </th>
-              {COLUMNS.map((column) => (
-                <SheetHead key={column.key} column={column} sort={sort} onSort={onSort} />
-              ))}
-              <th className="sheet__menu" scope="col">
-                <span className="sr-only">Row Options</span>
-              </th>
-            </tr>
-          </thead>
+    <section className="pane pane--sheet" aria-label="Applications">
+      <PaneHead shown={rows.length} total={total}>
+        {rows.length ? (
+          <button className="ctrl ctrl--compact" type="button" onClick={onToggleAll}>
+            {open.size ? (
+              <ChevronsDownUp className="lucide" />
+            ) : (
+              <ChevronsUpDown className="lucide" />
+            )}
+            <span>{open.size ? "Collapse All" : "Expand All"}</span>
+          </button>
+        ) : null}
+      </PaneHead>
 
-          <tbody>
-            {rows.map(({ app, viaEmail }, index) => (
-              <SheetRow
-                key={app.id}
-                application={app}
-                number={index + 1}
-                open={open.has(app.id) || viaEmail}
-                {...handlers}
-              />
-            ))}
-          </tbody>
-        </table>
+      <div className="pane__body sheet">
+        {rows.length ? (
+          <table className="sheet__grid">
+            <thead>
+              <tr>
+                <th className="sheet__gutter" scope="col">
+                  <span className="sr-only">Row</span>
+                </th>
+                {COLUMNS.map((column) => (
+                  <SheetHead key={column.key} column={column} sort={sort} onSort={onSort} />
+                ))}
+                <th className="sheet__menu" scope="col">
+                  <span className="sr-only">Row Options</span>
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {rows.map(({ app, viaEmail }, index) => (
+                <SheetRow
+                  key={app.id}
+                  application={app}
+                  number={index + 1}
+                  open={open.has(app.id) || viaEmail}
+                  query={query}
+                  onToggleRow={onToggleRow}
+                  {...actions}
+                />
+              ))}
+            </tbody>
+          </table>
+        ) : null}
+
+        {loaded && !rows.length ? <NoResults query={query} narrowed={narrowed} /> : null}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -178,11 +218,13 @@ function SheetRow({
   onToggleMenu,
   onHide,
   onSetStatus,
-}: Omit<RowHandlers, "open"> & {
-  application: ApplicationView;
-  number: number;
-  open: boolean;
-}) {
+}: RowActions &
+  Pick<RowDrawers, "onToggleRow"> & {
+    application: ApplicationView;
+    number: number;
+    open: boolean;
+    query: string;
+  }) {
   const stage = stageCell(application);
 
   return (
@@ -224,8 +266,8 @@ function SheetRow({
           ) : null}
         </td>
 
-        {/* The board's own tag, so the two designs say a status the same way.
-            The tick beside it is the board's override tag, cut down to the
+        {/* The reading pane's own tag, so the two designs say a status the same
+            way. The tick beside it is that pane's override tag, cut down to the
             one mark a column has room for. */}
         <td>
           <span className={`tag tag--${STATUS_MODIFIERS[application.status]}`}>
@@ -250,11 +292,7 @@ function SheetRow({
             date is the cell the fact is about. */}
         <td
           className={`sheet__date${application.isStale ? " is-stale" : ""}`}
-          title={
-            application.isStale
-              ? "Nothing has arrived on this application for a while"
-              : undefined
-          }
+          title={application.isStale ? STALE_NOTE : undefined}
         >
           {formatDate(application.latestEmailAt)}
         </td>

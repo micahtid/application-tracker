@@ -47,118 +47,195 @@ input:where([type="button"], [type="reset"], [type="submit"]) {
 ::placeholder { opacity: 1; }
 
 /* Internship Applications Tracker.
-   The design system below is the prototype stylesheet, which stays the visual
-   reference. Everything the prototype did not have (the row menu, the sync
-   banner, sync progress) is written in the same idiom at the bottom of this
-   file. */
+
+   The design is the split view, and `docs/split-view.html` is the prototype it
+   was drawn from and stays the visual reference. Read that file's own header
+   for why the screen is shaped the way it is.
+
+   Two things the prototype does that this does not. Its icons are Material
+   Symbols, fetched from Google; the app draws lucide, because a privacy first
+   board should not ask Google for a font while you are reading it. And its
+   snackbar is gone, because it only ever existed to narrate what a click in a
+   prototype would have done. */
 
 /* ===============================================================
    Design tokens
+
+   Four planes, a clear step apart: the ground the panes sit on, the
+   list, the sheet you read on, and the chips and pills that sit on
+   top of either. Plain neutral grey throughout, so the only colour on
+   the screen is colour that means something: the accent, a status, a
+   search hit.
+
+   The light greys sit a step up from where the tinted ones did.
+   Taking the blue out at the same lightness left them reading heavier
+   than they measured, which is what a flat grey does next to one with
+   a cast in it, so the whole light ramp was lifted about three points
+   of lightness. The steps between the planes are unchanged.
+
+   The scales everything below is built from:
+
+     Type:    12 micro, 13 label, 14 control, 15 content, 17 heading
+     Heights: 34 compact control, 42 control, 44 row and menu item
+     Radius:  8 chip and control, 12 menu, 16 pane, 999 pill
+     Gutter:  20 in the panes, 16 in the rail
    =============================================================== */
 :root {
-  --surface:       #ffffff;
-  --surface-2:     #fbfbfa;
+  --surface:       #ffffff;   /* the reading pane, the sheet, menus, dialogs */
+  --surface-2:     #fbfbfb;   /* the list pane, and the fields drawn on it */
+  --surface-3:     #efefef;   /* a chip, a tag, the search pill */
+  --ground:        #f5f5f5;   /* behind the panes, and only ever seen between them */
 
-  --text:          #37352f;
-  --text-2:        rgba(55, 53, 47, 0.68);
-  --text-3:        rgba(55, 53, 47, 0.44);
+  --text:          #1d1d1d;
+  --text-2:        #4b4b4b;
+  --text-3:        #737373;
 
-  --line:          rgba(55, 53, 47, 0.10);
-  --line-soft:     rgba(55, 53, 47, 0.055);
-  --hover:         rgba(55, 53, 47, 0.045);
-  --press:         rgba(55, 53, 47, 0.08);
+  --line:          #d4d4d4;
+  --line-soft:     #ededed;
+  --hover:         rgba(29, 29, 29, 0.055);
+  --press:         rgba(29, 29, 29, 0.09);
 
-  --chip:          rgba(55, 53, 47, 0.062);
-  --chip-text:     rgba(55, 53, 47, 0.72);
-  --mark:          #fbf0c8;
+  --chip:          var(--surface-3);
+  --chip-text:     var(--text-2);
+  --mark:          #fdebae;
 
-  --green: #3f8f6d;
-  --amber: #cc7a2e;
-  --blue:  #4b6fbf;
-  --red:   #c4554d;
+  /* Indigo, and the softer container a picked row is filled with. */
+  --primary:               #1657c8;
+  --primary-container:     #d6e2fb;
+  --on-primary-container:  #0b2a6b;
+  /* The quieter container the spec gives a selected filter. */
+  --selected:      #ececec;
+  --on-selected:   #262626;
 
-  --focus: rgba(75, 111, 191, 0.42);
+  --green: #1d7a4e;
+  --amber: #9a5712;
+  --blue:  #2c63c9;
+  --red:   #b23127;
 
-  --radius: 6px;
-  --ease:   cubic-bezier(0.32, 0.08, 0.24, 1);
+  --radius:        8px;
+  --radius-menu:   4px;   /* the extra small corner the spec gives a menu */
+  --radius-pane:   16px;
+  --radius-dialog: 28px;
+  --ease:          cubic-bezier(0.2, 0, 0, 1);
+
+  /* How tall a control is, in three tiers and nothing between them. Every
+     height below reads from here, so a button and the field beside it cannot
+     end up a few pixels apart.
+
+       control     a control that stands on its own: a button, a field, an
+                   icon button in the app bar, a filter, the search
+       control-md  one sitting in a row of content rather than on its own:
+                   the sort control over a pane, the menu at the end of a row
+       control-sm  one sitting inside another control or inside a notice:
+                   the eye in the key field, the dismiss on a banner */
+  --control:    40px;
+  --control-md: 36px;
+  --control-sm: 32px;
+
+  /* How big a mark is, in the same three tiers and on the sizes the spec
+     draws icons at. Every icon below reads from here, so nothing ends up a
+     pixel or two off its neighbour.
+
+       icon     a mark standing on its own: in an icon button, on a menu line,
+                beside an email
+       icon-md  one beside a label: in a button, a chip, a filter, a heading
+       icon-sm  one inside a line of running text, or in a 32px button */
+  --icon:    20px;
+  --icon-md: 18px;
+  --icon-sm: 16px;
 }
 
 [data-theme="dark"] {
-  --surface:   #1f1f1e;
-  --surface-2: #242423;
+  --surface:   #191919;
+  --surface-2: #242424;
+  --surface-3: #323232;
+  --ground:    #0e0e0e;
 
-  --text:      rgba(255, 255, 255, 0.86);
-  --text-2:    rgba(255, 255, 255, 0.58);
-  --text-3:    rgba(255, 255, 255, 0.36);
+  --text:      #ebebeb;
+  --text-2:    #c6c6c6;
+  --text-3:    #939393;
 
-  --line:      rgba(255, 255, 255, 0.10);
-  --line-soft: rgba(255, 255, 255, 0.06);
-  --hover:     rgba(255, 255, 255, 0.055);
-  --press:     rgba(255, 255, 255, 0.09);
+  --line:      #434343;
+  --line-soft: #323232;
+  --hover:     rgba(235, 235, 235, 0.07);
+  --press:     rgba(235, 235, 235, 0.12);
 
-  --chip:      rgba(255, 255, 255, 0.09);
-  --chip-text: rgba(255, 255, 255, 0.70);
-  --mark:      #5c4a1c;
+  --mark:      #5a4a1e;
 
-  --green: #6ab894;  --amber: #e0964f;  --blue: #7d9be0;  --red: #e08b84;
+  --primary:              #a9c5fa;
+  --primary-container:    #2b4c94;
+  --on-primary-container: #dce7fe;
+  --selected:    #3c3c3c;
+  --on-selected: #e2e2e2;
+
+  --green: #6fcb9b;  --amber: #e8a05b;  --blue: #93b4f5;  --red: #e79086;
 }
 
 /* ===============================================================
    Base
    =============================================================== */
-* { box-sizing: border-box; }
-
 html, body { height: 100%; }
 
 body {
   margin: 0;
-  min-height: 100%;
   font-family: "Figtree", ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
-  font-size: 16px;
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 1.45;
   color: var(--text);
-  background: var(--surface);
+  background: var(--ground);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* The panes scroll, never the page. */
+  overflow: hidden;
 }
 
 /* Lucide swaps each placeholder for an svg, so icons size with font-size. */
 svg.lucide { width: 1em; height: 1em; stroke-width: 1.85; flex: none; }
 
-mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1px; }
+mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1px; }
 
-:where(button, a, input):focus-visible {
-  outline: 2px solid var(--blue);
-  outline-offset: 1px;
+:where(button, a, input, [tabindex]):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
   border-radius: var(--radius);
 }
 
-/* Full bleed page with the content held to a centred column. */
-.app {
-  position: relative;
-  min-height: 100vh;
-  animation: rise 0.6s var(--ease) both;
+/* Read out but not drawn. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
-.page {
-  width: 100%;
-  max-width: 1200px;
-  margin-inline: auto;
-  padding: clamp(48px, 7vw, 88px) clamp(20px, 4vw, 56px) 96px;
-  /* Nothing may drag the page sideways. Anything too wide for the column
-     scrolls in a box of its own, and the sheet is the only thing that is.
 
-     clip rather than hidden: hidden would make this a scroll container on
-     both axes and clip the menus and drawers that hang below a row. */
-  overflow-x: clip;
+/* A thin, quiet scrollbar in every pane that has one. */
+.rail::-webkit-scrollbar,
+.pane__body::-webkit-scrollbar,
+.pane--detail::-webkit-scrollbar { width: 12px; height: 12px; }
+.rail::-webkit-scrollbar-track,
+.pane__body::-webkit-scrollbar-track,
+.pane--detail::-webkit-scrollbar-track { background: transparent; }
+.rail::-webkit-scrollbar-thumb,
+.pane__body::-webkit-scrollbar-thumb,
+.pane--detail::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border: 4px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+.rail:hover::-webkit-scrollbar-thumb,
+.pane__body:hover::-webkit-scrollbar-thumb,
+.pane--detail:hover::-webkit-scrollbar-thumb {
+  background: var(--text-3);
+  background-clip: content-box;
 }
 
 /* ===============================================================
    Motion
    =============================================================== */
-@keyframes rise {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: none; }
-}
 @keyframes fade {
   from { opacity: 0; transform: translateY(7px); }
   to   { opacity: 1; transform: none; }
@@ -174,12 +251,6 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Each block sets its own --i so the reveal staggers down the page. */
-.reveal {
-  animation: fade 0.55s var(--ease) both;
-  animation-delay: calc(var(--i) * 70ms + 120ms);
-}
-
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation: none !important;
@@ -188,166 +259,853 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 }
 
 /* ===============================================================
-   1. Greeting and period
+   The shell
+
+   Three rows: the app bar, whatever the sync has to say, and the panes,
+   which take everything left over and do their own scrolling.
    =============================================================== */
-.masthead__row { display: flex; align-items: center; gap: 16px; }
+.app { height: 100dvh; overflow: hidden; }
 
-.greeting {
-  margin: 0;
-  font-size: clamp(30px, 4.6vw, 42px);
-  font-weight: 800;
-  letter-spacing: -0.032em;
-  line-height: 1.1;
-}
-.greeting span {
-  background-image: linear-gradient(transparent 68%, var(--mark) 68%);
-  padding-inline: 1px;
+.shell {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  background: var(--ground);
 }
 
-/* The tools sit at the far right of the row in two groups: what acts on the
-   mail, then what changes settings. Buttons inside a group get room to breathe;
-   the grouping is carried by the hairline and by the wider gap around it, which
-   is more than three times the one inside a group. Four evenly spaced icons in
-   a row would be four separate decisions to make. */
-.masthead__tools { display: flex; align-items: center; gap: 14px; margin-left: auto; }
-.masthead__group { display: flex; align-items: center; gap: 4px; }
-.masthead__rule { width: 1px; height: 18px; background: var(--line); }
+/* ===============================================================
+   The app bar
+   =============================================================== */
+.appbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 64px;
+  padding: 8px clamp(10px, 1.6vw, 16px);
+  border-bottom: 1px solid var(--line);
+}
+
+/* Title medium. The spec's app bar headline is title large, and at 22px this
+   one shouted: it is a greeting rather than the name of the page, and the page
+   is the list beside it. One step down the same scale is the answer, not a
+   size invented between two of them. */
+.appbar__brand {
+  flex: none;
+  padding-left: 12px;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+  letter-spacing: 0.009em;
+  white-space: nowrap;
+}
+@media (max-width: 760px) { .appbar__brand { display: none; } }
+
+/* The search everything on the screen runs through, so it takes the middle of
+   the bar rather than a corner of it. min-width:0 or the input's intrinsic
+   width pushes the whole bar wider than the screen on a phone. */
+.searchbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  max-width: 660px;
+  height: var(--control);
+  margin-inline: auto;
+  padding: 0 18px;
+  color: var(--text-2);
+  background: var(--surface-3);
+  border-radius: 999px;
+  transition: background 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+.searchbar:hover { background: color-mix(in srgb, var(--surface-3) 88%, var(--text)); }
+.searchbar:focus-within {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 2px var(--primary);
+}
+.searchbar__icon { font-size: var(--icon); color: var(--text); }
+.searchbar input {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  color: var(--text);
+  background: none;
+  border: 0;
+  outline: 0;
+}
+.searchbar input::placeholder { color: var(--text-2); }
+.searchbar input::-webkit-search-cancel-button { -webkit-appearance: none; }
+
+.searchbar__kbd {
+  flex: none;
+  padding: 0 6px;
+  font: 500 12px/18px "Figtree", sans-serif;
+  color: var(--text-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  transition: opacity 0.15s;
+}
+.searchbar:focus-within .searchbar__kbd { opacity: 0; }
+
+/* The tools sit at the far right in two groups: what acts on the mail, then
+   what changes the screen. Buttons inside a group get room to breathe; the
+   grouping is carried by the hairline and by the wider gap around it. Four
+   evenly spaced icons in a row would be four separate decisions to make. */
+.appbar__tools { display: flex; align-items: center; gap: 12px; flex: none; }
+.appbar__group { display: flex; align-items: center; gap: 2px; }
+.appbar__rule { width: 1px; height: 18px; background: var(--line); }
 
 .icon-btn {
-  display: grid; place-items: center;
-  width: 36px; height: 36px;
-  font-size: 19px;
+  display: grid;
+  place-items: center;
+  width: var(--control); height: var(--control);
+  /* The button is the target and the icon is the mark, so the two are sized
+     apart: a 40px target is what a pointer needs, and a 20px glyph is what
+     the eye reads. */
+  font-size: var(--icon);
   color: var(--text-2);
-  background: none; border: 0; border-radius: var(--radius);
+  background: none;
+  border: 0;
+  border-radius: 50%;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 .icon-btn:hover { background: var(--hover); color: var(--text); }
 .icon-btn:active { background: var(--press); }
 .icon-btn:disabled { opacity: 0.42; cursor: default; }
-.icon-btn--sm { width: 30px; height: 30px; font-size: 16px; }
+.icon-btn--sm { width: var(--control-sm); height: var(--control-sm); font-size: var(--icon-sm); }
 .icon-btn.is-spinning svg { animation: spin 0.9s linear infinite; }
 
 /* Reddens under the pointer, so the one button here that deletes something
    says so before it is clicked rather than only in the dialog after. */
-.icon-btn--danger:hover:not(:disabled) { color: var(--red); }
-
-/* ===============================================================
-   2. Search, sort, filter
-   =============================================================== */
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 44px 0 0;
-  flex-wrap: wrap;
+.icon-btn--danger:hover:not(:disabled) {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 12%, transparent);
 }
 
-.field {
+@media (max-width: 620px) {
+  .appbar { gap: 8px; padding-inline: 8px; }
+  .searchbar { gap: 8px; padding: 0 14px; }
+  .searchbar__kbd { display: none; }
+}
+
+/* ===============================================================
+   Notices: what the sync has to say
+
+   A row of its own between the bar and the panes. It carries no height
+   of its own, so a quiet sync leaves the panes flush against the bar.
+   =============================================================== */
+.notices { padding-inline: clamp(8px, 1.4vw, 16px); }
+.notices > * + * { margin-top: 8px; }
+.notices > :first-child { margin-top: 10px; }
+.notices > :last-child { margin-bottom: 10px; }
+
+/* A failed sync does not invalidate anything already saved, so the board stays
+   visible and usable underneath. */
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  font-size: 14px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--red) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--red) 34%, transparent);
+  border-radius: var(--radius);
+  animation: fade 0.3s var(--ease) both;
+}
+.banner__icon { font-size: var(--icon-md); color: var(--red); margin-top: 1px; }
+.banner__body { flex: 1; min-width: 0; }
+.banner__title { font-weight: 700; letter-spacing: -0.01em; }
+.banner__text { margin: 3px 0 0; font-size: 13.5px; color: var(--text-2); }
+
+/* The same readout for every sync. The first backfill fills it over several
+   minutes; a refresh crosses it in seconds. The button spins alongside it.
+
+   No box around it. A sync is news rather than a warning, and a card with a
+   border made a readout that passes in seconds as loud as the banner above it
+   that means something is wrong.
+
+   The bar itself is the Material 3 linear progress indicator, built to the
+   spec's own four numbers: a 4px track and a 4px active indicator, both fully
+   rounded, a 4px space between them, and a 4px stop indicator marking the end
+   of the track. The space is a real gap in a flex row rather than a patch
+   painted over the track, so it holds whatever the bar happens to sit on. */
+.progress { padding: 2px 6px 6px; }
+.progress__row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  margin-bottom: 10px;
+  font-size: 14px; color: var(--text);
+}
+.progress__count { font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.progress__track {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 4px;
+}
+/* Width arrives as a flex basis rather than a width, so the gap beside it is
+   taken out of the track rather than out of the bar. */
+.progress__bar {
+  flex: 0 1 auto;
+  height: 4px;
+  background: var(--primary);
+  border-radius: 999px;
+  transition: flex-basis 0.4s var(--ease);
+}
+/* The outline tone rather than the chip tone the spec names. A track has to
+   read against whatever it lies on, and with the card gone this one lies on
+   the ground, which the chip tone is barely a shade away from. */
+.progress__rest {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 4px;
+  background: var(--line);
+  border-radius: 999px;
+}
+/* The end of the run, which stays lit until the bar arrives at it. */
+.progress__stop {
+  position: absolute;
+  right: 0;
+  width: 4px; height: 4px;
+  background: var(--primary);
+  border-radius: 50%;
+}
+
+/* ===============================================================
+   The panes
+
+   The list column is a custom property so the divider between the two
+   panes can move it. A drag writes the same property, which is why the
+   breakpoints below only set a starting width, and why the cap is
+   written here rather than in the drag: a stored width can outlive the
+   window it was chosen on, and the reading pane still has to fit.
+   =============================================================== */
+
+/* The list is the screen. It is the thing being scanned, and every row on it
+   is a company, a role and a date competing for one line, so it starts with
+   the larger share and the reading pane takes what is left.
+
+   Three numbers decide it, and they are named rather than buried in the track
+   list: how wide the rail is, what share of the rest the list starts with, and
+   how little the reading pane may be squeezed to.
+
+   The share is a fraction rather than a width, because a width only holds at
+   one size of window. 720px is most of a laptop and less than half of a
+   monitor, so a fixed starting width hands the space back to the reading pane
+   on exactly the screens with space to hand out.
+
+   A drag writes `--list-w`, which overrides the starting share but never the
+   floor: the reading pane cannot be taken below `--read-min` however far the
+   divider is pushed, and the list cannot go under 300px. */
+.panes {
+  --rail-w: 224px;
+  --list-share: 0.6;
+  --read-min: 420px;
+
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  padding-inline: 8px;
+}
+@media (min-width: 1400px) {
+  .panes { --rail-w: 244px; }
+}
+@media (min-width: 900px) {
+  .panes {
+    grid-template-columns:
+      var(--rail-w)
+      minmax(
+        300px,
+        min(
+          var(--list-w, calc((100% - var(--rail-w) - 16px) * var(--list-share))),
+          calc(100% - var(--rail-w) - var(--read-min) - 16px)
+        )
+      )
+      minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    gap: 8px;
+  }
+}
+
+/* Every pane is the same box: a head that stays put, and a body that scrolls.
+   Rounded at the top only, because the bottom runs off the screen. */
+.pane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  border-radius: var(--radius-pane) var(--radius-pane) 0 0;
+}
+.pane--list { position: relative; background: var(--surface-2); }
+.pane--sheet { background: var(--surface); }
+/* Without the rail beside it the sheet takes everything the list and the
+   reading pane would have shared. */
+@media (min-width: 900px) { .pane--sheet { grid-column: 2 / -1; } }
+
+.pane__head {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex: 1 1 260px;
-  height: 42px;
-  padding: 0 12px 0 14px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease), background 0.16s;
+  padding: 13px 20px;
+  border-bottom: 1px solid var(--line);
 }
-.field:focus-within {
-  background: var(--surface);
-  border-color: transparent;
-  box-shadow: 0 0 0 2px var(--focus);
-}
-.field__icon { font-size: 16px; color: var(--text-3); }
-.field input {
-  flex: 1; min-width: 0;
-  font: inherit; font-size: 14.5px;
-  color: var(--text);
-  background: none; border: 0; outline: 0;
-}
-.field input::placeholder { color: var(--text-3); }
-.field input::-webkit-search-cancel-button { -webkit-appearance: none; }
+.pane__head .textline { gap: 10px; }
+.pane__title { font-size: 16px; font-weight: 500; line-height: 24px; letter-spacing: 0.009em; }
+.pane__count { font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.pane__head .menu-wrap { margin-left: auto; }
 
-.field__kbd {
-  font: 600 11px/1 "Figtree", sans-serif;
+.pane__body { min-width: 0; min-height: 0; overflow: auto; }
+
+/* --- The divider ------------------------------------------
+   A wide grab area over a hairline, which shows itself only when you
+   are on it or moving it. It hangs off the list pane's own right edge,
+   so it follows the pane without a second copy of the column widths. */
+.handle {
+  position: absolute;
+  top: 0; bottom: 0; right: -11px;
+  z-index: 25;
+  width: 14px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  touch-action: none;
+}
+@media (min-width: 900px) { .handle { display: flex; } }
+.handle::before {
+  content: "";
+  width: 2px;
+  height: 100%;
+  background: transparent;
+  border-radius: 999px;
+  transition: background 0.15s var(--ease);
+}
+.handle:hover::before,
+.handle:focus-visible::before,
+.handle.is-dragging::before { background: var(--primary); }
+.handle:focus-visible { outline: none; }
+body.is-resizing { cursor: col-resize; user-select: none; }
+
+/* ===============================================================
+   The filter rail
+   =============================================================== */
+.rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 12px 20px;
+}
+
+/* The headline over a group in a navigation drawer, which the spec sets in
+   title small. */
+.rail__label {
+  padding: 18px 16px 6px;
+  font-size: 14px; font-weight: 500; line-height: 20px; letter-spacing: 0.006em;
+  color: var(--text-2);
+}
+.rail__none { padding: 8px 16px; font-size: 13px; color: var(--text-3); }
+
+.filter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  /* The height the spec gives an item in a navigation drawer. */
+  height: 56px;
+  padding: 0 16px;
+  font-size: 14px; font-weight: 500; line-height: 20px; letter-spacing: 0.006em;
+  line-height: 1;
+  color: var(--text-2);
+  /* A button centres its text by default, which left Term and Year reading
+     down their middles: Summer starting well left of Fall. */
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.filter:hover { background: var(--hover); }
+.filter.is-on { color: var(--on-selected); background: var(--selected); }
+/* A ticked box takes the accent, the way a selected checkbox is filled. */
+.filter.is-on > svg { color: var(--primary); }
+.filter > svg { font-size: var(--icon-md); }
+.filter .textline { flex: 1; gap: 10px; }
+.filter__text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filter__count { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.filter.is-on .filter__count { color: inherit; opacity: 0.8; }
+
+.rail__clear,
+.rail__hidden {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 16px;
+  font: inherit; font-size: 14px; font-weight: 500;
+  line-height: 1;
+  color: var(--primary);
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+.rail__clear { margin-top: 8px; }
+.rail__clear:hover,
+.rail__hidden:hover { background: color-mix(in srgb, var(--primary) 10%, transparent); }
+.rail__clear > svg { font-size: var(--icon-md); }
+
+/* Where the board stands, in the one place on screen that is about the board
+   as a whole rather than about a row of it. */
+.rail__note {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 20px 16px 0;
+  padding-top: 14px;
+  font-size: 12px;
   color: var(--text-3);
-  padding: 4px 6px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  transition: opacity 0.15s;
+  border-top: 1px solid var(--line);
 }
-.field:focus-within .field__kbd { opacity: 0; }
 
-.toolbar__controls { display: flex; gap: 6px; }
+/* Text at two sizes on one line shares a baseline.
+
+   Centred against each other instead, a 12px count beside a 16px title sits
+   about a pixel and a half high, which reads as a mistake rather than as a
+   smaller number. Baseline is not something the row itself can be set to: a
+   flex row aligned that way pushes its whole group to the top, so the pair
+   gets a box of its own inside a row that is still centred.
+
+   Icons stay out of that box. A glyph has no baseline to share, so it is
+   centred on the line it sits beside. */
+.textline {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* ===============================================================
+   The list pane
+   =============================================================== */
+.list { padding-bottom: 16px; overflow-x: hidden; }
+
+/* The board's four sections, and they collapse here as they did there. The
+   heading sticks to the top of the list, so the status of whatever you have
+   scrolled to is never off screen. */
+.section__head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 22px 16px 10px;
+  font: inherit; font-size: 13px; font-weight: 500;
+  line-height: 1;
+  color: var(--text-2);
+  text-align: left;
+  background: var(--surface-2);
+  border: 0;
+  cursor: pointer;
+}
+.section__head:hover .section__title { color: var(--text); }
+
+.section__icon { font-size: var(--icon-md); }
+.section--accepted .section__icon { color: var(--green); }
+.section--progress .section__icon { color: var(--amber); }
+.section--applied  .section__icon { color: var(--blue); }
+.section--rejected .section__icon { color: var(--text-3); }
+
+.section__title { transition: color 0.15s; }
+.section__head .textline { gap: 12px; }
+.section__count { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.section__fold {
+  margin-left: auto;
+  font-size: var(--icon-md); color: var(--text-3);
+  transition: transform 0.2s var(--ease);
+}
+.section.is-collapsed .section__fold { transform: rotate(-90deg); }
+
+/* Rows carry a hairline between them, inset to the text the way a list divider
+   is, rather than running under the leading marker. */
+.row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  /* 16px to the leading element and 16px on to the text, which is the inset
+     the spec gives a list item that carries one. */
+  gap: 16px;
+  width: 100%;
+  padding: 14px 16px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  transition: background 0.15s var(--ease);
+}
+.row::after {
+  content: "";
+  position: absolute;
+  left: 40px; right: 0; bottom: 0;
+  height: 1px;
+  background: var(--line-soft);
+}
+.row:hover { background: var(--hover); }
+
+/* Picked is a filled container, the way a chosen item is marked wherever one
+   is, rather than a card with a bar down its edge. No hairline immediately
+   above or below it, so the selection reads as one clean block rather than as
+   a row with lines stuck to it. */
+.row.is-picked,
+.row.is-picked:hover { background: var(--primary-container); }
+.row.is-picked::after { background: transparent; }
+li:has(+ li > .row.is-picked) > .row::after { background: transparent; }
+.row.is-picked .row__company { color: var(--on-primary-container); }
+.row.is-picked .row__role,
+.row.is-picked .row__age { color: var(--on-primary-container); opacity: 0.82; }
+
+/* Hidden rows stay on the list, dimmed, while the rail is showing them. */
+.row.is-hidden { opacity: 0.5; }
+
+.row__dot { width: 8px; height: 8px; margin-top: 6px; flex: none; border-radius: 50%; }
+.row__dot--accepted { background: var(--green); }
+.row__dot--progress { background: var(--amber); }
+.row__dot--applied  { background: var(--blue); }
+.row__dot--rejected { background: var(--text-3); }
+
+.row__body { flex: 1; min-width: 0; }
+/* Body large over body medium, which is the pair the spec sets for the two
+   lines of a two line list item. */
+.row__company {
+  flex: 1; min-width: 0;
+  font-size: 16px; font-weight: 400; line-height: 24px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.row__role {
+  display: block;
+  font-size: 14px; line-height: 20px; color: var(--text-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.row__age {
+  flex: none;
+  font-size: 12px; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===============================================================
+   The reading pane
+
+   Its two columns key off the pane's own width rather than the window's.
+   With a draggable divider the window tells you nothing: a wide screen
+   with a wide list leaves a narrow pane, and the columns collide.
+   =============================================================== */
+.pane--detail {
+  display: block;
+  overflow-y: auto;
+  background: var(--surface);
+  container-type: inline-size;
+  container-name: reader;
+}
+
+.detail__blank {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: 30px;
+  font-size: 14px;
+  color: var(--text-3);
+  text-align: center;
+}
+
+/* Only ever drawn on a screen too narrow to hold both panes at once. */
+.detail__back {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  height: var(--control);
+  margin: 8px 8px 0;
+  padding: 0 16px;
+  font: inherit; font-size: 14px; font-weight: 500;
+  line-height: 1;
+  color: var(--text-2);
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.detail__back > svg { font-size: var(--icon-md); }
+.detail__back:hover { background: var(--hover); color: var(--text); }
+
+.detail__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 26px 48px;
+  align-items: start;
+  padding: clamp(20px, 2.4vw, 32px) clamp(20px, 2.4vw, 40px) 96px;
+}
+
+/* Stacked, the details go first: a few short lines a glance can finish, above
+   a list whose length is whatever the mail decided. */
+.detail__head { order: -2; }
+.detail__body { min-width: 0; }
+.detail__aside {
+  order: -1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  column-gap: 40px;
+}
+.detail__aside .detail__label { grid-column: 1 / -1; }
+
+/* Side by side, the mail goes left, because the trail is what you came to read,
+   and the facts go into the column beside it rather than in front of it. */
+@container reader (min-width: 700px) {
+  .detail__inner { grid-template-columns: minmax(0, 1fr) minmax(240px, 300px); }
+  .detail__head { grid-column: 1 / -1; grid-row: 1; order: 0; }
+  .detail__body { grid-column: 1; grid-row: 2; }
+  .detail__aside {
+    grid-column: 2; grid-row: 2; order: 0;
+    display: block;
+    position: sticky; top: 0;
+  }
+}
+
+.detail__top { display: flex; align-items: flex-start; gap: 16px; }
+.detail__names { flex: 1; min-width: 0; }
+.detail__company {
+  font-size: clamp(22px, 2.2vw, 27px);
+  font-weight: 700;
+  letter-spacing: -0.022em;
+  line-height: 1.2;
+}
+.detail__role { margin-top: 6px; font-size: 15.5px; color: var(--text-2); }
+
+/* The heading over each of the two columns, at the same size and weight, so
+   Emails and Details read as one pair rather than as a list and a sidebar. */
+.detail__label {
+  margin: 0 0 10px;
+  font-size: 13px; font-weight: 600;
+  color: var(--text-2);
+}
+.detail__aside .detail__label {
+  margin-bottom: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Label left, answer hard against the right edge, the same shape as an email
+   line with its date. A fixed label column left a dead strip to the right of
+   every short answer. */
+.fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.fact:last-child { border-bottom: 0; }
+.fact__key { flex: none; font-size: 13px; color: var(--text-2); }
+.fact__value { flex: 1; min-width: 0; font-size: 14px; text-align: right; }
+.fact__ago { white-space: nowrap; color: var(--text-2); }
+
+/* ===============================================================
+   Tags
+
+   Everything the board used to hang off a row. They are drawn in the
+   reading pane and, for the status alone, in the sheet's own column.
+   =============================================================== */
+.tags { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 18px; }
+/* An assist chip: 32px tall at the small corner, labelled in label large. */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 14px; font-weight: 500; letter-spacing: 0.006em;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--chip-text);
+  background: var(--chip);
+  border-radius: var(--radius);
+}
+.tag > svg { font-size: var(--icon-md); }
+
+/* A status, in the colour its section wears. */
+.tag--accepted { --tone: var(--green); }
+.tag--progress { --tone: var(--amber); }
+.tag--applied  { --tone: var(--blue); }
+.tag--rejected { --tone: var(--text-3); }
+.tag--accepted,
+.tag--progress,
+.tag--applied,
+.tag--rejected {
+  font-weight: 600;
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 16%, transparent);
+}
+
+/* The step in flight, and the ending a finished row reached. One tag, two
+   names, because no row has both to say: a step is only ever shown while the
+   application is running, and an ending only once it has stopped.
+
+   Both are drawn in plain type. The status tag beside them is already wearing
+   the colour, and a second chip in the same hue beside it reads as a second
+   status rather than as the detail under one. */
+.tag--stage,
+.tag--ending { font-weight: 600; color: var(--text); background: var(--surface-3); }
+/* Set by hand rather than read out of an email. */
+.tag--override {
+  font-weight: 600;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+.tag--override > svg { font-size: var(--icon-sm); }
+/* Nothing has arrived for a season. Quiet on purpose: it is the absence of
+   news rather than news, and it must not shout over a row that is live. */
+.tag--stale {
+  font-weight: 600;
+  color: var(--text-2);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+/* ===============================================================
+   Emails
+
+   One list, shown in both designs: beside the facts in the reading
+   pane, and in a drawer under a line of the sheet.
+   =============================================================== */
+.emails { border-top: 1px solid var(--line-soft); }
+.email a {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 0;
+  font-size: 14.5px;
+  color: var(--text);
+  text-decoration: none;
+  transition: color 0.14s;
+}
+/* Inset divider, aligned with the subject rather than with the icon. */
+.email a::after {
+  content: "";
+  position: absolute;
+  left: 34px; right: 0; bottom: 0;
+  height: 1px;
+  background: var(--line-soft);
+}
+/* No line under the last thing in the list, whichever level it is on. A
+   parent that still has children under it keeps its own, because there the
+   line is what separates it from them. */
+.emails > .email:last-child:not(:has(> .emails--nested)) > a::after,
+.emails > .email:last-child > .emails--nested > .email:last-child > a::after {
+  background: transparent;
+}
+.email a:hover { color: var(--primary); }
+.email .textline { flex: 1; gap: 12px; }
+.email a > svg { font-size: var(--icon); color: var(--text-3); }
+.email a:hover > svg { color: var(--primary); }
+.email__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.email__date {
+  margin-left: auto;
+  flex: none;
+  font-size: 12px; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.email__none { padding: 13px 0; font-size: 14px; color: var(--text-3); }
+
+/* A line shown under an earlier one: a report on a step already on the board,
+   rather than a step of its own. */
+.emails--nested { border-top: 0; }
+.email--child a { padding-left: 34px; font-size: 14px; color: var(--text-2); }
+.email--child a::after { left: 68px; }
+
+/* ===============================================================
+   Menus
+
+   One popover, drawn the same wherever it opens: the sort menu over the
+   list and the row menu in the reading pane and the sheet. Flat, with a
+   hairline instead of a shadow.
+   =============================================================== */
 .menu-wrap { position: relative; }
 
 .ctrl {
-  display: inline-flex; align-items: center; gap: 7px;
-  height: 42px; padding: 0 14px;
-  font: inherit; font-size: 14.5px; font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--control);
+  padding: 0 14px;
+  font: inherit; font-size: 14px; font-weight: 500;
+  line-height: 1;
   color: var(--text-2);
   background: none;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: var(--radius);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.ctrl > svg { font-size: 15px; }
+.ctrl > svg { font-size: var(--icon-md); }
 .ctrl:hover,
 .ctrl[aria-expanded="true"] { background: var(--hover); color: var(--text); }
+/* The tier a pane head uses, so the head stays 48px tall whatever is in it. */
+.ctrl--compact { height: var(--control-md); padding: 0 12px; }
 
-.ctrl__count {
-  display: grid; place-items: center;
-  min-width: 17px; height: 17px; padding: 0 5px;
-  font-size: 11px; font-weight: 700;
-  color: var(--surface); background: var(--text);
-  border-radius: 9px;
-}
-.ctrl__count[hidden] { display: none; }
-
-/* Dropdowns stay flat: a hairline border instead of a shadow.
-
-   The anatomy is the modal's at popover scale: a titled group, then a
-   bordered foot holding the one action that undoes the rest. Every hairline
-   runs the full width of the rows, so the menu measures out on one edge. */
 .menu {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
   z-index: 40;
   min-width: 200px;
-  padding: 8px;
+  /* 8px above and below the items, and nothing at the sides: a menu item runs
+     the full width of the menu, so its hover reads as one band rather than as
+     a floating pill inside a box. */
+  padding: 8px 0;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-menu);
   animation: pop 0.16s var(--ease) both;
 }
-.menu--wide { min-width: 212px; }
 
+/* The subheader over a group of items, which the spec sets in title small,
+   on the same 12px inset the items use. */
 .menu__label {
-  margin: 5px 8px 4px;
-  font-size: 12px; font-weight: 700; letter-spacing: -0.01em;
-  color: var(--text-3);
+  padding: 10px 12px 6px;
+  font-size: 14px; font-weight: 500; line-height: 20px; letter-spacing: 0.006em;
+  color: var(--text-2);
 }
-/* Drawn on a pseudo element so it can reach back out to the row edge, which
-   the label's own box is inset from. */
-.menu__label--sep { margin-top: 10px; }
+/* Drawn on a pseudo element so the line can run the full width of the menu,
+   which the label's own box is inset from. */
+.menu__label--sep { margin-top: 8px; }
 .menu__label--sep::before {
   content: "";
   display: block;
-  margin: 0 -8px 10px;
+  margin: 0 -12px 8px;
   border-top: 1px solid var(--line-soft);
 }
 
+/* The item the spec draws: 48px tall, 12px of space at each end, labelled in
+   label large, square, and filling the menu edge to edge. */
 .menu__item,
 .menu__clear {
-  display: flex; align-items: center; gap: 8px;
-  width: 100%; padding: 7px 8px;
-  font: inherit; font-size: 14px;
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; height: 48px; padding: 0 12px;
+  font: inherit; font-size: 14px; font-weight: 500; letter-spacing: 0.006em;
   text-align: left;
-  background: none; border: 0; border-radius: var(--radius);
+  background: none; border: 0; border-radius: 0;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
@@ -356,317 +1114,168 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .menu__clear:hover { background: var(--hover); }
 .menu__item:active,
 .menu__clear:active { background: var(--press); }
+/* The state layer runs to the menu edge, so the ring has to come inside it. */
+.menu__item:focus-visible,
+.menu__clear:focus-visible { outline-offset: -3px; border-radius: 0; }
 
-/* The tick keeps its space when hidden so labels stay aligned. */
-.menu__item > svg { font-size: 15px; color: var(--blue); opacity: 0; }
+/* A leading icon on an ordinary item, in the tone the spec gives one. */
+.menu__item > svg { font-size: var(--icon); color: var(--text-2); }
+/* The tick on a choosable item, which takes the accent and keeps its space
+   when hidden so the labels stay aligned. */
+.menu__item[aria-checked] > svg { color: var(--primary); opacity: 0; }
 .menu__item[aria-checked="true"] > svg { opacity: 1; }
-.menu__item[aria-checked="true"] { font-weight: 600; }
+.menu__item[aria-checked="true"] { color: var(--primary); }
 
-/* A row of statuses reads as a list of words rather than as a column of
+/* A run of statuses reads as a list of words rather than as a column of
    mostly empty tick boxes, so the tick goes to the far end and the labels
    start where the menu does. */
-.menu__item--status { gap: 12px; }
 .menu__item--status > svg { order: 1; margin-left: auto; }
 
-.menu__foot { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
-/* The ghost button's weight and colour, since that is what it is. */
-.menu__clear { font-size: 14px; font-weight: 500; color: var(--text-2); }
+/* One more item under a rule, rather than a footer: a menu has items in it,
+   and the thing that undoes the rest is another item. */
+.menu__foot { margin-top: 8px; border-top: 1px solid var(--line-soft); }
+.menu__clear { color: var(--text-2); }
+.menu__clear > svg { font-size: var(--icon); }
 .menu__clear:hover { color: var(--text); }
 
-/* ===============================================================
-   3. Status sections
-   =============================================================== */
-.board { margin-top: 52px; }
-.section + .section { margin-top: 44px; }
-.section[hidden] { display: none; }
-
-.section__head {
-  display: flex; align-items: center; gap: 10px;
-  width: 100%;
-  padding: 0 4px 14px;
-  font: inherit;
-  color: var(--text);
-  background: none; border: 0;
-  border-bottom: 1px solid var(--line);
-  text-align: left;
-  cursor: pointer;
-}
-.section__head:hover .section__title,
-.section__head:hover .section__fold { color: var(--text-2); }
-
-.section__icon { font-size: 17px; }
-.section--accepted .section__icon { color: var(--green); }
-.section--progress .section__icon { color: var(--amber); }
-.section--applied  .section__icon { color: var(--blue); }
-.section--rejected .section__icon { color: var(--red); }
-
-.section__title {
-  font-size: 17px; font-weight: 700; letter-spacing: -0.015em;
-  transition: color 0.15s;
-}
-.section__count {
-  display: inline-grid; place-items: center;
-  min-width: 21px; height: 21px; padding: 0 7px;
-  font-size: 11.5px; font-weight: 600; line-height: 1;
-  color: var(--chip-text);
-  background: var(--chip);
-  border-radius: 999px;
-}
-.section__fold {
-  margin-left: auto;
-  font-size: 16px; color: var(--text-3);
-  transition: transform 0.22s var(--ease), color 0.15s;
-}
-.section.collapsed .section__fold { transform: rotate(-90deg); }
-
-/* Rows collapse by animating grid rows from 1fr to 0fr. */
-.section__body {
-  display: grid;
-  grid-template-rows: 1fr;
-  transition: grid-template-rows 0.3s var(--ease);
-}
-.section.collapsed .section__body { grid-template-rows: 0fr; }
-.section__body > ul {
-  overflow: hidden;
-  margin: 0; padding: 6px 0 0;
-  list-style: none;
-}
-
-/* ===============================================================
-   4. Application rows
-   =============================================================== */
-.item + .item { border-top: 1px solid var(--line-soft); }
-
-.item__row {
-  display: grid;
-  grid-template-columns: 26px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 13px 10px 13px 4px;
-  font: inherit;
-  color: var(--text);
-  text-align: left;
-  background: none; border: 0;
-  border-radius: var(--radius);
-  cursor: pointer;
-}
-
-.item__chevron {
+/* --- The button that opens a row menu -----------------------
+   Always drawn where a row has a header of its own to sit in, and kept
+   out of the way where it would be one of many on screen at once. */
+.rowmenu { position: relative; flex: none; }
+.rowmenu__btn {
   display: grid; place-items: center;
-  font-size: 16px; color: var(--text-3);
-  transition: transform 0.22s var(--ease), color 0.15s;
-}
-.item.open .item__chevron { transform: rotate(90deg); color: var(--text-2); }
-
-.item__label {
-  min-width: 0;
-  font-size: 15.5px;
+  width: var(--control-md); height: var(--control-md);
+  font-size: var(--icon);
   color: var(--text-2);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  transition: color 0.15s;
+  background: none; border: 0; border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
 }
-.item__company {
-  font-weight: 700;
-  color: var(--text);
-  text-decoration: underline;
-  text-decoration-color: var(--line);
-  text-decoration-thickness: 1.5px;
-  text-underline-offset: 3px;
-  transition: text-decoration-color 0.15s;
-}
-/* Hover is carried by the text alone. A filled band was the loudest thing on a
-   page that is otherwise a list of words, and it landed on whichever row the
-   pointer was crossing on its way somewhere else. The company's underline comes
-   up out of the hairline it rests at, the role beside it darkens, and the
-   chevron darkens with it, which says which row is under the pointer without
-   redrawing a stripe across the page. The same rule holds inside the drawer.
-
-   The underline stops short of the text colour on purpose: matched to the word
-   above it, it reads as a rule drawn under the row rather than as the word
-   answering the pointer. */
-.item__row:hover .item__company { text-decoration-color: var(--text-3); }
-.item__row:hover .item__label { color: var(--text); }
-.item__row:hover .item__chevron { color: var(--text); }
-
-.tags { display: flex; align-items: center; gap: 6px; padding-left: 16px; }
-.tag {
-  padding: 3px 11px 4px;
-  font-size: 13px; font-weight: 500;
-  color: var(--chip-text);
-  background: var(--chip);
-  border-radius: 4px;
-  white-space: nowrap;
-}
-.tag--year { font-variant-numeric: tabular-nums; }
-
-/* A status, in the colour its section wears. The board says a status with a
-   heading and never needs one of these; the sheet gives the status a column,
-   and this is what fills it. */
-.tag--accepted { --tone: var(--green); }
-.tag--progress { --tone: var(--amber); }
-.tag--applied  { --tone: var(--blue); }
-.tag--rejected { --tone: var(--red); }
-.tag--accepted,
-.tag--progress,
-.tag--applied,
-.tag--rejected {
-  font-weight: 600;
-  color: var(--tone);
-  background: color-mix(in srgb, var(--tone) 13%, transparent);
-}
+.rowmenu__btn:hover { background: var(--hover); color: var(--text); }
+.rowmenu .menu { min-width: 200px; }
 
 /* ===============================================================
-   5. Emails inside an expanded row
-   =============================================================== */
-.item__drawer {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 0.28s var(--ease);
-}
-.item.open .item__drawer { grid-template-rows: 1fr; }
-.item__drawer > div { overflow: hidden; }
-
-/* The 32px on the right is the menu button (30px) plus the gap beside it, so
-   the list ends exactly where the row above it ends. Each line then adds the
-   same 10px the row gives its tags, which puts the dates on the tag edge. */
-.emails {
-  margin: 0 0 16px 16px;
-  padding: 4px 32px 4px 22px;
-  list-style: none;
-  border-left: 1.5px solid var(--line);
-}
-/* The row runs the full width of the drawer so every date lands in one column
-   at the right edge, instead of trailing whatever length the title happens to
-   be. The title takes up the slack and truncates, because the date is the part
-   that has to stay put for the column to mean anything. */
-.email a {
-  display: flex; align-items: center; gap: 10px;
-  margin-left: -8px;
-  padding: 6px 10px 6px 8px;
-  font-size: 14.5px;
-  color: var(--text-2);
-  text-decoration: none;
-  border-radius: 5px;
-  transition: color 0.14s;
-}
-.email a:hover { color: var(--text); }
-.email a > svg { font-size: 15px; color: var(--text-3); }
-.email a:hover > svg { color: var(--text-2); }
-.email__title {
-  min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  text-decoration: underline;
-  text-decoration-color: var(--line);
-  text-underline-offset: 3px;
-}
-.email a:hover .email__title { text-decoration-color: currentColor; }
-.email__date {
-  margin-left: auto;
-  flex: none;
-  font-size: 13px; color: var(--text-3);
-  font-variant-numeric: tabular-nums;
-}
-.email__none { padding: 4px 0 6px; font-size: 14px; color: var(--text-3); font-style: italic; }
-
-/* A line shown under an earlier one: a report on a step already on the board,
-   rather than a step of its own. */
-.emails--nested {
-  margin: 0 0 2px 0;
-  padding: 2px 0 2px 18px;
-  border-left-style: dashed;
-}
-.email--child a { color: var(--text-3); }
-
-/* ===============================================================
-   No results, footer
+   No results
    =============================================================== */
 .empty {
-  display: flex; align-items: center; justify-content: center; gap: 9px;
-  padding: 54px 0;
-  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 54px 20px;
+  font-size: 14px;
   color: var(--text-3);
+  text-align: center;
 }
-.empty[hidden] { display: none; }
-.empty > svg { font-size: 18px; }
+.empty > svg { font-size: var(--icon-md); }
 .empty b { color: var(--text-2); font-weight: 600; }
-
-.footer {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-top: 64px; padding-top: 20px;
-  border-top: 1px solid var(--line-soft);
-  font-size: 13px;
-  color: var(--text-3);
-}
-.linkish {
-  margin-right: -8px; padding: 4px 8px;
-  font: inherit; font-weight: 600;
-  color: var(--text-2);
-  background: none; border: 0; border-radius: 5px;
-  cursor: pointer;
-}
-.linkish:hover { background: var(--hover); color: var(--text); }
 
 /* ===============================================================
    Disconnected state
-   =============================================================== */
 
-/* A plain border draws short dashes, so the outline is an svg stroke.
-   Tune the look with stroke-dasharray below. */
+   Nothing else on the screen has anything to act on, so this stands
+   alone in the space the panes would have filled. A plain border draws
+   short dashes, so the outline is an svg stroke.
+   =============================================================== */
+/* The three pages that are nothing but one of these boxes: the render error,
+   the last resort error, and the 404. They carry no app bar and no panes, so
+   the box centres itself on the screen instead of sitting in a grid row. */
+.blank-page {
+  display: grid;
+  place-items: center;
+  height: 100dvh;
+  padding: 24px;
+  overflow: auto;
+}
+
 .blank {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  margin-top: 52px;
+  align-self: center;
+  justify-self: center;
+  width: min(560px, calc(100vw - 48px));
+  margin-bottom: 8vh;
   padding: 56px 24px;
   text-align: center;
   border-radius: 10px;
-  background-color: var(--surface-2);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect width='100%25' height='100%25' rx='10' fill='none' stroke='%23d7d4cf' stroke-width='3' stroke-dasharray='11 7' /%3E%3C/svg%3E");
+  background-color: var(--surface);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect width='100%25' height='100%25' rx='10' fill='none' stroke='%23d4d4d4' stroke-width='3' stroke-dasharray='11 7' /%3E%3C/svg%3E");
 }
 [data-theme="dark"] .blank {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect width='100%25' height='100%25' rx='10' fill='none' stroke='%233d3d3a' stroke-width='3' stroke-dasharray='11 7' /%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect width='100%25' height='100%25' rx='10' fill='none' stroke='%23434343' stroke-width='3' stroke-dasharray='11 7' /%3E%3C/svg%3E");
 }
-.blank[hidden] { display: none; }
 
 .blank__icon {
   display: grid; place-items: center;
   width: 46px; height: 46px;
   margin-bottom: 18px;
-  font-size: 20px;
+  font-size: var(--icon);
   color: var(--text-3);
   background: var(--chip);
   border-radius: 50%;
 }
-.blank__title {
-  margin: 0;
-  font-size: 17px; font-weight: 700; letter-spacing: -0.015em;
-}
-.blank__text {
-  margin: 6px 0 22px;
-  font-size: 14.5px;
+.blank__title { font-size: 17px; font-weight: 700; letter-spacing: -0.015em; }
+.blank__text { margin: 6px 0 22px; font-size: 14.5px; color: var(--text-3); }
+.blank__actions { display: flex; gap: 8px; }
+.blank__note {
+  max-width: 46ch;
+  margin: 18px 0 0;
+  font-size: 12.5px;
   color: var(--text-3);
 }
 
-/* Nothing else on the page has anything to act on, so the blank
-   state stands alone on the screen. */
-.page.is-disconnected .masthead,
-.page.is-disconnected .toolbar,
-.page.is-disconnected .board,
-.page.is-disconnected .footer { display: none; }
+/* ===============================================================
+   Buttons
+   =============================================================== */
+/* The Material 3 common button: 40px tall, fully rounded, and labelled in the
+   label large scale, which is 14px at medium weight. The three fills below
+   change nothing but the colour, so a row of them sits on one baseline.
 
-.page.is-disconnected {
-  display: grid;
-  align-content: center;
-  min-height: 100vh;
+   `.btn` on its own is the outlined one, which is what a second action beside
+   a filled one is drawn as. */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: var(--control); padding: 0 24px;
+  font: inherit; font-size: 14px; font-weight: 500; line-height: 20px;
+  letter-spacing: 0.006em;
+  white-space: nowrap;
+  color: var(--primary);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
 }
+/* Every state is an 8% wash of the label's own colour, which is how the spec
+   draws a state layer rather than by darkening the whole button. */
+.btn:hover:not(:disabled) { background: color-mix(in srgb, currentColor 8%, transparent); }
+.btn:active:not(:disabled) { background: color-mix(in srgb, currentColor 12%, transparent); }
+.btn:disabled { opacity: 0.38; cursor: not-allowed; }
+.btn > svg { font-size: var(--icon-md); }
+/* An icon buys back some of the leading space, as the spec has it. */
+.btn > svg:first-child { margin-left: -8px; }
 
-/* The bottom margin lifts the box above the true centre. */
-.page.is-disconnected .blank { margin-top: 0; margin-bottom: 12vh; }
+.btn--primary { color: #fff; background: var(--primary); border-color: transparent; }
+[data-theme="dark"] .btn--primary { color: var(--on-primary-container); }
+.btn--primary:hover:not(:disabled),
+.btn--primary:active:not(:disabled) { background: color-mix(in srgb, #000 10%, var(--primary)); }
+
+/* The text button, which is what the spec gives the action beside the one a
+   dialog is really asking about. */
+.btn--text { border-color: transparent; padding-inline: 12px; }
+
+/* Reserved for the one action that deletes something. */
+.btn--danger { color: #fff; background: var(--red); border-color: transparent; }
+[data-theme="dark"] .btn--danger { color: #241615; }
+.btn--danger:hover:not(:disabled),
+.btn--danger:active:not(:disabled) { background: color-mix(in srgb, #000 10%, var(--red)); }
+
+.btn[aria-disabled="true"] { opacity: 0.38; cursor: not-allowed; }
 
 /* ===============================================================
-   Settings modal
+   Dialogs
    =============================================================== */
 .modal {
   position: fixed;
@@ -676,34 +1285,44 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   place-items: center;
   padding: 24px;
 }
-.modal[hidden] { display: none; }
 
-/* Just enough blur to settle the page behind the dialog. Any more and the
-   board reads as broken rather than as set aside. */
+/* The scrim the spec gives a dialog: one flat wash at 32%, and no blur. The
+   blur that used to sit here softened the board into something that read as
+   broken rather than as set aside. */
 .modal__scrim {
   position: absolute;
   inset: 0;
-  background: rgba(28, 27, 25, 0.32);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  background: rgba(24, 24, 24, 0.32);
   animation: fadeIn 0.18s var(--ease) both;
 }
-[data-theme="dark"] .modal__scrim { background: rgba(0, 0, 0, 0.58); }
+[data-theme="dark"] .modal__scrim { background: rgba(0, 0, 0, 0.6); }
 
-/* Anatomy follows the usual dialog shape: a fixed title row, a scrolling
-   body, and a fixed action row, so the buttons never scroll out of reach on a
-   short window. Spacing runs on an 8px scale: 8 label to control, 24 between
-   groups, 24 or 32 around the panel. */
+/* A Material 3 basic dialog: the extra large corner, the spec's own 24px
+   gutter, and the headline in the headline small scale.
+
+   Where it parts from the spec is elevation. Material would carry a dialog on
+   a level 3 shadow; this screen has never drawn one. A menu, the app bar and
+   the panes are all told apart by tone and a hairline, and a dialog is the
+   same kind of thing one step further up: the surface every other plane steps
+   down from, with one hairline around it.
+
+   The one number off the spec is the height. It caps a dialog at 560px, which
+   is a phone sized answer, and Settings fits on one screen on a monitor. A
+   form that has to be scrolled to be read is a worse dialog than a tall one.
+
+   Anatomy is the usual one: a fixed title row, a scrolling body and a fixed
+   action row, so the buttons never scroll out of reach on a short window. */
 .modal__panel {
   position: relative;
   display: flex;
   flex-direction: column;
-  width: clamp(320px, 92vw, 560px);
+  width: clamp(280px, 92vw, 560px);
+  min-height: 140px;
   max-height: min(720px, calc(100dvh - 48px));
   overflow: hidden;                    /* the body scrolls, not the panel */
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-dialog);
   animation: modalIn 0.22s var(--ease) both;
 }
 
@@ -712,14 +1331,10 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   align-items: center;
   gap: 16px;
   flex: none;
-  padding: 20px 24px 16px;
-  border-bottom: 1px solid var(--line-soft);
+  padding: 24px 24px 0;
 }
-.modal__title {
-  margin: 0;
-  font-size: 20px; font-weight: 700; letter-spacing: -0.022em;
-}
-.modal__close { margin-left: auto; margin-right: -6px; }
+.modal__title { font-size: 24px; font-weight: 400; line-height: 32px; letter-spacing: 0; }
+.modal__close { margin-left: auto; margin-right: -8px; }
 
 .modal__body {
   flex: 1 1 auto;
@@ -731,45 +1346,50 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .modal__foot {
   display: flex; align-items: center; justify-content: flex-end; gap: 8px;
   flex: none;
-  padding: 16px 24px 20px;
-  border-top: 1px solid var(--line-soft);
+  padding: 16px 24px 24px;
 }
 /* Says why Save is not available yet, rather than leaving a dead button. */
-.modal__reason {
-  margin: 0 auto 0 0;
-  font-size: 13px;
-  color: var(--text-3);
+.modal__reason { margin: 0 auto 0 0; font-size: 13px; color: var(--text-3); }
+
+/* Material 3 draws these two lines only while there is something out of sight
+   past them, so a dialog whose body fits shows neither. `Dialog` measures its
+   own body and says which of the two is true. */
+.modal__panel.is-cut-top .modal__head {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.modal__panel.is-cut-bottom .modal__foot {
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
 }
 
-@media (min-width: 600px) {
-  .modal__head { padding: 22px 32px 16px; }
-  .modal__body { padding: 24px 32px; }
-  .modal__foot { padding: 16px 32px 22px; }
-}
+/* Narrower than Settings. These hold a paragraph, not a form, and a wide box
+   would stretch the text past a comfortable reading measure. */
+.modal__panel--sm { width: clamp(280px, 92vw, 440px); }
 
-/* One rhythm for every group: the label, an optional line explaining it, then
-   the control. Related things sit close, unrelated things are separated by a
-   hairline, which is what makes the three groups readable at a glance. */
+/* The whole of a confirming dialog: one sentence, at the size of body text
+   rather than of a note, because it is the thing being read and not a remark
+   beside something else. */
+.confirm__lead { font-size: 14.5px; line-height: 1.5; color: var(--text-2); }
+
+/* ===============================================================
+   Settings
+
+   One rhythm for every group: the label, an optional line explaining it,
+   then the control. Related things sit close, unrelated things are
+   separated by a hairline, which is what makes the groups readable at a
+   glance.
+   =============================================================== */
 .group + .group {
   margin-top: 24px;
   padding-top: 24px;
   border-top: 1px solid var(--line-soft);
 }
-.group__head {
-  display: flex; align-items: center; gap: 10px;
-  margin-bottom: 8px;
-}
-.group__note {
-  margin: 0 0 12px;
-  font-size: 13px; line-height: 1.5;
-  color: var(--text-3);
-}
+.group__head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.group__note { margin: 0 0 12px; font-size: 13px; line-height: 1.5; color: var(--text-3); }
 .group__label { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
-.group__hint {
-  margin: 8px 0 0;
-  font-size: 13px; line-height: 1.5;
-  color: var(--text-3);
-}
+.group__hint { margin: 8px 0 0; font-size: 13px; line-height: 1.5; color: var(--text-3); }
+
 /* Before the label, not after: the eye scans the left edge, so a marker that
    sits there is read without hunting for it. */
 .req {
@@ -778,17 +1398,47 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   text-decoration: none; cursor: help;
 }
 
+/* The outlined text field the spec gives a form: no fill of its own, one
+   hairline of outline, and a second laid inside it on focus, which is how a
+   1px border reads as the 2px the spec asks for without the box moving.
+
+   The search at the top of the screen is a pill instead, because it belongs
+   to the app bar rather than to a form, and the two are not the same control. */
+.field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--control);
+  padding: 0 12px 0 14px;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+.field:focus-within {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+.field__icon { font-size: var(--icon-md); color: var(--text-3); }
+.field input {
+  flex: 1; min-width: 0;
+  font: inherit; font-size: 14.5px;
+  color: var(--text);
+  background: none; border: 0; outline: 0;
+}
+.field input::placeholder { color: var(--text-3); }
+
 /* Gmail account */
-.account { display: flex; align-items: center; gap: 10px; min-height: 36px; }
+.account { display: flex; align-items: center; gap: 10px; min-height: var(--control); }
 .account__avatar {
   display: grid; place-items: center;
-  width: 30px; height: 30px;
+  width: var(--control-sm); height: var(--control-sm);
   font-size: 12.5px; font-weight: 700;
   color: var(--text-2);
   background: var(--chip);
   border-radius: 50%;
 }
-.account__avatar > svg { font-size: 14px; }
+.account__avatar > svg { font-size: var(--icon-sm); }
 .account__mail {
   margin-right: auto;
   min-width: 0;
@@ -800,10 +1450,10 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 
 /* API key */
 .key-row { display: flex; gap: 8px; }
-/* The eye sits in a 30px button around a 16px glyph, so it carries 7px of
+/* The eye sits in a 32px button around a 16px glyph, so it carries its own
    centring inside itself. The padding makes up the rest of the 14px the key
    icon gets on the left, so both glyphs sit the same distance from the edge. */
-.field--key { flex: 1; padding-right: 7px; }
+.field--key { flex: 1; padding-right: 8px; }
 .field--key input {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 13.5px;
@@ -822,15 +1472,11 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .field--key.is-valid,
 .field--key.is-valid:focus-within { border-color: var(--green); }
 .field--key.is-valid .field__icon { color: var(--green); }
-.field--key.is-valid:focus-within {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--green) 34%, transparent);
-}
+.field--key.is-valid:focus-within { box-shadow: inset 0 0 0 1px var(--green); }
 .field--key.is-invalid,
 .field--key.is-invalid:focus-within { border-color: var(--red); }
 .field--key.is-invalid .field__icon { color: var(--red); }
-.field--key.is-invalid:focus-within {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--red) 32%, transparent);
-}
+.field--key.is-invalid:focus-within { box-shadow: inset 0 0 0 1px var(--red); }
 .field--key.is-checking .field__icon { animation: spin 0.9s linear infinite; }
 
 /* Only a failure needs words. The other states show in the field. */
@@ -859,9 +1505,7 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   color: var(--line);
 }
 .key-meta__provider,
-.key-meta__model {
-  animation: fade 0.25s var(--ease) both;
-}
+.key-meta__model { animation: fade 0.25s var(--ease) both; }
 /* The model is an identifier rather than a word, and mono says so at a glance.
    The half pixel off the size is an optical match: mono runs wider, so 13px
    would sit heavier than the plain text either side of it. */
@@ -876,276 +1520,45 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .date-row__label { font-size: 14px; font-weight: 500; color: var(--text-2); }
 .date-row__end { font-size: 14px; color: var(--text-2); }
 .date-input {
-  height: 36px; padding: 0 10px;
+  height: var(--control); padding: 0 12px;
   font: inherit; font-size: 14px;
   color: var(--text);
-  background: var(--surface-2);
+  background: none;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
 }
 .date-input:hover { background: var(--hover); }
+.date-input:focus-visible {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
 .date-input::-webkit-calendar-picker-indicator { opacity: 0.45; cursor: pointer; }
 .date-input::-webkit-calendar-picker-indicator:hover { opacity: 0.8; }
-
-/* Buttons */
-.btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  height: 42px; padding: 0 16px;
-  font: inherit; font-size: 14px; font-weight: 600;
-  white-space: nowrap;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
-}
-.btn:hover:not(:disabled) { background: var(--hover); }
-.btn:disabled { opacity: 0.42; cursor: not-allowed; }
-.btn > svg { font-size: 15px; }
-
-.btn--primary {
-  color: var(--surface);
-  background: var(--text);
-  border-color: var(--text);
-}
-.btn--primary:hover:not(:disabled) { opacity: 0.86; }
-
-/* A shorter button for use inside a row of content rather than a footer. */
-/* The second tier: 36px tall with 14px text, shared with .date-input and the
-   account row. 42px stays for the controls a row is actually built around. */
-.btn--compact { height: 36px; padding: 0 12px; font-size: 14px; }
-.btn[aria-disabled="true"] { opacity: 0.42; cursor: not-allowed; }
-
-.btn--ghost {
-  color: var(--text-2);
-  font-weight: 500;
-  background: none;
-  border-color: transparent;
-}
-.btn--ghost:hover { background: var(--hover); color: var(--text); }
-
-/* Reserved for the one action that deletes something. */
-.btn--danger {
-  color: #fff;
-  background: var(--red);
-  border-color: var(--red);
-}
-[data-theme="dark"] .btn--danger { color: #241615; }
-.btn--danger:hover:not(:disabled) { opacity: 0.86; background: var(--red); }
-
-/* ===============================================================
-   Short dialogs
-   =============================================================== */
-/* Narrower than Settings. These hold a paragraph, not a form, and a wide box
-   would stretch the text past a comfortable reading measure. */
-.modal__panel--sm { width: clamp(320px, 92vw, 440px); }
-
-/* The whole of a confirming dialog: one sentence, at the size of body text
-   rather than of a note, because it is the thing being read and not a remark
-   beside something else. */
-.confirm__lead { margin: 0; font-size: 14.5px; line-height: 1.5; color: var(--text-2); }
-
-/* ===============================================================
-   Small screens
-   =============================================================== */
-@media (max-width: 620px) {
-  .page { padding: 28px 18px 22px; }
-  .toolbar__controls { width: 100%; justify-content: flex-end; }
-  .item__row { grid-template-columns: 20px minmax(0, 1fr); row-gap: 4px; }
-  .tags { grid-column: 2; justify-content: flex-start; padding-left: 0; }
-  .item__label { white-space: normal; }
-  /* The tags drop to their own line and go left here, so there is no tag edge
-     left to line the dates up with, and the inset is only lost width. */
-  .emails { padding-right: 0; }
-}
-
-/* On a phone the dialog becomes the whole screen, which is the usual answer
-   once a panel would fill it anyway. The fixed title and action rows matter
-   most here, where the body is the part that scrolls. */
-@media (max-width: 520px) {
-  .modal { padding: 0; place-items: stretch; }
-  .modal__panel {
-    width: 100%;
-    max-height: 100dvh;
-    height: 100dvh;
-    border: 0;
-    border-radius: 0;
-  }
-  .modal__head { padding: 16px 20px 14px; }
-  .modal__body { padding: 20px; }
-  .modal__foot { padding: 14px 20px 16px; flex-wrap: wrap; }
-  .modal__reason { width: 100%; margin: 0 0 4px; }
-  .modal__foot .btn { flex: 1; }
-  .key-row { flex-wrap: wrap; }
-  .key-row .btn { width: 100%; }
-}
-
-/* ===============================================================
-   Additions the prototype did not have
-   =============================================================== */
-
-/* --- Row menu ------------------------------------------
-   The row itself is a button, so the menu cannot sit inside it. The two
-   share a flex line instead. */
-.item__head { display: flex; align-items: center; gap: 2px; }
-.item__head > .item__row { flex: 1; min-width: 0; }
-
-.item__menu-wrap { position: relative; flex: none; }
-.item__menu-btn {
-  display: grid; place-items: center;
-  width: 30px; height: 30px;
-  font-size: 16px;
-  color: var(--text-3);
-  background: none; border: 0; border-radius: var(--radius);
-  cursor: pointer;
-  opacity: 0;
-  transition: background 0.15s, color 0.15s, opacity 0.15s;
-}
-.item:hover .item__menu-btn,
-.item__menu-btn:focus-visible,
-.item__menu-btn[aria-expanded="true"] { opacity: 1; }
-.item__menu-btn:hover { background: var(--hover); color: var(--text); }
-
-/* Row menus open under the button, at the right edge of the row. */
-.item__menu-wrap .menu { min-width: 194px; }
-
-/* --- Stage badge and override mark ----------------------- */
-.tag--stage {
-  color: var(--amber);
-  background: color-mix(in srgb, var(--amber) 13%, transparent);
-  font-weight: 600;
-}
-/* Which ending a finished row reached. Drawn in the section's own colour, so
-   an offer and a rejection are told apart by the word rather than by a hue the
-   row is already wearing. */
-.tag--ending {
-  color: var(--text-2);
-  background: var(--hover);
-  font-weight: 600;
-}
-.tag--override {
-  display: inline-flex; align-items: center; gap: 5px;
-  color: var(--blue);
-  background: color-mix(in srgb, var(--blue) 13%, transparent);
-  font-weight: 600;
-}
-.tag--override > svg { font-size: 12px; }
-/* Nothing has arrived for a season. Quiet on purpose: it is the absence of
-   news rather than news, and it must not shout over a row that is live. */
-.tag--stale {
-  color: var(--muted);
-  background: transparent;
-  border: 1px dashed color-mix(in srgb, var(--muted) 45%, transparent);
-  font-weight: 600;
-}
-
-/* --- Sync problem banner ---------------------------------
-   A banner, not a screen: a failed sync does not invalidate anything
-   already saved, so the board stays visible and usable. */
-.banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-top: 28px;
-  padding: 13px 14px;
-  font-size: 14px;
-  color: var(--text);
-  background: color-mix(in srgb, var(--red) 8%, var(--surface-2));
-  border: 1px solid color-mix(in srgb, var(--red) 30%, transparent);
-  border-radius: 8px;
-  animation: fade 0.3s var(--ease) both;
-}
-.banner__icon { font-size: 17px; color: var(--red); margin-top: 1px; }
-.banner__body { flex: 1; min-width: 0; }
-.banner__title { font-weight: 700; letter-spacing: -0.01em; }
-.banner__text { margin: 3px 0 0; font-size: 13.5px; color: var(--text-2); }
-
-/* --- Sync progress -----------------------------------------
-   The same readout for every sync. The first backfill fills it over several
-   minutes; a refresh crosses it in seconds. The button spins alongside it. */
-.progress { margin-top: 28px; }
-.progress__row {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
-  font-size: 13.5px; color: var(--text-2);
-}
-.progress__count { color: var(--text-3); font-variant-numeric: tabular-nums; }
-.progress__track {
-  margin-top: 8px;
-  height: 4px;
-  background: var(--chip);
-  border-radius: 999px;
-  overflow: hidden;
-}
-.progress__bar {
-  height: 100%;
-  background: var(--blue);
-  border-radius: 999px;
-  transition: width 0.4s var(--ease);
-}
-
-/* --- The provider the key belongs to ----------------------
-   There is no provider selector. Once a key passes its check, the line
-   below names which service answered and which model it will use. */
-/* --- Footer additions ---------------------------------- */
-.footer__left { display: flex; align-items: center; gap: 14px; }
-.footer__hidden {
-  padding: 2px 0;
-  font: inherit; font-size: 13px; font-weight: 600;
-  color: var(--text-2);
-  background: none; border: 0;
-  border-bottom: 1px solid var(--line);
-  cursor: pointer;
-}
-.footer__hidden:hover { color: var(--text); border-bottom-color: var(--text-3); }
-
-/* Hidden rows are shown in place, dimmed, while the list is revealed. */
-.item--hidden .item__label { opacity: 0.55; }
-
-/* --- Sign in from the blank state ------------------------------ */
-.blank__actions { display: flex; gap: 8px; }
-.blank__note {
-  margin: 18px 0 0;
-  font-size: 12.5px;
-  color: var(--text-3);
-  max-width: 46ch;
-}
-
-/* The section body clips its rows so the fold can animate, which would also
-   clip an open row menu. While one is open, let that section overflow: it is
-   only ever open while the section is still. */
-.section:has(.item__menu-btn[aria-expanded="true"]) .section__body > ul { overflow: visible; }
 
 /* ===============================================================
    Sheet design
 
-   The other of the two designs the button in the masthead swaps between.
-   Everything below is scoped under .sheet, so the board is untouched by it.
+   The other of the two designs the button in the app bar swaps between.
+   Everything below is scoped under .sheet, so the split view is
+   untouched by it.
 
-   Drawn in the same hand as the board: hairlines rather than gridlines, no
-   box around the whole thing, and the board's own tag for a status. A grid
-   reads as a grid because its columns line up, not because it is fenced in,
-   and a fence would make a second window inside the page to scroll.
+   Drawn in the same hand: hairlines rather than gridlines, no box around
+   the whole thing, and the reading pane's own tag for a status. A grid
+   reads as a grid because its columns line up, not because it is fenced
+   in, and the pane around it is already the fence.
    =============================================================== */
 .sheet {
-  margin-top: 52px;
-  animation: fade 0.45s var(--ease) both;
+  padding: 0 20px 24px;
+  animation: fade 0.35s var(--ease) both;
 }
 
-/* Sideways only, and only on a window too narrow to hold the columns. Nothing
-   here sets a height, so this never becomes a pane with a scrollbar of its
-   own: the page scrolls down the way every other page does. */
-.sheet__scroll { overflow-x: auto; }
-
-/* A row menu opens downward out of the last column, and the scroller would
-   cut it off below the last row. The board answers this by switching its
-   clipping off, which is not available here: this box is what keeps a wide
-   grid from dragging the page sideways. So the box gets room to open into,
-   and the sheet takes the same amount back off its bottom margin, leaving
-   everything below the grid where it was. 280px clears the tallest menu. */
-.sheet:has(.item__menu-btn[aria-expanded="true"]) { margin-bottom: -280px; }
-.sheet:has(.item__menu-btn[aria-expanded="true"]) .sheet__scroll { padding-bottom: 280px; }
+/* A row menu opens downward out of the last column, and the pane would cut it
+   off below the last row. So the pane gets room to open into while one is
+   open. 280px clears the tallest menu. */
+.sheet:has(.rowmenu__btn[aria-expanded="true"]) { padding-bottom: 280px; }
 
 .sheet__grid {
   /* The gap between one column and the next, named once because the headings
@@ -1165,19 +1578,23 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 }
 
 /* --- Headings ---------------------------------------------
-   The hairline the board draws under a section title, over labels at the
-   weight and colour its menus give one.
-
    Every heading sits on its column's left edge, dates and counts included, so
    the eye reads down one edge rather than hunting for the start of each
-   column. The figures still line up, because they are tabular. */
+   column. The figures still line up, because they are tabular.
+
+   They stick to the top of the pane as it scrolls, the way a section heading
+   does in the list. */
 .sheet__grid th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   padding: 0;
   font-size: 12.5px;
   font-weight: 700;
   letter-spacing: -0.005em;
   color: var(--text-3);
   text-align: left;
+  background: var(--surface);
   border-bottom: 1px solid var(--line);
 }
 
@@ -1185,7 +1602,7 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .sheet__label {
   display: block;
   width: 100%;
-  padding: 0 var(--gap) 13px 0;
+  padding: 14px var(--gap) 13px 0;
   font: inherit;
   color: inherit;
   text-align: left;
@@ -1199,9 +1616,9 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .sheet__arrow {
   display: inline-block;
   margin-left: 5px;
-  font-size: 12px;
-  vertical-align: -1px;
-  color: var(--blue);
+  font-size: var(--icon-sm);
+  vertical-align: -3px;
+  color: var(--primary);
 }
 
 /* --- The numbered gutter ----------------------------------
@@ -1235,42 +1652,32 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .sheet__row > .sheet__gutter { padding-right: 18px; }
 .sheet__row > .sheet__menu { padding-right: 0; }
 
-/* The board's rows answer the pointer with their text alone, because a filled
-   band would be the loudest thing on a page of words. A grid is not that page:
-   ten columns is further than the eye carries a line unaided, so the row is
-   banded as well, in the same faint wash every other hover uses. */
+/* A line in the list answers the pointer with a faint wash. Ten columns is
+   further than the eye carries a line unaided, so a line here is banded the
+   same way, and the whole row is what changes rather than the company alone. */
 .sheet__row:hover,
 .sheet__row:focus-visible { color: var(--text); }
 .sheet__row:hover > td,
 .sheet__row:focus-visible > td { background: var(--hover); }
-.sheet__row:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+.sheet__row:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 
 /* An opened row and the drawer under it are one thing, so no line is drawn
    between them. The drawer closes the pair off instead. */
 .sheet__row.is-open > td { border-bottom-color: transparent; }
 
-.sheet__row.is-hidden > td { opacity: 0.55; }
+.sheet__row.is-hidden > td { opacity: 0.5; }
 
-/* Company is the column the eye lands in, and it is given exactly what the
-   board gives it: the weight, and an underline that comes up out of the
-   hairline it rests at when the row is under the pointer. */
+/* Company is the column the eye lands in, and it is given exactly what a line
+   in the list gives it: the weight, and the full text colour. */
 .sheet__company-cell { color: var(--text); }
-.sheet__company {
-  font-weight: 700;
-  text-decoration: underline;
-  text-decoration-color: var(--line);
-  text-decoration-thickness: 1.5px;
-  text-underline-offset: 3px;
-  transition: text-decoration-color 0.15s;
-}
-.sheet__row:hover .sheet__company { text-decoration-color: var(--text-3); }
+.sheet__company { font-weight: 600; }
 
 .sheet__chevron {
   display: inline-grid;
   place-items: center;
   width: 18px;
   margin-right: 2px;
-  font-size: 15px;
+  font-size: var(--icon-md);
   color: var(--text-3);
   vertical-align: -3px;
   transition: transform 0.22s var(--ease), color 0.15s;
@@ -1301,47 +1708,108 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   text-underline-offset: 4px;
 }
 
-/* Set by hand rather than read out of an email. The same tick the board puts
-   on its override tag, with no room here for the label beside it. */
+/* Set by hand rather than read out of an email. The same tick the reading pane
+   puts on its override tag, with no room here for the label beside it. */
 .sheet__override {
   display: inline-block;
   margin-left: 7px;
-  font-size: 13px;
-  vertical-align: -2px;
-  color: var(--blue);
+  font-size: var(--icon-sm);
+  vertical-align: -3px;
+  color: var(--primary);
 }
 
-/* --- The menu at the end of a row -------------------------- */
+/* --- The menu at the end of a row --------------------------
+   One of these on every line at once, so it stays out of the way until the
+   line it belongs to is the one being read. */
 .sheet__menu { width: 1%; padding-right: 0; }
-.sheet__menu .item__menu-wrap { display: flex; justify-content: flex-end; }
-.sheet__row:hover .item__menu-btn,
-.sheet__menu .item__menu-btn:focus-visible,
-.sheet__menu .item__menu-btn[aria-expanded="true"] { opacity: 1; }
+.sheet__menu .rowmenu { display: flex; justify-content: flex-end; }
+.sheet__menu .rowmenu__btn {
+  width: var(--control-sm); height: var(--control-sm);
+  font-size: var(--icon-sm);
+  opacity: 0;
+}
+.sheet__row:hover .rowmenu__btn,
+.sheet__menu .rowmenu__btn:focus-visible,
+.sheet__menu .rowmenu__btn[aria-expanded="true"] { opacity: 1; }
 
 /* --- The drawer under an opened row -------------------------
    One cell spanning the grid, which is how a sheet shows a group opened out
-   under its line. The list inside is the board list, so an email reads the
-   same in both designs. */
-.sheet__drawer { padding: 2px var(--gap) 14px 0; }
-.sheet__drawer .emails { margin: 0; padding: 2px 0 2px 22px; }
+   under its line. The list inside is the reading pane's list, so an email
+   reads the same in both designs. */
+.sheet__drawer { padding: 0 var(--gap) 10px 0; }
+.sheet__drawer .emails { border-top: 0; }
+.sheet__drawer .email a { padding: 8px 0; font-size: 14px; }
 .sheet__drawer-row > td { border-bottom: 1px solid var(--line-soft); }
 
-/* Read out but not drawn: the two headings a grid needs and a sighted reader
-   already has from the shape of it. */
-.sr-only {
-  position: absolute;
-  width: 1px; height: 1px;
-  margin: -1px; padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
+/* ===============================================================
+   Small screens
+
+   Below 900px there is no room for three columns. The rail lies down
+   above the list and scrolls sideways, and the reading pane slides in
+   over the list rather than beside it.
+   =============================================================== */
+@media (max-width: 899px) {
+  .panes { padding-inline: 0; }
+
+  .pane { border-radius: 0; }
+
+  .rail {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-bottom: 1px solid var(--line);
+  }
+  .rail__label { padding: 0 4px 0 8px; }
+  .rail__none { padding: 0 8px; }
+  .filter,
+  .rail__clear,
+  .rail__hidden { width: auto; flex: none; gap: 8px; height: var(--control-md); padding: 0 12px; }
+  .rail__clear { margin-top: 0; }
+  /* Two lines of prose the heading over the list already answers. */
+  .rail__note { display: none; }
+
+  .pane--detail {
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    transform: translateX(100%);
+    transition: transform 0.25s var(--ease);
+  }
+  .shell.is-reading .pane--detail { transform: none; }
+  .detail__back { display: inline-flex; }
 }
 
-/* On a narrow screen the grid keeps its columns and scrolls sideways, rather
-   than folding into something that is no longer a sheet. */
 @media (max-width: 620px) {
-  .sheet { margin-top: 28px; }
+  .pane__head { padding: 11px 16px; }
+  .list { padding-bottom: 12px; }
+  .section__head { padding: 18px 16px 8px; }
+  .row { padding: 12px 16px; }
+  .detail__inner { padding: 18px 18px 72px; }
+  .sheet { padding: 0 16px 20px; }
   .sheet__grid { --gap: 22px; font-size: 13.5px; }
   .sheet__row > td { padding-top: 11px; padding-bottom: 11px; }
+}
+
+/* On a phone the dialog becomes the whole screen, which is the usual answer
+   once a panel would fill it anyway. The fixed title and action rows matter
+   most here, where the body is the part that scrolls. */
+@media (max-width: 520px) {
+  .modal { padding: 0; place-items: stretch; }
+  .modal__panel {
+    width: 100%;
+    max-height: 100dvh;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+  .modal__head { padding: 16px 20px 14px; }
+  .modal__body { padding: 20px; }
+  .modal__foot { padding: 14px 20px 16px; flex-wrap: wrap; }
+  .modal__reason { width: 100%; margin: 0 0 4px; }
+  .modal__foot .btn { flex: 1; }
+  .key-row { flex-wrap: wrap; }
+  .key-row .btn { width: 100%; }
 }
