@@ -1,0 +1,1120 @@
+<title>Split View</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..0&display=swap">
+<style>
+/* ---------------------------------------------------------------
+   Split view, cut back to what the tracker actually does.
+
+   Everything on this screen exists in the app today:
+
+     search over companies, roles and emails, with / and Escape
+     five sorts, the ones in view.ts
+     term and year filters, with a clear
+     four status sections, collapsible, with counts
+     a row's tags: the ending, the step, Quiet, the term, the year
+     the drawer: one line per email, one level of nesting, each a
+       link into Gmail
+     the row menu: hide, set a status by hand, reset
+     refresh, rescan all, settings
+
+   What was taken out, because the app has none of it: a waiting on
+   you queue, the line explaining why emails were grouped, sender
+   addresses and message bodies, the ATS name, per message icons,
+   a theme switch, j and k navigation, and views for quiet, hidden
+   or unanswered rows.
+
+   The bones stay Material: surface containers stepping up in tone,
+   one 8% state layer for hover, a shape scale, Material Symbols.
+   The voice stays the board's: Figtree, warm neutrals, indigo.
+   --------------------------------------------------------------- */
+:root{
+  /* Cool neutrals with a blue cast, the family a Google surface is drawn in,
+     shifted a few degrees off their exact values. Three planes, a clear step
+     apart: the ground the panes sit on, the list, and the sheet you read on. */
+  --surface:#FFFFFF;
+  --surface-dim:#E6EDF6;
+  --surface-container:#F4F7FC;
+  --surface-container-high:#DEE7F3;
+  --on-surface:#1A1D22;
+  --on-surface-variant:#454C57;
+  --outline:#737C89;
+  --outline-variant:#C4CEDC;
+
+  --primary:#1657C8;
+  --on-primary:#FFFFFF;
+  --primary-container:#D6E2FB;
+  --on-primary-container:#0B2A6B;
+  /* The softer container the spec gives a selected list or filter item. */
+  --secondary-container:#DDE4EE;
+  --on-secondary-container:#1B2732;
+
+  --green:#1D7A4E;
+  --amber:#9A5712;
+  --blue:#2C63C9;
+  --red:#B23127;
+  --grey:#6B7382;
+  --mark:#FDEBAE;
+
+  --state:rgba(26,29,34,.08);
+
+  /* ---- The scales everything on screen is built from ----
+     Type:    12 micro, 13 label, 14 control, 15 content, 16 heading, 18 brand
+     Icons:   16 inline, 18 secondary, 20 primary
+     Heights: 34 compact control, 44 row and menu item, 48 search
+     Radius:  8 chip, 12 menu and field, 16 pane, 999 pill
+     Gutter:  20 in the list and reading panes, 16 in the rail
+     Nothing below sets a value off these scales. */
+
+  /* Menus and the snackbar are told apart by tone and a hairline, never by a
+     drop shadow. Tonal elevation only. */
+  --menu-bg:#FFFFFF;
+  --inverse-surface:#2C3038;
+  --inverse-on-surface:#EFF2F7;
+  --ease:cubic-bezier(.2,0,0,1);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --surface:#151920;
+    --surface-dim:#0B0E13;
+    --surface-container:#1E242D;
+    --surface-container-high:#2B333F;
+    --on-surface:#E7EBF1;
+    --on-surface-variant:#BFC7D3;
+    --outline:#8A94A3;
+    --outline-variant:#3B4450;
+
+    --primary:#A9C5FA;
+    --on-primary:#0B2A6B;
+    --primary-container:#2B4C94;
+    --on-primary-container:#DCE7FE;
+
+    --green:#6FCB9B;
+    --amber:#E8A05B;
+    --blue:#93B4F5;
+    --red:#E79086;
+    --grey:#98A2B0;
+    --mark:#5A4A1E;
+
+    --state:rgba(237,235,230,.10);
+    --menu-bg:#2B333F;
+    --inverse-surface:#E7EBF1;
+    --inverse-on-surface:#1A1D22;
+  }
+}
+:root[data-theme="dark"]{
+  --surface:#151920;
+  --surface-dim:#0B0E13;
+  --surface-container:#1E242D;
+  --surface-container-high:#2B333F;
+  --on-surface:#E7EBF1;
+  --on-surface-variant:#BFC7D3;
+  --outline:#8A94A3;
+  --outline-variant:#3B4450;
+
+  --primary:#A9C5FA;
+  --on-primary:#0B2A6B;
+  --primary-container:#2B4C94;
+  --on-primary-container:#DCE7FE;
+  --secondary-container:#333D4A;
+  --on-secondary-container:#DBE3EE;
+
+  --green:#6FCB9B;
+  --amber:#E8A05B;
+  --blue:#93B4F5;
+  --red:#E79086;
+  --grey:#98A2B0;
+  --mark:#5A4A1E;
+
+  --state:rgba(237,235,230,.10);
+  --menu-bg:#2B333F;
+  --inverse-surface:#E7EBF1;
+  --inverse-on-surface:#1A1D22;
+}
+
+*,::before,::after{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--surface-dim);color:var(--on-surface);
+  font-family:"Figtree",ui-sans-serif,-apple-system,"Segoe UI",sans-serif;
+  font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased;overflow:hidden;
+}
+h1,h2,p,ul{margin:0}
+ul{list-style:none;padding:0}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;text-align:left}
+input{font:inherit;color:inherit;background:none;border:0}
+input:focus{outline:none}
+:where(button,a,input,[tabindex]):focus-visible{outline:3px solid var(--primary);outline-offset:-3px;border-radius:10px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
+
+/* Any control that lays an icon beside a bare run of text. line-height:1 is
+   what makes the text sit on the same optical centre as the icon: without it
+   the anonymous text box carries the body leading and rides low. */
+.filter,.rail__clear,.rail__more,.menu__item,.sortbtn,.group,.back,.view{line-height:1}
+
+.sym{
+  font-family:"Material Symbols Outlined";
+  font-weight:normal;font-style:normal;line-height:1;letter-spacing:normal;
+  text-transform:none;display:inline-block;white-space:nowrap;word-wrap:normal;direction:ltr;
+  -webkit-font-feature-settings:"liga";font-feature-settings:"liga";
+  -webkit-font-smoothing:antialiased;font-size:20px;flex:none;
+  /* Stock weight and optical size, drawn outlined. */
+  font-variation-settings:"FILL" 0,"wght" 400,"GRAD" 0,"opsz" 24;
+}
+/* Outlined when idle, filled when active, which is how the symbol set is meant
+   to carry a selected state. */
+.sym--fill{font-variation-settings:"FILL" 1,"wght" 400,"GRAD" 0,"opsz" 24}
+
+/* --------------------------- shell --------------------------- */
+.shell{height:100dvh;display:grid;grid-template-rows:auto minmax(0,1fr);background:var(--surface-dim)}
+.panes{position:relative;display:grid;grid-template-columns:minmax(0,1fr);min-height:0}
+/* The list column is a variable so the divider between the two panes can move
+   it. Dragging writes the same property, which is why the breakpoints below
+   only set a starting width. */
+@media (min-width:900px){
+  .panes{grid-template-columns:var(--rail-w,224px) var(--list-w,380px) minmax(0,1fr);gap:8px}
+}
+@media (min-width:1400px){
+  .panes{grid-template-columns:var(--rail-w,244px) var(--list-w,412px) minmax(0,1fr);gap:8px}
+}
+
+/* A wide grab area over a hairline, which only shows itself when you are on
+   it or moving it. */
+.handle{
+  position:absolute;top:0;bottom:0;width:14px;z-index:25;display:none;
+  align-items:center;justify-content:center;cursor:col-resize;touch-action:none;
+}
+@media (min-width:900px){.handle{display:flex}}
+.handle::before{
+  content:"";width:2px;height:100%;border-radius:999px;background:transparent;
+  transition:background .15s var(--ease);
+}
+.handle:hover::before,.handle:focus-visible::before,.handle.is-dragging::before{background:var(--primary)}
+.handle:focus-visible{outline:none}
+body.is-resizing{cursor:col-resize;user-select:none}
+
+.rail::-webkit-scrollbar,.list::-webkit-scrollbar,.detail::-webkit-scrollbar{width:12px}
+.rail::-webkit-scrollbar-track,.list::-webkit-scrollbar-track,.detail::-webkit-scrollbar-track{background:transparent}
+.rail::-webkit-scrollbar-thumb,.list::-webkit-scrollbar-thumb,.detail::-webkit-scrollbar-thumb{
+  background:var(--outline-variant);border-radius:999px;border:4px solid transparent;background-clip:content-box;
+}
+.rail:hover::-webkit-scrollbar-thumb,.list:hover::-webkit-scrollbar-thumb,.detail:hover::-webkit-scrollbar-thumb{
+  background:var(--outline);background-clip:content-box;
+}
+
+/* --------------------------- top app bar --------------------------- */
+.appbar{
+  display:flex;align-items:center;gap:16px;padding:8px clamp(10px,1.6vw,16px);height:64px;
+  border-bottom:1px solid var(--outline-variant);
+}
+.brand{display:flex;align-items:center;flex:none;padding-left:12px}
+.brand__t{font-size:18px;font-weight:600;letter-spacing:-.015em;color:var(--on-surface)}
+@media (max-width:760px){.brand{display:none}}
+
+.finder{
+  /* min-width:0 or the input's intrinsic width pushes the whole bar wider
+     than the screen on a phone. */
+  flex:1;min-width:0;max-width:660px;margin-inline:auto;display:flex;align-items:center;gap:12px;
+  border-radius:999px;background:var(--surface-container-high);padding:0 20px;height:48px;
+  color:var(--on-surface-variant);transition:background .15s var(--ease),box-shadow .15s var(--ease);
+}
+.finder:hover{background:color-mix(in srgb, var(--surface-container-high) 90%, var(--on-surface))}
+.finder:focus-within{background:var(--surface);box-shadow:inset 0 0 0 2px var(--primary)}
+.finder input{flex:1;min-width:0;font-size:15px;color:var(--on-surface)}
+.finder input::placeholder{color:var(--on-surface-variant)}
+.key{
+  font-size:12px;font-weight:500;line-height:18px;
+  border:1px solid var(--outline-variant);border-radius:6px;padding:0 6px;
+  color:var(--on-surface-variant);flex:none;
+}
+.appbar__right{display:flex;align-items:center;gap:2px;flex:none}
+@media (max-width:620px){
+  .appbar{gap:8px;padding-inline:8px}
+  .finder{padding:0 14px;gap:8px}
+  .finder .key{display:none}
+}
+.synced{font-size:12px;color:var(--on-surface-variant);padding-right:8px}
+@media (max-width:980px){.synced{display:none}}
+.iconbtn{
+  width:40px;height:40px;border-radius:50%;display:grid;place-items:center;
+  color:var(--on-surface-variant);transition:background .15s var(--ease),color .15s var(--ease);
+}
+.iconbtn:hover{background:var(--state)}
+.iconbtn--danger:hover{background:color-mix(in srgb, var(--red) 12%, transparent);color:var(--red)}
+
+/* --------------------------- filters rail --------------------------- */
+.rail{display:none;overflow-y:auto;padding:6px 12px 20px}
+@media (min-width:900px){.rail{display:block}}
+.rail__k{
+  font-size:13px;font-weight:600;color:var(--on-surface-variant);
+  padding:18px 16px 8px;letter-spacing:.01em;
+}
+.filter{
+  display:flex;align-items:center;gap:14px;width:100%;height:44px;padding:0 16px;
+  border-radius:999px;color:var(--on-surface-variant);font-size:14px;
+  transition:background .15s var(--ease),color .15s var(--ease);
+}
+.filter:hover{background:var(--state)}
+.filter.is-on{background:var(--secondary-container);color:var(--on-secondary-container);font-weight:500}
+.filter.is-on .filter__n{color:var(--on-secondary-container);opacity:.8}
+.filter .sym{font-size:20px}
+.filter.is-on .sym{color:inherit}
+.filter__t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.filter__n{font-size:12px;color:var(--on-surface-variant);font-variant-numeric:tabular-nums}
+.rail__clear{
+  display:flex;align-items:center;gap:14px;height:44px;padding:0 16px;margin-top:8px;
+  border-radius:999px;font-size:14px;font-weight:500;color:var(--primary);
+}
+.rail__clear:hover{background:color-mix(in srgb, var(--primary) 8%, transparent)}
+.rail__clear .sym{font-size:20px}
+.rail__foot{
+  margin:22px 16px 0;padding-top:16px;border-top:1px solid var(--outline-variant);
+  font-size:12px;color:var(--on-surface-variant);line-height:1.9;
+}
+
+/* --------------------------- list pane --------------------------- */
+.listpane{
+  display:grid;grid-template-rows:auto minmax(0,1fr);min-height:0;
+  background:var(--surface-container);border-radius:16px 16px 0 0;
+}
+@media (max-width:899px){.listpane{border-radius:0}}
+.listhead{
+  display:flex;align-items:center;gap:8px;padding:14px 20px;position:relative;
+  border-bottom:1px solid var(--outline-variant);
+}
+.listhead__t{font-size:16px;font-weight:600;letter-spacing:-.01em}
+.listhead__n{font-size:12px;color:var(--on-surface-variant);font-variant-numeric:tabular-nums}
+.sortbtn{
+  margin-left:auto;display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 12px;
+  border-radius:8px;font-size:13px;font-weight:500;color:var(--on-surface-variant);
+  transition:background .15s var(--ease);
+}
+.sortbtn:hover{background:var(--state)}
+.sortbtn .sym{font-size:18px}
+.menu{
+  position:absolute;right:14px;top:52px;z-index:30;min-width:210px;
+  background:var(--menu-bg);border:1px solid var(--outline-variant);border-radius:12px;padding:8px 0;
+}
+.menu__k{font-size:13px;font-weight:600;color:var(--on-surface-variant);padding:8px 16px 6px}
+.menu__item{
+  display:flex;align-items:center;gap:12px;width:100%;height:44px;padding:0 16px;
+  font-size:14px;color:var(--on-surface);transition:background .15s var(--ease);
+}
+.menu__item:hover{background:var(--state)}
+.menu__item .sym{font-size:20px;color:var(--primary);width:20px}
+.menu__sep{height:1px;background:var(--outline-variant);margin:8px 0}
+
+.list{overflow-y:auto;overscroll-behavior:contain;padding:0 0 12px;scrollbar-gutter:stable}
+/* The board's four sections, and they collapse here as they do there. */
+.group{
+  position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:12px;width:100%;
+  padding:24px 20px 10px;background:var(--surface-container);
+  font-size:13px;font-weight:500;color:var(--on-surface-variant);
+}
+.group .sym{font-size:18px}
+.group--ACCEPTED .sym{color:var(--green)}
+.group--IN_PROGRESS .sym{color:var(--amber)}
+.group--APPLIED .sym{color:var(--blue)}
+.group--REJECTED .sym{color:var(--grey)}
+.group__n{font-size:12px;font-weight:400;color:var(--on-surface-variant);font-variant-numeric:tabular-nums}
+.group__fold{
+  margin-left:auto;font-size:18px;color:var(--on-surface-variant);
+  transition:transform .18s var(--ease);
+}
+.group.is-shut .group__fold{transform:rotate(-90deg)}
+
+/* Rows carry a hairline between them, inset to the text the way a Material
+   list divider is, rather than running under the leading marker. */
+.row{
+  display:flex;align-items:flex-start;gap:14px;width:100%;position:relative;
+  padding:16px 20px;transition:background .15s var(--ease);
+}
+.row::after{
+  content:"";position:absolute;left:42px;right:0;bottom:0;height:1px;
+  background:var(--outline-variant);
+}
+/* No hairline immediately above or below the selected row, so the selection
+   reads as one clean block rather than as a row with lines stuck to it. */
+.row:last-child::after,.row.is-on::after,.row:has(+ .row.is-on)::after{background:transparent}
+.row:hover{background:var(--state)}
+/* Selected is a tonal container, the way a picked item is marked across
+   Workspace, rather than a white card with a bar down its edge. */
+.row.is-on,.row.is-on:hover{background:var(--primary-container)}
+.row.is-on .row__co{color:var(--on-primary-container)}
+.row.is-on .row__role,.row.is-on .age{color:var(--on-primary-container);opacity:.82}
+.row.is-hidden{opacity:.45}
+.row__dot{width:8px;height:8px;border-radius:50%;flex:none;margin-top:6px}
+.row__b{flex:1;min-width:0}
+.row__l1{display:flex;align-items:baseline;gap:12px}
+.row__l2{display:flex;align-items:baseline;gap:12px;margin-top:3px}
+.row__co{
+  flex:1;min-width:0;font-size:15px;font-weight:500;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.row__role{
+  flex:1;min-width:0;font-size:13px;color:var(--on-surface-variant);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.age{font-size:12px;color:var(--on-surface-variant);font-variant-numeric:tabular-nums;flex:none}
+.dot--ACCEPTED{background:var(--green)}
+.dot--IN_PROGRESS{background:var(--amber)}
+.dot--APPLIED{background:var(--blue)}
+.dot--REJECTED{background:var(--grey)}
+
+.empty{padding:44px 20px;color:var(--on-surface-variant);font-size:14px}
+.empty b{display:block;color:var(--on-surface);font-weight:600;margin-bottom:6px;font-size:16px}
+
+/* --------------------------- detail pane --------------------------- */
+/* The two column reading pane keys off this pane's own width, not the
+   window's. With a draggable divider the window tells you nothing: a wide
+   screen with a wide list leaves a narrow pane, and the columns collided. */
+.detail{
+  overflow-y:auto;min-width:0;background:var(--surface);border-radius:16px 16px 0 0;
+  container-type:inline-size;container-name:reader;
+}
+@media (max-width:899px){.detail{border-radius:0}}
+/* Two columns once there is room for them: the mail on the left, the facts
+   about the application on the right. On a wide screen that is what fills the
+   space that used to sit empty beside the header. */
+.detail__in{
+  padding:clamp(24px,2.6vw,36px) clamp(20px,2.4vw,40px) 96px;
+  display:grid;gap:26px 48px;grid-template-columns:minmax(0,1fr);align-items:start;
+}
+/* Stacked, the details go first: seven short lines a glance can finish, above
+   a list whose length is whatever the mail decided. Side by side, they go
+   right, because the trail is what you came to read and metadata belongs in
+   the rail beside it rather than in front of it. */
+@container reader (min-width:700px){
+  .detail__in{grid-template-columns:minmax(0,1fr) minmax(240px,300px)}
+  .detail__head{grid-column:1 / -1;grid-row:1;order:0}
+  .detail__body{grid-column:1;grid-row:2}
+  /* Beside the mail the facts are one column of rows. */
+  .detail__aside{grid-column:2;grid-row:2;position:sticky;top:0;order:0;display:block}
+}
+/* Stacked order: the company header, then the details, then the mail. */
+.detail__head{order:-2}
+.detail__body{min-width:0}
+/* Stacked, the facts run in as many columns as the width allows rather than
+   leaving the right hand half of the pane empty. */
+.detail__aside{
+  min-width:0;order:-1;display:grid;column-gap:40px;
+  grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+}
+.aside__k{
+  grid-column:1 / -1;
+  font-size:13px;font-weight:500;color:var(--on-surface-variant);
+  padding-bottom:10px;border-bottom:1px solid var(--outline-variant);
+}
+/* Label left, value hard against the right edge, the same shape as an email
+   line with its date. A fixed label column left a dead strip of column to the
+   right of every short value. */
+.fact{
+  display:flex;align-items:baseline;justify-content:space-between;gap:20px;
+  padding:13px 0;border-bottom:1px solid var(--outline-variant);
+}
+.fact:last-child{border-bottom:0}
+.fact__k{flex:none;font-size:13px;color:var(--on-surface-variant)}
+.fact__v{flex:1;min-width:0;font-size:14px;color:var(--on-surface);text-align:right}
+.back{
+  display:none;align-items:center;gap:14px;height:44px;padding:0 16px;margin:8px 8px 0;
+  border-radius:999px;font-size:14px;font-weight:500;color:var(--on-surface-variant);
+}
+.detail__top{display:flex;align-items:flex-start;gap:16px}
+.detail__co{font-size:clamp(24px,2.4vw,28px);font-weight:600;letter-spacing:-.02em;line-height:1.2;flex:1;min-width:0}
+.detail__role{color:var(--on-surface-variant);font-size:16px;margin-top:6px}
+.tags{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:20px}
+.tag{
+  display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:8px;
+  background:var(--surface-container-high);color:var(--on-surface);font-size:13px;
+  font-weight:500;line-height:1;
+}
+.tag .sym{font-size:16px}
+.tag--status{background:var(--primary-container);color:var(--on-primary-container);font-weight:600}
+.tag--stage{background:color-mix(in srgb, var(--amber) 20%, transparent);color:var(--amber)}
+.tag--ending{background:color-mix(in srgb, var(--green) 20%, transparent);color:var(--green)}
+.tag--quiet{background:transparent;color:var(--on-surface-variant);box-shadow:inset 0 0 0 1px var(--outline)}
+
+/* No horizontal padding here or on the rows below: the Emails column and the
+   Details column start on the same line as each other. */
+.trailk{
+  font-size:13px;font-weight:500;color:var(--on-surface-variant);
+  margin:0 0 10px;padding:0;
+}
+.thread{display:flex;flex-direction:column;border-top:1px solid var(--outline-variant)}
+.mail{
+  display:flex;align-items:center;gap:16px;width:100%;padding:16px 0;position:relative;
+  transition:background .15s var(--ease);
+}
+/* Inset divider, aligned with the subject rather than the icon. */
+.mail::after{
+  content:"";position:absolute;left:36px;right:0;bottom:0;height:1px;background:var(--outline-variant);
+}
+.mail:last-child::after{background:transparent}
+.mail:hover{background:var(--state)}
+.mail .sym{font-size:20px;color:var(--on-surface-variant)}
+.mail__t{flex:1;min-width:0;font-size:15px;color:var(--on-surface);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mail__d{font-size:12px;color:var(--on-surface-variant);flex:none;font-variant-numeric:tabular-nums}
+.mail--child{padding-left:36px}
+.mail--child::after{left:72px}
+.mail--child .mail__t{color:var(--on-surface-variant);font-size:14px}
+.mail__none{padding:16px 0;font-size:14px;color:var(--on-surface-variant)}
+
+.blank{display:grid;place-items:center;height:100%;color:var(--on-surface-variant);font-size:14px;padding:30px;text-align:center}
+
+@media (max-width:899px){
+  .detail{
+    position:absolute;inset:0;z-index:40;
+    transform:translateX(100%);transition:transform .25s var(--ease);
+  }
+  .shell.is-detail .detail{transform:none}
+  .back{display:inline-flex}
+}
+
+/* A snackbar: the inverse surface, no shadow, sitting at the bottom left the
+   way a Workspace confirmation does. */
+.toast{
+  position:fixed;left:24px;bottom:24px;transform:translateY(14px);
+  background:var(--inverse-surface);color:var(--inverse-on-surface);font-size:14px;
+  padding:14px 18px;border-radius:8px;max-width:min(560px,calc(100vw - 48px));
+  opacity:0;pointer-events:none;transition:opacity .18s var(--ease),transform .18s var(--ease);z-index:60;
+}
+.toast.is-on{opacity:1;transform:translateY(0)}
+
+@media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}}
+</style>
+
+<div class="shell" id="shell">
+  <header class="appbar">
+    <span class="brand"><span class="brand__t">Welcome back, Micah</span></span>
+
+    <div class="finder">
+      <span class="sym" aria-hidden="true">search</span>
+      <input id="q" type="search" autocomplete="off" spellcheck="false"
+             placeholder="Search Companies, Roles, or Emails" aria-label="Search Applications">
+      <span class="key" id="qkey">/</span>
+    </div>
+
+    <div class="appbar__right">
+      <span class="synced">Synced 4 min ago</span>
+      <button class="iconbtn" type="button" data-tool="refresh" aria-label="Refresh" title="Refresh">
+        <span class="sym" aria-hidden="true">refresh</span>
+      </button>
+      <button class="iconbtn iconbtn--danger" type="button" data-tool="rescan" aria-label="Rescan All" title="Rescan All">
+        <span class="sym" aria-hidden="true">ink_eraser</span>
+      </button>
+      <button class="iconbtn" type="button" data-tool="settings" aria-label="Settings" title="Settings">
+        <span class="sym" aria-hidden="true">settings</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="panes">
+    <nav class="rail" id="rail" aria-label="Filters"></nav>
+
+    <section class="listpane" aria-label="Applications">
+      <div class="listhead">
+        <span class="listhead__t">Applications</span>
+        <span class="listhead__n" id="viewcount"></span>
+        <button class="sortbtn" type="button" id="sortbtn" aria-haspopup="true" aria-expanded="false">
+          <span class="sym" aria-hidden="true">swap_vert</span><span id="sortlabel">Last Activity</span>
+        </button>
+        <div id="sortmenu"></div>
+      </div>
+
+      <div class="list" id="list" tabindex="0" role="listbox" aria-label="Applications"></div>
+    </section>
+
+    <div class="handle" id="handle" role="separator" aria-orientation="vertical" tabindex="0"
+         aria-label="Resize the Applications list" title="Drag to resize, double click to reset"></div>
+
+    <section class="detail" id="detail" aria-label="Application Detail" aria-live="polite"></section>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+/* ---------------------------------------------------------------
+   One dataset, shaped like ApplicationView in src/lib/view.ts:
+   company, role, term, season, year, status, statusOverride,
+   stageDetail, outcome, isStale, isHidden, firstEmailAt,
+   latestEmailAt and the emails. Nothing else, because nothing else
+   reaches the screen in the app.
+   --------------------------------------------------------------- */
+var TODAY = new Date("2026-08-31T12:00:00Z");
+
+var APPS = [
+  {co:"Hudl", role:"Engineering Intern", status:"ACCEPTED", stage:null, outcome:"OFFER_EXTENDED",
+   term:"Summer", year:2027, mail:6, first:"2026-06-02", last:"2026-08-26"},
+  {co:"Capital One", role:"Technology Internship Program", status:"IN_PROGRESS", stage:"INTERVIEW", outcome:null,
+   term:"Summer", year:2027, mail:7, first:"2026-07-06", last:"2026-08-28"},
+  {co:"Vanguard", role:"College to Corporate IT Internship, Application Development (NC)", status:"IN_PROGRESS",
+   stage:"ASSESSMENT", outcome:null, term:null, year:null, mail:4, first:"2026-07-30", last:"2026-08-23"},
+  {co:"Goldman Sachs", role:null, status:"IN_PROGRESS", stage:"ASSESSMENT", outcome:null,
+   term:null, year:null, mail:2, first:"2026-08-14", last:"2026-08-21"},
+  {co:"BlackRock", role:"2027 Summer Internship Program, Technology, Software Engineering, New York",
+   status:"IN_PROGRESS", stage:"RECORDED_INTERVIEW", outcome:null, term:"Summer", year:2027,
+   mail:5, first:"2026-07-15", last:"2026-08-19"},
+  {co:"BlackRock", role:"2027 Summer Internship Program, Technology, Software Engineering, Delaware",
+   status:"IN_PROGRESS", stage:"ASSESSMENT", outcome:null, term:"Summer", year:2027,
+   mail:3, first:"2026-07-15", last:"2026-08-17"},
+  {co:"IBM", role:"Software Developer Intern 2027", status:"IN_PROGRESS", stage:"RECORDED_INTERVIEW", outcome:null,
+   term:null, year:2027, mail:3, first:"2026-07-28", last:"2026-08-15"},
+  {co:"Datadog", role:"Software Engineer Intern", status:"IN_PROGRESS", stage:"VERIFICATION", outcome:null,
+   term:"Summer", year:2027, mail:4, first:"2026-06-24", last:"2026-08-12"},
+  {co:"Optiver", role:"Software Engineer Intern", status:"APPLIED", stage:null, outcome:null,
+   term:"Summer", year:2027, mail:1, first:"2026-08-06", last:"2026-08-06"},
+  {co:"Garmin", role:"Software Engineering Intern", status:"APPLIED", stage:null, outcome:null,
+   term:null, year:null, mail:1, first:"2026-08-04", last:"2026-08-04"},
+  {co:"John Deere", role:"Software Engineering Intern, Summer 2027", status:"APPLIED", stage:null, outcome:null,
+   term:"Summer", year:2027, mail:2, first:"2026-06-18", last:"2026-06-18"},
+  {co:"Workday", role:null, status:"APPLIED", stage:null, outcome:null,
+   term:null, year:null, mail:1, first:"2026-06-27", last:"2026-06-27"},
+  {co:"Epic Systems", role:"Software Developer Intern", status:"APPLIED", stage:null, outcome:null,
+   term:null, year:null, mail:1, first:"2026-06-09", last:"2026-06-09"},
+  {co:"Two Sigma", role:"Software Engineering Intern", status:"REJECTED", stage:null, outcome:"REJECTED_BY_EMPLOYER",
+   term:"Summer", year:2027, mail:3, first:"2026-07-02", last:"2026-08-06"},
+  {co:"Palantir", role:"Path Internship", status:"REJECTED", stage:null, outcome:"REJECTED_BY_EMPLOYER",
+   term:null, year:null, mail:2, first:"2026-06-30", last:"2026-07-22"},
+  {co:"Roblox", role:"Software Engineer Intern", status:"REJECTED", stage:null, outcome:"POSTING_CANCELLED",
+   term:"Summer", year:2027, mail:2, first:"2026-06-20", last:"2026-07-14"},
+  {co:"Snap", role:null, status:"REJECTED", stage:null, outcome:"REJECTED_BY_EMPLOYER",
+   term:null, year:null, mail:1, first:"2026-05-30", last:"2026-05-30"}
+];
+APPS.forEach(function(a, i){ a.id = i; a.hidden = false; a.override = null; });
+
+/* The constants the app ships, copied rather than reinvented. */
+var STATUSES = ["ACCEPTED","IN_PROGRESS","APPLIED","REJECTED"];
+var STATUS_LABELS = {ACCEPTED:"Accepted", IN_PROGRESS:"In Progress", APPLIED:"Applied", REJECTED:"Rejected"};
+var STATUS_ICONS = {ACCEPTED:"check_circle", IN_PROGRESS:"schedule", APPLIED:"list", REJECTED:"block"};
+var STAGE_LABELS = {
+  ASSESSMENT:"Assessment", RECORDED_INTERVIEW:"Recorded Interview",
+  INTERVIEW:"Interview", VERIFICATION:"Verification"
+};
+var OUTCOME_LABELS = {
+  OFFER_EXTENDED:"Offer", OFFER_ACCEPTED:"Offer Accepted", OFFER_DECLINED:"Offer Declined",
+  OFFER_RESCINDED:"Offer Withdrawn by the Employer", REJECTED_BY_EMPLOYER:"Application Rejected",
+  WITHDRAWN_BY_APPLICANT:"Application Withdrawn", POSTING_CANCELLED:"Posting Cancelled"
+};
+/* Endings that get no word on the row: the section heading already says it. */
+var UNSAID_ENDINGS = ["REJECTED_BY_EMPLOYER","WITHDRAWN_BY_APPLICANT"];
+var SEASONS = ["Summer","Spring","Fall","Winter"];
+var STALE_AFTER_DAYS = 60;
+
+var SORTS = [
+  {k:"company-asc", name:"Company · A to Z"},
+  {k:"company-desc", name:"Company · Z to A"},
+  {k:"status", name:"Status"},
+  {k:"recent", name:"Last Activity"},
+  {k:"emails", name:"Most Emails"}
+];
+
+function days(iso){ return Math.round((TODAY - new Date(iso + "T12:00:00Z")) / 86400000); }
+function hasEnded(status){ return status === "ACCEPTED" || status === "REJECTED"; }
+function statusOf(a){ return a.override || a.status; }
+function stale(a){ return !hasEnded(statusOf(a)) && days(a.last) > STALE_AFTER_DAYS; }
+function endingLabel(a){
+  if (!hasEnded(statusOf(a))) return null;
+  if (a.outcome && UNSAID_ENDINGS.indexOf(a.outcome) > -1) return null;
+  return a.outcome ? OUTCOME_LABELS[a.outcome] : "Application Closed";
+}
+function esc(s){
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+function formatDate(iso){
+  return new Date(iso + "T12:00:00Z").toLocaleDateString(undefined, {day:"numeric", month:"short", timeZone:"UTC"});
+}
+function ageLabel(iso){
+  var d = days(iso);
+  if (d === 0) return "Today";
+  if (d < 31) return d + "d";
+  return Math.round(d / 7) + "w";
+}
+function mark(text, query){
+  if (!query) return esc(text);
+  var i = String(text).toLowerCase().indexOf(query.toLowerCase());
+  if (i < 0) return esc(text);
+  return esc(text.slice(0, i)) + "<mark>" + esc(text.slice(i, i + query.length)) + "</mark>" + esc(text.slice(i + query.length));
+}
+function icon(name){ return '<span class="sym" aria-hidden="true">' + name + '</span>'; }
+/** The filled cut of the same symbol, which is how an active state is drawn. */
+function iconFill(name){ return '<span class="sym sym--fill" aria-hidden="true">' + name + '</span>'; }
+
+/* --------------------------------------------------------------
+   The drawer: one line per email, one level of nesting, each line
+   a link into Gmail. Subjects are derived from the step the row
+   reached rather than stored twice.
+   -------------------------------------------------------------- */
+function thread(a){
+  var steps = ["Application Received"];
+  if (a.stage === "ASSESSMENT") steps.push("Technical Assessment Invitation", "Technical Assessment Completed");
+  if (a.stage === "RECORDED_INTERVIEW") steps.push("Recorded Interview Invitation");
+  if (a.stage === "INTERVIEW") steps.push("Interview Invitation", "Interview Confirmed for 2 September");
+  if (a.stage === "VERIFICATION") steps.push("Background Check Request");
+  if (a.outcome === "OFFER_EXTENDED") steps.push("Final Interview Completed", "Offer Extended");
+  if (a.outcome === "POSTING_CANCELLED") steps.push("Posting Cancelled");
+  if (a.outcome === "REJECTED_BY_EMPLOYER") steps.push("Decision, Not Moving Forward");
+
+  var start = new Date(a.first + "T12:00:00Z").getTime();
+  var end = new Date(a.last + "T12:00:00Z").getTime();
+
+  return steps.map(function(title, i){
+    var at = steps.length === 1 ? end : start + (end - start) * (i / (steps.length - 1));
+    var kids = [];
+    if (a.mail > steps.length && title.indexOf("Invitation") > -1) {
+      kids.push({t:"Reminder: " + title.replace(" Invitation", " Closes Soon"), d:new Date(at + 3 * 86400000)});
+    }
+    if (a.mail > steps.length + 1 && i === 0) {
+      kids.push({t:"Duplicate of the Confirmation Above", d:new Date(at + 86400000)});
+    }
+    return {title:title, date:new Date(at), kids:kids};
+  });
+}
+function stamp(d){ return d.toLocaleDateString(undefined, {day:"numeric", month:"short", timeZone:"UTC"}); }
+
+/* --------------------------------------------------------------
+   State: what the toolbar holds in the app, and nothing more.
+   -------------------------------------------------------------- */
+var state = {
+  sort:"recent",
+  query:"",
+  filters:{season:{}, year:{}},
+  picked:0,
+  sortOpen:false,
+  rowMenuOpen:false,
+  shut:{}
+};
+
+function years(){
+  var found = {};
+  APPS.forEach(function(a){ if (a.year) found[a.year] = true; });
+  return Object.keys(found).sort();
+}
+function activeFilters(){
+  return Object.keys(state.filters.season).length + Object.keys(state.filters.year).length;
+}
+function matches(a, q){
+  if (!q) return true;
+  var needle = q.toLowerCase();
+  var head = [a.co, a.role, a.term, a.year, a.stage ? STAGE_LABELS[a.stage] : null]
+    .filter(Boolean).join(" ").toLowerCase();
+  if (head.indexOf(needle) > -1) return true;
+  return thread(a).some(function(m){
+    return m.title.toLowerCase().indexOf(needle) > -1 ||
+      m.kids.some(function(k){ return k.t.toLowerCase().indexOf(needle) > -1; });
+  });
+}
+function passesFilters(a){
+  var seasons = Object.keys(state.filters.season);
+  var yrs = Object.keys(state.filters.year);
+  if (seasons.length && (!a.term || seasons.indexOf(a.term) < 0)) return false;
+  if (yrs.length && (!a.year || yrs.indexOf(String(a.year)) < 0)) return false;
+  return true;
+}
+/* Hidden rows stay on the board, dimmed, exactly as they do today. */
+function visible(){
+  var rows = APPS.filter(function(a){ return passesFilters(a) && matches(a, state.query); });
+  var by = {
+    "company-asc": function(a, b){ return a.co.localeCompare(b.co) || (a.role || "").localeCompare(b.role || ""); },
+    "company-desc": function(a, b){ return b.co.localeCompare(a.co) || (a.role || "").localeCompare(b.role || ""); },
+    "status": function(a, b){ return STATUSES.indexOf(statusOf(a)) - STATUSES.indexOf(statusOf(b)) || a.co.localeCompare(b.co); },
+    "recent": function(a, b){ return b.last.localeCompare(a.last); },
+    "emails": function(a, b){ return b.mail - a.mail || a.co.localeCompare(b.co); }
+  };
+  return rows.slice().sort(by[state.sort]);
+}
+
+/* --------------------------------------------------------------
+   Rendering
+   -------------------------------------------------------------- */
+function renderRail(){
+  var rows = visible();
+  function box(on){ return on ? iconFill("check_box") : icon("check_box_outline_blank"); }
+
+  var seasonItems = SEASONS.map(function(s){
+    var on = !!state.filters.season[s];
+    var n = APPS.filter(function(a){ return a.term === s; }).length;
+    return '<button class="filter' + (on ? " is-on" : "") + '" type="button" data-season="' + s + '" ' +
+      'role="checkbox" aria-checked="' + on + '">' + box(on) +
+      '<span class="filter__t">' + s + '</span><span class="filter__n">' + n + '</span></button>';
+  }).join("");
+
+  var yearItems = years().map(function(y){
+    var on = !!state.filters.year[y];
+    var n = APPS.filter(function(a){ return String(a.year) === y; }).length;
+    return '<button class="filter' + (on ? " is-on" : "") + '" type="button" data-year="' + y + '" ' +
+      'role="checkbox" aria-checked="' + on + '">' + box(on) +
+      '<span class="filter__t">' + y + '</span><span class="filter__n">' + n + '</span></button>';
+  }).join("");
+
+  document.getElementById("rail").innerHTML =
+    '<p class="rail__k">Term</p>' + seasonItems +
+    '<p class="rail__k">Year</p>' + (yearItems || '<p class="filter" style="color:var(--on-surface-variant)">No Years Yet</p>') +
+    (activeFilters()
+      ? '<button class="rail__clear" type="button" id="clear">' + icon("restart_alt") + 'Clear Filters</button>'
+      : '') +
+    '<p class="rail__foot">Gmail Connected<br>' + rows.length + ' of ' + APPS.length + ' Shown</p>';
+}
+
+function renderList(){
+  var rows = visible();
+  document.getElementById("viewcount").textContent =
+    rows.length + (rows.length === APPS.length ? "" : " of " + APPS.length);
+  document.getElementById("sortlabel").textContent =
+    SORTS.filter(function(s){ return s.k === state.sort; })[0].name;
+
+  var list = document.getElementById("list");
+  if (!rows.length) {
+    list.innerHTML = '<div class="empty"><b>Nothing Here</b>' +
+      (state.query ? 'No application or email matches &ldquo;' + esc(state.query) + '&rdquo;.'
+                   : 'No application matches these filters.') + '</div>';
+    return;
+  }
+  if (rows.indexOf(APPS[state.picked]) < 0) state.picked = rows[0].id;
+
+  /* The board's four sections, in the board's order, each one collapsible. */
+  list.innerHTML = STATUSES.map(function(key){
+    var section = rows.filter(function(a){ return statusOf(a) === key; });
+    if (!section.length) return "";
+    var shut = !!state.shut[key];
+    return '<button class="group group--' + key + (shut ? " is-shut" : "") + '" type="button" ' +
+        'data-group="' + key + '" aria-expanded="' + !shut + '">' +
+        icon(STATUS_ICONS[key]) + STATUS_LABELS[key] +
+        '<span class="group__n">' + section.length + '</span>' +
+        '<span class="sym group__fold" aria-hidden="true">expand_more</span>' +
+      '</button>' +
+      (shut ? "" : section.map(function(a){
+        return '<button class="row' + (a.id === state.picked ? " is-on" : "") + (a.hidden ? " is-hidden" : "") + '" ' +
+          'type="button" data-id="' + a.id + '" role="option" aria-selected="' + (a.id === state.picked) + '">' +
+          '<span class="row__dot dot--' + statusOf(a) + '" aria-hidden="true"></span>' +
+          '<span class="row__b">' +
+            '<span class="row__l1"><span class="row__co">' + mark(a.co, state.query) + '</span>' +
+              '<span class="age">' + ageLabel(a.last) + '</span></span>' +
+            '<span class="row__l2"><span class="row__role">' +
+              (a.role ? mark(a.role, state.query) : "No Role Stated") + '</span></span>' +
+          '</span>' +
+        '</button>';
+      }).join(""));
+  }).join("");
+}
+
+/** One labelled line in the details column. */
+function fact(key, value){
+  return '<div class="fact"><span class="fact__k">' + key + '</span>' +
+    '<span class="fact__v">' + value + '</span></div>';
+}
+
+function renderDetail(){
+  var a = APPS[state.picked];
+  var box = document.getElementById("detail");
+  if (!a) { box.innerHTML = '<p class="blank">Pick an application on the left.</p>'; return; }
+
+  var ending = endingLabel(a);
+  var messages = thread(a);
+
+  var tags =
+    '<span class="tag tag--status">' + iconFill(STATUS_ICONS[statusOf(a)]) + STATUS_LABELS[statusOf(a)] + '</span>' +
+    (a.override ? '<span class="tag">' + icon("check") + 'Status Set Manually</span>' : '') +
+    (ending ? '<span class="tag tag--ending">' + esc(ending) + '</span>' : '') +
+    (statusOf(a) === "IN_PROGRESS" && a.stage ? '<span class="tag tag--stage">' + STAGE_LABELS[a.stage] + '</span>' : '') +
+    /* The term and the year live in the details column now, so the header
+       carries only what the row's own tags carry. */
+    (stale(a) ? '<span class="tag tag--quiet">Quiet</span>' : '');
+
+  box.innerHTML =
+    '<button class="back" type="button" id="back">' + icon("arrow_back") + 'Back</button>' +
+    '<div class="detail__in">' +
+      '<header class="detail__head"><div class="detail__top">' +
+        '<div style="flex:1;min-width:0">' +
+          '<h1 class="detail__co">' + esc(a.co) + '</h1>' +
+          '<p class="detail__role">' + (a.role ? esc(a.role) : "No Role Stated") + '</p>' +
+        '</div>' +
+        '<div style="position:relative">' +
+          '<button class="iconbtn" type="button" data-rowmenu aria-haspopup="true" aria-expanded="' + state.rowMenuOpen + '" aria-label="Row Options">' +
+            icon("more_vert") + '</button>' +
+          (state.rowMenuOpen ? '<div class="menu" role="menu" style="right:0;top:44px">' +
+            '<button class="menu__item" type="button" data-act="hide">' +
+              icon(a.hidden ? "visibility" : "visibility_off") +
+              (a.hidden ? "Show on the Board" : "Hide This Row") + '</button>' +
+            '<div class="menu__sep"></div>' +
+            '<p class="menu__k">Set Status</p>' +
+            STATUSES.map(function(s){
+              return '<button class="menu__item" role="menuitemradio" aria-checked="' + (a.override === s) + '" ' +
+                'type="button" data-status="' + s + '">' +
+                (a.override === s ? icon("check") : '<span class="sym" aria-hidden="true" style="visibility:hidden">check</span>') +
+                STATUS_LABELS[s] + '</button>';
+            }).join("") +
+            '<div class="menu__sep"></div>' +
+            '<button class="menu__item" type="button" data-status="AUTO">' + icon("restart_alt") + 'Reset</button>' +
+          '</div>' : '') +
+        '</div>' +
+      '</div>' +
+
+      '<div class="tags">' + tags + '</div></header>' +
+
+      '<section class="detail__body">' +
+      '<p class="trailk">Emails</p>' +
+      '<div class="thread">' + (messages.length ? messages.map(function(m){
+        return '<button class="mail" type="button" data-mail>' + icon("mail") +
+            '<span class="mail__t">' + mark(m.title, state.query) + '</span>' +
+            '<span class="mail__d">' + stamp(m.date) + '</span></button>' +
+          m.kids.map(function(k){
+            return '<button class="mail mail--child" type="button" data-mail>' + icon("subdirectory_arrow_right") +
+              '<span class="mail__t">' + mark(k.t, state.query) + '</span>' +
+              '<span class="mail__d">' + stamp(k.d) + '</span></button>';
+          }).join("");
+      }).join("") : '<p class="mail__none">No Emails Yet.</p>') + '</div></section>' +
+
+      /* The facts the sheet keeps in columns, in the space beside the mail. */
+      '<aside class="detail__aside">' +
+        '<p class="aside__k">Details</p>' +
+        fact("Status", STATUS_LABELS[statusOf(a)] + (a.override ? " (Set by Hand)" : "")) +
+        fact("Step", statusOf(a) === "IN_PROGRESS" && a.stage ? STAGE_LABELS[a.stage] : "&mdash;") +
+        fact("Ending", ending || "&mdash;") +
+        fact("Term", a.term ? esc(a.term) + (a.year ? " " + a.year : "") : (a.year ? String(a.year) : "&mdash;")) +
+        fact("Applied", formatDate(a.first)) +
+        fact("Last Activity", formatDate(a.last) + " (" + days(a.last) + " days ago)") +
+        fact("Emails", String(a.mail)) +
+      '</aside>' +
+    '</div>';
+
+  box.scrollTop = 0;
+}
+
+function render(){ renderRail(); renderList(); renderDetail(); }
+
+/* --------------------------------------------------------------
+   Behaviour
+   -------------------------------------------------------------- */
+var toastTimer = null;
+function toast(text){
+  var el = document.getElementById("toast");
+  el.textContent = text;
+  el.classList.add("is-on");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ el.classList.remove("is-on"); }, 2200);
+}
+function isNarrow(){ return window.matchMedia("(max-width: 899px)").matches; }
+function pick(id, openDetail){
+  state.picked = id;
+  state.rowMenuOpen = false;
+  renderList();
+  renderDetail();
+  if (openDetail && isNarrow()) document.getElementById("shell").classList.add("is-detail");
+  var row = document.querySelector(".row.is-on");
+  if (row) row.scrollIntoView({block:"nearest"});
+}
+
+document.querySelector(".appbar__right").addEventListener("click", function(event){
+  var tool = event.target.closest("[data-tool]");
+  if (!tool) return;
+  var what = tool.getAttribute("data-tool");
+  if (what === "refresh") toast("Reads any mail that has arrived since the last sync");
+  if (what === "rescan") toast("Rescan All: reads the whole mailbox again from scratch");
+  if (what === "settings") toast("Opens settings: the Gmail account, the model and the key");
+});
+
+document.getElementById("rail").addEventListener("click", function(event){
+  var season = event.target.closest("[data-season]");
+  var year = event.target.closest("[data-year]");
+  var clear = event.target.closest("#clear");
+  if (clear) { state.filters = {season:{}, year:{}}; render(); return; }
+  if (season) {
+    var s = season.getAttribute("data-season");
+    if (state.filters.season[s]) delete state.filters.season[s];
+    else state.filters.season[s] = true;
+  } else if (year) {
+    var y = year.getAttribute("data-year");
+    if (state.filters.year[y]) delete state.filters.year[y];
+    else state.filters.year[y] = true;
+  } else return;
+  render();
+});
+
+document.getElementById("list").addEventListener("click", function(event){
+  var group = event.target.closest("[data-group]");
+  var row = event.target.closest("[data-id]");
+  if (group) {
+    var key = group.getAttribute("data-group");
+    state.shut[key] = !state.shut[key];
+    renderList();
+    return;
+  }
+  if (row) pick(Number(row.getAttribute("data-id")), true);
+});
+
+document.getElementById("detail").addEventListener("click", function(event){
+  var back = event.target.closest("#back");
+  var menu = event.target.closest("[data-rowmenu]");
+  var status = event.target.closest("[data-status]");
+  var act = event.target.closest("[data-act]");
+  var mail = event.target.closest("[data-mail]");
+
+  if (back) { document.getElementById("shell").classList.remove("is-detail"); return; }
+  if (menu) { event.stopPropagation(); state.rowMenuOpen = !state.rowMenuOpen; renderDetail(); return; }
+  if (status) {
+    var a = APPS[state.picked];
+    var value = status.getAttribute("data-status");
+    a.override = value === "AUTO" ? null : value;
+    state.rowMenuOpen = false;
+    toast(value === "AUTO" ? "Back to the status the emails say" : "Status set by hand, and recorded as set by hand");
+    render();
+    return;
+  }
+  if (act && act.getAttribute("data-act") === "hide") {
+    var row = APPS[state.picked];
+    row.hidden = !row.hidden;
+    state.rowMenuOpen = false;
+    toast(row.hidden ? "Hidden. It stays on the board, dimmed." : "Back on the board");
+    render();
+    return;
+  }
+  if (mail) toast("Opens this email in Gmail");
+});
+
+/* Sort menu */
+var sortbtn = document.getElementById("sortbtn");
+function closeSort(){
+  if (!state.sortOpen) return;
+  state.sortOpen = false;
+  document.getElementById("sortmenu").innerHTML = "";
+  sortbtn.setAttribute("aria-expanded", "false");
+}
+sortbtn.addEventListener("click", function(event){
+  event.stopPropagation();
+  state.sortOpen = !state.sortOpen;
+  sortbtn.setAttribute("aria-expanded", String(state.sortOpen));
+  document.getElementById("sortmenu").innerHTML = state.sortOpen
+    ? '<div class="menu" role="menu"><p class="menu__k">Sort By</p>' + SORTS.map(function(s){
+        return '<button class="menu__item" role="menuitemradio" aria-checked="' + (state.sort === s.k) + '" type="button" data-sort="' + s.k + '">' +
+          (state.sort === s.k ? icon("check") : '<span class="sym" aria-hidden="true" style="visibility:hidden">check</span>') +
+          s.name + '</button>';
+      }).join("") + '</div>'
+    : "";
+});
+document.getElementById("sortmenu").addEventListener("click", function(event){
+  var item = event.target.closest("[data-sort]");
+  if (!item) return;
+  state.sort = item.getAttribute("data-sort");
+  closeSort();
+  render();
+});
+document.addEventListener("click", function(event){
+  closeSort();
+  if (state.rowMenuOpen && !event.target.closest(".detail__top")) { state.rowMenuOpen = false; renderDetail(); }
+});
+
+/* Search */
+var q = document.getElementById("q");
+q.addEventListener("input", function(){
+  state.query = q.value.trim();
+  render();
+});
+
+/* The two keys the app binds: slash focuses the search, Escape clears it. */
+document.addEventListener("keydown", function(event){
+  if (event.key === "/" && document.activeElement !== q) {
+    event.preventDefault();
+    q.focus();
+    q.select();
+    return;
+  }
+  if (event.key === "Escape") {
+    if (isNarrow()) document.getElementById("shell").classList.remove("is-detail");
+    if (document.activeElement === q) { q.value = ""; state.query = ""; render(); }
+  }
+});
+
+/* --------------------------------------------------------------
+   The divider between the list and the reading pane.
+
+   Width is written to --list-w on the root, which is the same
+   property the breakpoints set, so a drag simply overrides the
+   starting width. It is kept per browser in localStorage, which
+   can fail or come back empty, hence the try around both ends.
+   -------------------------------------------------------------- */
+var handle = document.getElementById("handle");
+var panes = document.querySelector(".panes");
+var listpane = document.querySelector(".listpane");
+var LIST_MIN = 300;
+var STORE_KEY = "split-view:list-width";
+
+function wideEnough(){ return window.matchMedia("(min-width: 900px)").matches; }
+function listMax(){
+  /* The reading pane keeps at least 380px, whatever the list wants. */
+  var rail = parseFloat(getComputedStyle(panes).gridTemplateColumns.split(" ")[0]) || 224;
+  return Math.max(LIST_MIN, panes.clientWidth - rail - 16 - 380);
+}
+function currentWidth(){ return listpane.getBoundingClientRect().width; }
+function setWidth(px){
+  var next = Math.round(Math.min(Math.max(px, LIST_MIN), listMax()));
+  document.documentElement.style.setProperty("--list-w", next + "px");
+  handle.setAttribute("aria-valuenow", String(next));
+  handle.setAttribute("aria-valuemin", String(LIST_MIN));
+  handle.setAttribute("aria-valuemax", String(Math.round(listMax())));
+  placeHandle();
+  try { localStorage.setItem(STORE_KEY, String(next)); } catch (error) { /* private window */ }
+}
+function placeHandle(){
+  if (!wideEnough()) return;
+  var edge = listpane.getBoundingClientRect().right - panes.getBoundingClientRect().left;
+  handle.style.left = (edge + 4 - 7) + "px";
+}
+
+try {
+  var saved = parseFloat(localStorage.getItem(STORE_KEY));
+  if (saved) document.documentElement.style.setProperty("--list-w", saved + "px");
+} catch (error) { /* nothing saved, or storage is blocked */ }
+
+handle.addEventListener("pointerdown", function(event){
+  if (!wideEnough()) return;
+  event.preventDefault();
+  handle.setPointerCapture(event.pointerId);
+  handle.classList.add("is-dragging");
+  document.body.classList.add("is-resizing");
+  var startX = event.clientX;
+  var startW = currentWidth();
+
+  function move(moveEvent){ setWidth(startW + (moveEvent.clientX - startX)); }
+  function done(){
+    handle.classList.remove("is-dragging");
+    document.body.classList.remove("is-resizing");
+    handle.removeEventListener("pointermove", move);
+    handle.removeEventListener("pointerup", done);
+    handle.removeEventListener("pointercancel", done);
+  }
+  handle.addEventListener("pointermove", move);
+  handle.addEventListener("pointerup", done);
+  handle.addEventListener("pointercancel", done);
+});
+
+/* Double click puts it back where it started. */
+handle.addEventListener("dblclick", function(){
+  document.documentElement.style.removeProperty("--list-w");
+  try { localStorage.removeItem(STORE_KEY); } catch (error) { /* ignore */ }
+  placeHandle();
+});
+
+/* The same handle from the keyboard, which is what makes it a separator
+   rather than a decoration only a mouse can reach. */
+handle.addEventListener("keydown", function(event){
+  var step = event.shiftKey ? 48 : 16;
+  if (event.key === "ArrowLeft") { event.preventDefault(); setWidth(currentWidth() - step); }
+  if (event.key === "ArrowRight") { event.preventDefault(); setWidth(currentWidth() + step); }
+  if (event.key === "Home") { event.preventDefault(); setWidth(LIST_MIN); }
+  if (event.key === "End") { event.preventDefault(); setWidth(listMax()); }
+});
+
+window.addEventListener("resize", function(){
+  if (wideEnough() && currentWidth() > listMax()) setWidth(listMax());
+  placeHandle();
+});
+placeHandle();
+handle.setAttribute("aria-valuenow", String(Math.round(currentWidth())));
+
+if (!window.matchMedia("(min-width: 900px)").matches) document.getElementById("qkey").style.display = "none";
+
+state.picked = visible()[0].id;
+render();
+</script>
