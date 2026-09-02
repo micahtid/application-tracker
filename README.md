@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/board.png" alt="The board, with applications grouped by status" width="900">
+  <img src="docs/board.png" alt="The split view, with the applications grouped by status on the left and one of them read out on the right" width="900">
 </p>
 
 It runs on your machine at <http://127.0.0.1:3939>. Nothing leaves it but the Gmail API and
